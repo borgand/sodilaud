@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile, readdir } from "node:fs/promises";
 
-const POPUP_COMMANDS = ["clip_list", "clip_reveal", "clip_select", "clip_delete"];
+const POPUP_COMMANDS = ["clip_list", "clip_reveal", "clip_select", "clip_delete", "clip_close"];
 
 async function capabilities() {
   const files = await readdir("src-tauri/capabilities");
@@ -42,7 +42,7 @@ test("popup commands are granted only to the clipboard window", async () => {
   }
   assert.deepEqual(
     [...popup.permissions].sort(),
-    ["allow-clip-delete", "allow-clip-list", "allow-clip-reveal", "allow-clip-select", "core:window:allow-destroy"]
+    ["allow-clip-close", "allow-clip-delete", "allow-clip-list", "allow-clip-reveal", "allow-clip-select"]
   );
   assert.ok(main.permissions.includes("allow-clip-set-config"));
 });

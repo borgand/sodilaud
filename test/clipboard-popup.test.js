@@ -18,17 +18,16 @@ async function setup(listing = LISTING) {
   const html = await readFile("src/clipboard.html", "utf8");
   const dom = new JSDOM(html);
   const calls = [];
-  let closed = 0;
   const invoke = async (command, args) => {
     calls.push({ command, args });
     if (command === "clip_list") return structuredClone(listing);
     if (command === "clip_reveal") return "ghp_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8";
     return true;
   };
-  const popup = createPopup({ document: dom.window.document, invoke, close: () => { closed += 1; } });
+  const popup = createPopup({ document: dom.window.document, invoke });
   await popup.refresh();
   const key = (k) => popup.onKey(new dom.window.KeyboardEvent("keydown", { key: k }));
-  return { dom, doc: dom.window.document, calls, popup, key, closed: () => closed };
+  return { dom, doc: dom.window.document, calls, popup, key };
 }
 
 test("formats time left and slot keys", () => {
@@ -79,10 +78,16 @@ test("Backspace deletes the focused row", async () => {
   assert.ok(calls.some(c => c.command === "clip_delete" && c.args.id === 7));
 });
 
-test("Escape closes", async () => {
-  const { key, closed } = await setup();
+test("Escape asks Rust to close the popup", async () => {
+  const { calls, key } = await setup();
   await key("Escape");
-  assert.equal(closed(), 1);
+  assert.deepEqual(calls.at(-1), { command: "clip_close", args: undefined });
+});
+
+test("the close button asks Rust to close the popup", async () => {
+  const { doc, calls } = await setup();
+  doc.getElementById("clip-close").click();
+  assert.deepEqual(calls.at(-1), { command: "clip_close", args: undefined });
 });
 
 test("empty history shows the TTL hint", async () => {

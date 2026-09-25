@@ -15,7 +15,7 @@ export function slotKey(index) {
   return index === 9 ? "0" : "";
 }
 
-export function createPopup({ document, invoke, close }) {
+export function createPopup({ document, invoke }) {
   const list = document.getElementById("clip-list");
   const empty = document.getElementById("clip-empty");
   const ttl = document.getElementById("clip-ttl");
@@ -115,6 +115,10 @@ export function createPopup({ document, invoke, close }) {
     await refresh();
   }
 
+  function close() {
+    return invoke("clip_close").catch(() => {});
+  }
+
   async function onKey(event) {
     if (event.metaKey || event.ctrlKey || event.altKey) return;
     const slot = event.key === "0" ? 9 : Number.parseInt(event.key, 10) - 1;
@@ -137,11 +141,7 @@ export function createPopup({ document, invoke, close }) {
 
 if (globalThis.window?.__TAURI__) {
   const tauri = window.__TAURI__;
-  const popup = createPopup({
-    document,
-    invoke: tauri.core.invoke,
-    close: () => tauri.window.getCurrentWindow().destroy()
-  });
+  const popup = createPopup({ document, invoke: tauri.core.invoke });
   popup.refresh();
   setInterval(popup.refresh, REFRESH_MS);
 }

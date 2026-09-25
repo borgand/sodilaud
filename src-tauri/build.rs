@@ -31,6 +31,7 @@ fn main() {
             "clip_reveal",
             "clip_select",
             "clip_delete",
+            "clip_close",
             "clip_set_config",
             "hide_main_window",
             "quit_app",

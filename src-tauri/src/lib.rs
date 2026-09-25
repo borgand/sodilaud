@@ -897,6 +897,7 @@ pub fn run(context: tauri::Context<tauri::Wry>) {
             clipboard::commands::clip_reveal,
             clipboard::commands::clip_select,
             clipboard::commands::clip_delete,
+            clipboard::commands::clip_close,
             clipboard::commands::clip_set_config,
             clipboard::commands::hide_main_window,
             clipboard::commands::quit_app,

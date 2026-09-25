@@ -96,6 +96,20 @@ pub fn clip_delete(window: Window, id: u64) -> Result<bool, ClipError> {
 }
 
 #[tauri::command]
+pub fn clip_close(window: Window) -> Result<(), ClipError> {
+    require_popup(&window)?;
+    #[cfg(target_os = "macos")]
+    {
+        super::popup::close(window.app_handle());
+        Ok(())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Err(ClipError::Unsupported)
+    }
+}
+
+#[tauri::command]
 pub fn clip_set_config(app: AppHandle, config: ClipConfig) -> Result<ConfigStatus, ClipError> {
     #[cfg(target_os = "macos")]
     {
