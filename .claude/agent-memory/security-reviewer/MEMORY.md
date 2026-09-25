@@ -1,0 +1,1 @@
+- [Zero-egress requirement](project_zero_egress_requirement.md) - fork must never send data remotely; clipboard manager with secrets planned; build path in scope
