@@ -41,7 +41,12 @@ for (const dir of SCAN_DIRS) {
     const rel = relative(ROOT, file).split("\\").join("/");
     if (rel === SELF) continue;
     const allowed = ALLOWED.get(rel) ?? [];
-    const lines = (await readFile(file, "utf8")).split("\n");
+    let lines = (await readFile(file, "utf8")).split("\n");
+    // Rust unit tests never ship, and they hold URL fixtures by design.
+    if (rel.endsWith(".rs")) {
+      const testModule = lines.findIndex((line) => line.trim() === "#[cfg(test)]");
+      if (testModule !== -1) lines = lines.slice(0, testModule);
+    }
     for (const [label, pattern] of RULES) {
       if (allowed.includes(label)) continue;
       lines.forEach((line, index) => {

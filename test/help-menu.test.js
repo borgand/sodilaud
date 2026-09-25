@@ -49,7 +49,7 @@ test("the Scratchpad menu opens Help and About dialogs and returns focus", async
   document.querySelector('.about-links a[href="https://github.com/crims0n/scratchpad"]').click();
   await app.settle(20);
   assert.deepEqual(app.invocations.at(-1), {
-    command: "plugin:opener|open_url",
+    command: "confirm_and_open_url",
     args: { url: "https://github.com/crims0n/scratchpad" }
   });
 

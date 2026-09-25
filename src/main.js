@@ -2799,7 +2799,8 @@ function handlePreviewLinkClick(event) {
     return;
   }
 
-  invoke("plugin:opener|open_url", { url: action.url }).catch(error => {
+  // Rust shows the real destination in a native dialog before the browser opens it.
+  invoke("confirm_and_open_url", { url: action.url }).catch(error => {
     console.error("Failed to open a link in the browser", error);
     showNotification("Could not open that link");
   });

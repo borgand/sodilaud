@@ -660,6 +660,57 @@ fn save_workspace_db(
     save_workspace_db_at(db_path, notes, folders, trash)
 }
 
+// A top-level navigation is a request the CSP does not see, so the main window
+// may only ever show the bundled app.
+fn is_app_url(url: &tauri::Url) -> bool {
+    match url.scheme() {
+        "tauri" => url.host_str() == Some("localhost"),
+        "http" | "https" => match url.host_str() {
+            Some("tauri.localhost") => true,
+            // `tauri dev` serves the frontend from the CLI's built-in loopback server.
+            Some("localhost" | "127.0.0.1") => cfg!(debug_assertions),
+            _ => false,
+        },
+        "about" => url.path() == "blank",
+        _ => false,
+    }
+}
+
+fn external_link(url: &str) -> Result<tauri::Url, String> {
+    if url.len() > 2048 {
+        return Err("Link is too long to open".to_string());
+    }
+    let parsed = tauri::Url::parse(url).map_err(|_| "Unsupported link".to_string())?;
+    if !matches!(parsed.scheme(), "https" | "http" | "mailto") {
+        return Err("Unsupported link".to_string());
+    }
+    Ok(parsed)
+}
+
+// The opener plugin has no JS permission, so a renderer script cannot reach the
+// network through the system browser without the user seeing the destination.
+#[tauri::command]
+fn confirm_and_open_url(app: tauri::AppHandle, url: String) -> Result<bool, String> {
+    use tauri_plugin_opener::OpenerExt;
+
+    let parsed = external_link(&url)?;
+    let destination = parsed.host_str().unwrap_or(parsed.path()).to_string();
+    let proceed = rfd::MessageDialog::new()
+        .set_title("Open external link")
+        .set_description(format!(
+            "{parsed}\n\nThis opens {destination} in your default app. It, not Scratchpad, makes the request."
+        ))
+        .set_buttons(rfd::MessageButtons::YesNo)
+        .show()
+        == rfd::MessageDialogResult::Yes;
+    if proceed {
+        app.opener()
+            .open_url(parsed.as_str(), None::<&str>)
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(proceed)
+}
+
 #[tauri::command]
 fn show_alert_dialog(title: String, message: String) {
     rfd::MessageDialog::new()
@@ -732,11 +783,16 @@ pub fn run(context: tauri::Context<tauri::Wry>) {
         .on_menu_event(handle_macos_menu_event);
 
     builder
-        // Markdown links have no default handling in the webview; the opener
-        // plugin sends them to the user's browser instead. Its capability scope
-        // limits it to the same schemes the Markdown sanitizer allows.
+        // Only confirm_and_open_url uses the opener, from Rust; the webview has
+        // no opener permission.
         .plugin(tauri_plugin_opener::init())
+        .plugin(
+            tauri::plugin::Builder::<tauri::Wry>::new("navigation-guard")
+                .on_navigation(|_webview, url| is_app_url(url))
+                .build(),
+        )
         .invoke_handler(tauri::generate_handler![
+            confirm_and_open_url,
             load_workspace_preference,
             set_last_workspace,
             save_file_native,
@@ -825,6 +881,66 @@ mod tests {
         assert_eq!(stale_legacy, None);
 
         std::fs::remove_file(path).expect("temporary preferences should be removable");
+    }
+
+    #[test]
+    fn a_debug_build_may_show_the_cli_dev_server_but_a_release_build_may_not() {
+        let dev_server = tauri::Url::parse("http://localhost:1430/").unwrap();
+        assert_eq!(is_app_url(&dev_server), cfg!(debug_assertions));
+        let loopback = tauri::Url::parse("http://127.0.0.1:1430/").unwrap();
+        assert_eq!(is_app_url(&loopback), cfg!(debug_assertions));
+        let other_host = tauri::Url::parse("http://localhost.evil.example/").unwrap();
+        assert!(!is_app_url(&other_host));
+    }
+
+    #[test]
+    fn the_window_may_only_navigate_within_the_bundled_app() {
+        for allowed in [
+            "tauri://localhost/index.html",
+            "http://tauri.localhost/index.html",
+            "https://tauri.localhost/",
+            "about:blank",
+        ] {
+            let url = tauri::Url::parse(allowed).unwrap();
+            assert!(is_app_url(&url), "{allowed} should be allowed");
+        }
+        for rejected in [
+            "https://example.com/",
+            "http://tauri.localhost.evil.example/",
+            "tauri://evil/",
+            "data:text/html,<p>hi</p>",
+            "file:///etc/passwd",
+        ] {
+            let url = tauri::Url::parse(rejected).unwrap();
+            assert!(!is_app_url(&url), "{rejected} should be rejected");
+        }
+    }
+
+    #[test]
+    fn only_web_and_mail_links_may_leave_the_app() {
+        for allowed in [
+            "https://example.com/docs",
+            "http://example.com",
+            "mailto:someone@example.com",
+        ] {
+            assert!(
+                external_link(allowed).is_ok(),
+                "{allowed} should be allowed"
+            );
+        }
+        for rejected in [
+            "file:///etc/passwd",
+            "javascript:alert(1)",
+            "smb://host/share",
+            "not a url",
+        ] {
+            assert!(
+                external_link(rejected).is_err(),
+                "{rejected} should be rejected"
+            );
+        }
+        let long = format!("https://example.com/{}", "a".repeat(2048));
+        assert!(external_link(&long).is_err());
     }
 
     #[test]

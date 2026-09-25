@@ -35,3 +35,16 @@ test("no updater module or update command survives", async () => {
   await assert.rejects(() => readFile("src/updates.js", "utf8"));
   await assert.rejects(() => readFile("src-tauri/src/updates.rs", "utf8"));
 });
+
+test("the egress gate ignores Rust test fixtures but not shipped Rust code", async () => {
+  const { writeFile, rm } = await import("node:fs/promises");
+  const file = "src-tauri/src/egress_probe.rs";
+  try {
+    await writeFile(file, 'fn shipped() {}\n#[cfg(test)]\nmod tests {\n    const FIXTURE: &str = "https://example.com/";\n}\n');
+    await run(process.execPath, ["scripts/check-no-egress.mjs"]);
+    await writeFile(file, 'const ENDPOINT: &str = "https://example.com/";\n#[cfg(test)]\nmod tests {}\n');
+    await assert.rejects(() => run(process.execPath, ["scripts/check-no-egress.mjs"]));
+  } finally {
+    await rm(file, { force: true });
+  }
+});

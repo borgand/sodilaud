@@ -93,7 +93,7 @@ test("preview links are opened through the system browser", async () => {
 
   await click('a[href^="https"]');
   assert.deepEqual(app.invocations, [
-    { command: "plugin:opener|open_url", args: { url: "https://example.com/docs" } }
+    { command: "confirm_and_open_url", args: { url: "https://example.com/docs" } }
   ]);
 
   await click('a[href^="javascript"]');
