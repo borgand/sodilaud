@@ -75,3 +75,65 @@ test("other platforms hide the section and never call clipboard commands", async
   assert.equal(app.dom.window.document.getElementById("clipboard-history-menu-section").hidden, true);
   assert.ok(!app.invocations.some(i => i.command === "clip_set_config"));
 });
+
+test("Escape closes the settings modal", async () => {
+  const app = await bootApp({
+    instance: 6,
+    platform: "MacIntel",
+    handlers: { clip_set_config: ({ config }) => ok(config) }
+  });
+  const { document, KeyboardEvent } = app.dom.window;
+  app.click("clipboard-settings-btn");
+  const backdrop = document.getElementById("clipboard-settings-modal-backdrop");
+  assert.equal(backdrop.style.display, "flex");
+  document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  await settle();
+  assert.equal(backdrop.style.display, "none");
+  assert.equal(backdrop.getAttribute("aria-hidden"), "true");
+});
+
+test("clicking the backdrop closes the settings modal", async () => {
+  const app = await bootApp({
+    instance: 7,
+    platform: "MacIntel",
+    handlers: { clip_set_config: ({ config }) => ok(config) }
+  });
+  const { document, MouseEvent } = app.dom.window;
+  app.click("clipboard-settings-btn");
+  const backdrop = document.getElementById("clipboard-settings-modal-backdrop");
+  assert.equal(backdrop.style.display, "flex");
+  backdrop.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  await settle();
+  assert.equal(backdrop.style.display, "none");
+});
+
+test("a global shortcut keydown does not reach the app while the settings modal is open", async () => {
+  const app = await bootApp({
+    instance: 8,
+    platform: "MacIntel",
+    handlers: { clip_set_config: ({ config }) => ok(config) }
+  });
+  const { document, KeyboardEvent } = app.dom.window;
+  app.click("clipboard-settings-btn");
+  const sidebar = document.getElementById("sidebar");
+  assert.equal(sidebar.classList.contains("collapsed"), false);
+  document.dispatchEvent(new KeyboardEvent("keydown", { key: "b", metaKey: true, bubbles: true }));
+  await settle();
+  assert.equal(sidebar.classList.contains("collapsed"), false);
+});
+
+test("blurring the hotkey button while capturing restores the formatted label", async () => {
+  const app = await bootApp({
+    instance: 9,
+    platform: "MacIntel",
+    handlers: { clip_set_config: ({ config }) => ok(config) }
+  });
+  const { document, Event } = app.dom.window;
+  app.click("clipboard-settings-btn");
+  app.click("clipboard-hotkey-btn");
+  const hotkeyBtn = document.getElementById("clipboard-hotkey-btn");
+  assert.equal(hotkeyBtn.textContent, "Press a shortcut…");
+  hotkeyBtn.dispatchEvent(new Event("blur"));
+  await settle();
+  assert.equal(hotkeyBtn.textContent, "⌘⇧V");
+});

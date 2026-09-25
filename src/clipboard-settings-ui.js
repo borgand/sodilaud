@@ -17,9 +17,13 @@ export async function setupClipboardHistory({ document, invoke, listen, storage,
   $("clipboard-history-menu-section").hidden = false;
   $("clipboard-history-menu-divider").hidden = false;
 
+  const backdrop = $("clipboard-settings-modal-backdrop");
+  const hotkeyBtn = $("clipboard-hotkey-btn");
+
   let settings = loadClipboardSettings(storage);
   let accessibilityTrusted = false;
   let capturing = false;
+  let open = false;
 
   function setStatus(text) {
     $("clipboard-settings-status").textContent = text;
@@ -31,11 +35,27 @@ export async function setupClipboardHistory({ document, invoke, listen, storage,
     toggle.setAttribute("aria-pressed", String(settings.enabled));
     $("clipboard-capacity-input").value = String(settings.capacity);
     $("clipboard-ttl-input").value = String(settings.ttlMinutes);
-    $("clipboard-hotkey-btn").textContent = capturing ? "Press a shortcut…" : formatAccelerator(settings.hotkey);
+    hotkeyBtn.textContent = capturing ? "Press a shortcut…" : formatAccelerator(settings.hotkey);
     const autoPaste = $("clipboard-autopaste-toggle-btn");
     autoPaste.textContent = settings.autoPaste ? "On" : "Off";
     autoPaste.setAttribute("aria-pressed", String(settings.autoPaste));
     $("clipboard-accessibility-row").hidden = !(settings.autoPaste && !accessibilityTrusted);
+  }
+
+  function openModal() {
+    open = true;
+    backdrop.style.display = "flex";
+    backdrop.setAttribute("aria-hidden", "false");
+    render();
+    $("clipboard-capacity-input").focus({ preventScroll: true });
+  }
+
+  function closeModal() {
+    open = false;
+    capturing = false;
+    backdrop.style.display = "none";
+    backdrop.setAttribute("aria-hidden", "true");
+    render();
   }
 
   async function apply(next) {
@@ -54,34 +74,35 @@ export async function setupClipboardHistory({ document, invoke, listen, storage,
   }
 
   $("clipboard-history-toggle-btn").addEventListener("click", () => apply({ ...settings, enabled: !settings.enabled }));
-  $("clipboard-settings-btn").addEventListener("click", () => {
-    const backdrop = $("clipboard-settings-modal-backdrop");
-    backdrop.style.display = "flex";
-    backdrop.setAttribute("aria-hidden", "false");
-    render();
-  });
-  $("close-clipboard-settings-btn").addEventListener("click", () => {
-    const backdrop = $("clipboard-settings-modal-backdrop");
-    backdrop.style.display = "none";
-    backdrop.setAttribute("aria-hidden", "true");
-    capturing = false;
-  });
+  $("clipboard-settings-btn").addEventListener("click", openModal);
+  $("close-clipboard-settings-btn").addEventListener("click", closeModal);
+  backdrop.addEventListener("click", (event) => { if (event.target === backdrop) closeModal(); });
   $("clipboard-capacity-input").addEventListener("change", (e) => apply({ ...settings, capacity: Number(e.target.value) }));
   $("clipboard-ttl-input").addEventListener("change", (e) => apply({ ...settings, ttlMinutes: Number(e.target.value) }));
-  $("clipboard-hotkey-btn").addEventListener("click", () => { capturing = true; render(); });
-  $("clipboard-hotkey-btn").addEventListener("keydown", (event) => {
-    if (!capturing) return;
-    event.preventDefault();
-    event.stopPropagation();
-    if (event.key === "Escape") { capturing = false; render(); return; }
-    const accelerator = acceleratorFromKeyEvent(event);
-    if (!accelerator) return;
-    capturing = false;
-    apply({ ...settings, hotkey: accelerator });
-  });
+  hotkeyBtn.addEventListener("click", () => { capturing = true; render(); });
+  hotkeyBtn.addEventListener("blur", () => { if (capturing) { capturing = false; render(); } });
   $("clipboard-hotkey-reset-btn").addEventListener("click", () => apply({ ...settings, hotkey: DEFAULT_CLIPBOARD_SETTINGS.hotkey }));
   $("clipboard-autopaste-toggle-btn").addEventListener("click", () => apply({ ...settings, autoPaste: !settings.autoPaste }));
   $("clipboard-accessibility-open-btn").addEventListener("click", () => invoke("open_accessibility_settings").catch(() => {}));
+
+  // Capture phase, so this preempts main.js's bubble-phase global shortcut
+  // handler on document while the modal is open. A capturing keydown is
+  // handled here too, since stopping propagation this early would otherwise
+  // keep it from ever reaching a listener on the hotkey button itself.
+  document.addEventListener("keydown", (event) => {
+    if (!open) return;
+    event.stopImmediatePropagation();
+    if (capturing) {
+      if (event.key === "Escape") { event.preventDefault(); capturing = false; render(); return; }
+      event.preventDefault();
+      const accelerator = acceleratorFromKeyEvent(event);
+      if (!accelerator) return;
+      capturing = false;
+      apply({ ...settings, hotkey: accelerator });
+      return;
+    }
+    if (event.key === "Escape") { event.preventDefault(); closeModal(); }
+  }, true);
 
   if (typeof listen === "function") {
     await listen(STOPPED_EVENT, async () => {
