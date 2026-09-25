@@ -28,6 +28,9 @@
     "allow-set-mcp-permissions",
     "allow-complete-mcp-write",
     "allow-stop-mcp-server",
-    "allow-clip-set-config"
+    "allow-clip-set-config",
+    "allow-hide-main-window",
+    "allow-quit-app",
+    "allow-open-accessibility-settings"
   ]
 }

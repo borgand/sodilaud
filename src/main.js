@@ -608,6 +608,7 @@ async function init() {
   }, { once: true });
   await registerNativeAboutHandler();
   await registerCloseHandler();
+  await registerQuitHandler();
   await registerWindowResizeHandler();
 
   // 2. Load the saved theme (Default Dark on first launch) and layout mode
@@ -1497,6 +1498,15 @@ async function registerCloseHandler() {
         return;
       }
 
+      try {
+        if (await invoke("hide_main_window")) {
+          isClosePending = false;
+          return;
+        }
+      } catch (error) {
+        console.error("Failed to hide Sodilaud", error);
+      }
+
       isClosing = true;
       try {
         await appWindow.destroy();
@@ -1509,6 +1519,26 @@ async function registerCloseHandler() {
     });
   } catch (error) {
     console.error("Failed to register the close-save handler", error);
+  }
+}
+
+async function registerQuitHandler() {
+  const listen = window.__TAURI__?.event?.listen;
+  if (typeof listen !== "function") return;
+
+  try {
+    await listen("sodilaud-quit-requested", async () => {
+      await dbSaveQueue;
+      const saved = await flushPendingSaves();
+      if (!saved) {
+        setSaveFailedState();
+        showNotification("Could not save the latest changes; quit cancelled");
+        return;
+      }
+      await invoke("quit_app");
+    });
+  } catch (error) {
+    console.error("Failed to register the quit handler", error);
   }
 }
 

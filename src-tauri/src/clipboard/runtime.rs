@@ -66,6 +66,7 @@ impl ClipboardRuntime {
         }
 
         *lock(&self.config) = applied.clone();
+        super::tray::refresh(app, &applied);
         ConfigStatus {
             enabled: applied.enabled,
             hotkey: applied.hotkey,
@@ -131,7 +132,6 @@ impl ClipboardRuntime {
             .is_some_and(|service| service.delete(id))
     }
 
-    #[allow(dead_code)] // Used from Task 7 (tray "Clear" menu item).
     pub fn clear(&self) {
         if let Some(service) = lock(&self.service).as_mut() {
             service.wipe();
@@ -167,7 +167,6 @@ impl ClipboardRuntime {
     }
 
     /// Called on quit: stop polling, wipe, clear the pasteboard if it holds an entry.
-    #[allow(dead_code)] // Used from Task 7 (quit flow).
     pub fn shutdown(&self) {
         self.halt();
     }

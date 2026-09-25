@@ -93,7 +93,6 @@ pub enum ClipError {
     WrongWindow,
     HotkeyInvalid,
     HotkeyUnavailable,
-    #[allow(dead_code)] // Used from Task 7.
     Internal,
 }
 

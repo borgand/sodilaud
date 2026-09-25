@@ -26,6 +26,48 @@ pub fn popup_origin(screen: Rect, primary_height: f64, width: f64) -> (f64, f64)
     (x, top + screen.height / 3.0)
 }
 
+// 18x18 clipboard outline, doubled to 36x36 for Retina menu bars.
+const GLYPH: [&str; 18] = [
+    "                  ",
+    "      ######      ",
+    "   ####    ####   ",
+    "   #  ######  #   ",
+    "   #          #   ",
+    "   #  ######  #   ",
+    "   #          #   ",
+    "   #  ######  #   ",
+    "   #          #   ",
+    "   #  ####    #   ",
+    "   #          #   ",
+    "   #          #   ",
+    "   #          #   ",
+    "   #          #   ",
+    "   #          #   ",
+    "   ############   ",
+    "                  ",
+    "                  ",
+];
+
+pub fn tray_glyph() -> (Vec<u8>, u32, u32) {
+    const SCALE: usize = 2;
+    let size = GLYPH.len() * SCALE;
+    let mut rgba = vec![0u8; size * size * 4];
+    for (row, line) in GLYPH.iter().enumerate() {
+        for (col, cell) in line.bytes().enumerate() {
+            if cell != b'#' {
+                continue;
+            }
+            for dy in 0..SCALE {
+                for dx in 0..SCALE {
+                    let index = ((row * SCALE + dy) * size + col * SCALE + dx) * 4;
+                    rgba[index + 3] = 255;
+                }
+            }
+        }
+    }
+    (rgba, size as u32, size as u32)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -61,5 +103,15 @@ mod tests {
         assert_eq!(popup_height(0), popup_height(1));
         assert!(popup_height(10) > popup_height(3));
         assert_eq!(popup_height(25), popup_height(10));
+    }
+
+    #[test]
+    fn tray_glyph_is_a_monochrome_template() {
+        let (rgba, width, height) = tray_glyph();
+        assert_eq!(rgba.len(), (width * height * 4) as usize);
+        assert!(rgba
+            .chunks(4)
+            .all(|px| px[0] == 0 && px[1] == 0 && px[2] == 0));
+        assert!(rgba.chunks(4).any(|px| px[3] == 255));
     }
 }

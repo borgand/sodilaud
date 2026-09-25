@@ -20,4 +20,6 @@ pub mod popup;
 #[cfg(target_os = "macos")]
 pub mod runtime;
 #[cfg(target_os = "macos")]
+pub mod tray;
+#[cfg(target_os = "macos")]
 pub mod watcher;
