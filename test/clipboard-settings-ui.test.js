@@ -169,3 +169,30 @@ test("turning the feature off keeps the chosen hotkey", async () => {
   assert.equal(JSON.parse(app.storage.getItem("clipboardHistory.settings")).hotkey, "ctrl+alt+Digit1");
   assert.equal(app.dom.window.document.getElementById("clipboard-hotkey-btn").textContent, "⌃⌥1");
 });
+
+test("clearing a number field restores it instead of applying a minimum", async () => {
+  const app = await bootApp({
+    instance: 12,
+    platform: "MacIntel",
+    storage: { "clipboardHistory.settings": { enabled: true, capacity: 10, ttlMinutes: 15, hotkey: "super+shift+KeyV", autoPaste: false } },
+    handlers: { clip_set_config: ({ config }) => ok(config) }
+  });
+  const { document, Event } = app.dom.window;
+  app.click("clipboard-settings-btn");
+  const applied = () => app.invocations.filter(i => i.command === "clip_set_config").length;
+  const before = applied();
+  for (const [id, shown] of [["clipboard-capacity-input", "10"], ["clipboard-ttl-input", "15"]]) {
+    for (const typed of ["", "  ", "abc"]) {
+      const input = document.getElementById(id);
+      input.value = typed;
+      input.dispatchEvent(new Event("change"));
+      await settle();
+      assert.equal(input.value, shown, `${id} after ${JSON.stringify(typed)}`);
+    }
+  }
+  assert.equal(applied(), before);
+  assert.deepEqual(
+    [JSON.parse(app.storage.getItem("clipboardHistory.settings")).capacity, JSON.parse(app.storage.getItem("clipboardHistory.settings")).ttlMinutes],
+    [10, 15]
+  );
+});

@@ -86,8 +86,14 @@ export async function setupClipboardHistory({ document, invoke, listen, storage,
   $("clipboard-settings-btn").addEventListener("click", openModal);
   $("close-clipboard-settings-btn").addEventListener("click", closeModal);
   backdrop.addEventListener("click", (event) => { if (event.target === backdrop) closeModal(); });
-  $("clipboard-capacity-input").addEventListener("change", (e) => apply({ ...settings, capacity: Number(e.target.value) }));
-  $("clipboard-ttl-input").addEventListener("change", (e) => apply({ ...settings, ttlMinutes: Number(e.target.value) }));
+  function applyNumber(key, input) {
+    const value = input.value.trim() === "" ? NaN : Number(input.value);
+    if (!Number.isFinite(value)) { render(); return; }
+    apply({ ...settings, [key]: value });
+  }
+
+  $("clipboard-capacity-input").addEventListener("change", (e) => applyNumber("capacity", e.target));
+  $("clipboard-ttl-input").addEventListener("change", (e) => applyNumber("ttlMinutes", e.target));
   hotkeyBtn.addEventListener("click", () => { capturing = true; render(); });
   hotkeyBtn.addEventListener("blur", () => { if (capturing) { capturing = false; render(); } });
   $("clipboard-hotkey-reset-btn").addEventListener("click", () => apply({ ...settings, hotkey: DEFAULT_CLIPBOARD_SETTINGS.hotkey }));
