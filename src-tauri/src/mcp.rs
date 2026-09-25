@@ -39,6 +39,12 @@ const PREVIEW_CHARS: usize = 240;
 const DEFAULT_CONTENT_CHARS: u32 = 20_000;
 const MAX_CONTENT_CHARS: u32 = 100_000;
 
+/// Everything an MCP agent can read.
+///
+/// Clipboard items must never enter this snapshot. Agent access hands every field here to
+/// the connected client, which normally forwards it to a remote model provider, and
+/// `search_notes` is a substring search over full content. Clipboard history holds live
+/// credentials and must stay in a store this type has no reference to.
 #[derive(Debug)]
 struct Snapshot {
     collection_name: String,
