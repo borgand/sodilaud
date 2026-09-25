@@ -1040,6 +1040,24 @@ button.view-setting-value:hover {
   color: var(--text-primary);
 }
 
+.clipboard-settings-input {
+  width: 60px;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+  background-color: var(--bg-input);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.75rem;
+  box-sizing: border-box;
+}
+
+.clipboard-settings-input:focus {
+  outline: 2px solid var(--accent-color);
+  outline-offset: 1px;
+}
+
 .view-setting-toggle[aria-pressed="true"] {
   border-color: var(--accent-color);
   color: var(--accent-color);

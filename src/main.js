@@ -29,6 +29,8 @@ import { escapeHTML, highlightPreviewCode, renderEditorBackdrop } from "./syntax
 import { renderEditorLineNumbers } from "./editor-line-numbers.js";
 import { createEditorRenderScheduler } from "./editor-render-scheduler.js";
 import { WELCOME_NOTE_CONTENT, WELCOME_NOTE_TITLE } from "./welcome-note.js";
+import { setupClipboardHistory } from "./clipboard-settings-ui.js";
+import { isMacPlatform } from "./clipboard-settings.js";
 import {
   canMoveNote,
   getNoteMoveTargetIndex,
@@ -609,6 +611,14 @@ async function init() {
   await registerNativeAboutHandler();
   await registerCloseHandler();
   await registerQuitHandler();
+  await setupClipboardHistory({
+    document,
+    invoke,
+    listen: window.__TAURI__?.event?.listen,
+    storage: localStorage,
+    notify: showNotification,
+    isMac: Boolean(window.__TAURI__) && isMacPlatform(navigator)
+  });
   await registerWindowResizeHandler();
 
   // 2. Load the saved theme (Default Dark on first launch) and layout mode
