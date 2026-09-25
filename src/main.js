@@ -11,7 +11,6 @@ import {
 } from "./storage.js";
 import { LOCAL_TRASH_KEY, readTrash, trashSummary, restoredNote, persistNotesAndTrashLocally, emptyTrashLocally } from "./trash.js";
 import { createTrashUi } from "./trash-ui.js";
-import { createUpdateUi } from "./updates.js";
 import { createMcpWriter, createNoteRevisionTracker, createFolderRevisionTracker } from "./mcp-writes.js";
 import { renderMarkdown, resolveLinkAction, sanitizeMarkdownHtml } from "./markdown.js";
 import { getNotePreview } from "./note-preview.js";
@@ -604,12 +603,7 @@ async function init() {
   // 1. Localize shortcut labels and attach event listeners immediately.
   applyPlatformShortcutLabels();
   attachEventListeners();
-  const updateChecker = createUpdateUi({
-    document, invoke, storage: localStorage,
-    closeAbout: closeAboutModal
-  });
   window.addEventListener("pagehide", () => {
-    updateChecker.dispose();
     nativeAboutUnlisten?.();
   }, { once: true });
   await registerNativeAboutHandler();

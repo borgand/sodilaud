@@ -18,6 +18,21 @@ notes, or permanently empty trash. Local storage and workspace databases,
 including their trash, are not encrypted by Scratchpad. Protect them and their
 backups with the same care as active notes.
 
+Agent access listens on 127.0.0.1:39393 and authenticates with a local token file. The
+token proves nothing about the peer: any process running as your user can read the token
+file or launch `scratchpad --mcp-stdio`, and a process that binds port 39393 before
+Scratchpad does receives the token and can answer your agent with forged tool results.
+Other user accounts are kept out by the token file's 0600 mode, not by the transport.
+Do not enable agent access on a machine you do not control, and do not store clipboard
+secrets in a collection you expose to agents. A Unix socket with a peer-UID check is the
+planned fix.
+
+## Network access
+
+This fork ships no HTTP client and makes no outbound request: there is no update check,
+telemetry, or sync. `npm run check:egress` enforces this in CI. Links you click in the
+preview open in your default browser.
+
 See the [MCP reference](docs/mcp.md#live-data-and-privacy-boundary) for the local
 authentication boundary, message limits, and client configuration.
 

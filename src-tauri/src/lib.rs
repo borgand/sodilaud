@@ -11,7 +11,6 @@ use tauri::{
 };
 
 mod mcp;
-mod updates;
 pub use mcp::run_mcp_stdio;
 
 const PREFERENCES_FILE_NAME: &str = "scratchpad-preferences.json";
@@ -649,9 +648,6 @@ pub fn run(context: tauri::Context<tauri::Wry>) {
         // limits it to the same schemes the Markdown sanitizer allows.
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
-            updates::get_update_info,
-            updates::check_for_updates,
-            updates::open_update_release,
             load_workspace_preference,
             set_last_workspace,
             save_file_native,

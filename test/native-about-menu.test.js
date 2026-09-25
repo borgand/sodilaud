@@ -14,7 +14,6 @@ test("the native About menu opens the existing in-app About panel", async () => 
 
   assert.equal(backdrop.style.display, "flex");
   assert.match(backdrop.textContent, /open-source, local-first Markdown editor/);
-  assert.ok(document.getElementById("update-check-btn"));
   assert.equal(document.activeElement, document.getElementById("close-about-btn"));
 
   // Re-selecting About while it is already open must not replace the element

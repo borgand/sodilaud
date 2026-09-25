@@ -55,3 +55,6 @@ jobs:
 
       - name: Test Rust
         run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: Verify no network capability
+        run: npm run check:egress

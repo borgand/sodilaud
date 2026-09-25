@@ -1,0 +1,37 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+
+const run = promisify(execFile);
+
+test("the egress gate passes against the repository as checked out", async () => {
+  await run(process.execPath, ["scripts/check-no-egress.mjs"]);
+});
+
+test("the egress gate rejects a reintroduced fetch", async () => {
+  const file = "src/egress-probe.js";
+  await readFile(file).catch(() => null);
+  const { writeFile, rm } = await import("node:fs/promises");
+  await writeFile(file, 'export const probe = () => fetch("http://127.0.0.1/none");\n');
+  try {
+    await assert.rejects(() => run(process.execPath, ["scripts/check-no-egress.mjs"]));
+  } finally {
+    await rm(file, { force: true });
+  }
+});
+
+test("no updater module or update command survives", async () => {
+  const [lib, html, main] = await Promise.all([
+    readFile("src-tauri/src/lib.rs", "utf8"),
+    readFile("src/index.html", "utf8"),
+    readFile("src/main.js", "utf8")
+  ]);
+  for (const source of [lib, html, main]) {
+    assert.doesNotMatch(source, /check_for_updates|get_update_info|open_update_release|createUpdateUi|update-automatic/);
+  }
+  await assert.rejects(() => readFile("src/updates.js", "utf8"));
+  await assert.rejects(() => readFile("src-tauri/src/updates.rs", "utf8"));
+});

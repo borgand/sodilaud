@@ -27,7 +27,6 @@ See [release notes](RELEASE_NOTES.md) for highlights, compatibility details, and
 ## Features
 
 - Optional local MCP agent access with five read tools, eight individually enabled write tools, and a live listening indicator
-- Optional update checks with in-app release notes, separate Beta and Stable channels, and automatic checks off by default
 
 - Multiple scratchpads with automatic saving, titles derived from the first line, and quick creation by double-clicking empty sidebar space
 - Edit, synchronized edit/preview, and full Markdown preview layouts
@@ -57,9 +56,7 @@ Pending workspace changes are flushed before the desktop window closes; if that 
 
 Scratchpad has no analytics, advertising, accounts, or sync service. Markdown is parsed on-device, preview HTML is sanitized, and remote images are blocked so merely previewing a note does not contact an image host. Links in the preview open in your default browser rather than inside the app; following one is an explicit network action and may contact that destination.
 
-Open **Scratchpad menu → About Scratchpad**, then choose **Check for Updates…** to check for a newer version on your installed release channel (Beta or Stable). About shows the installed version, channel, last check time, and any available update; its menu item indicates when an update is available. Choose **Read release notes** to review the changes inside the app before deciding; **Download Update** opens that version’s GitHub release page in your browser. **Later** closes the panel, and **Skip This Version** suppresses background notices for that version. Manual checks still reveal skipped releases. Scratchpad never installs updates automatically.
-
-**Automatically check for updates**, in About, is off by default. Manual checks and enabled automatic checks request the public release manifest at `https://crims0n.github.io/scratchpad/release.json`. GitHub receives normal connection information such as your IP address, but no notes, workspace data, account identifiers, or telemetry. Automatic checks run after a short launch delay and at most once every 24 hours, including failed attempts; background failures do not interrupt editing. The preference, last attempt time, and skipped version are saved locally. Turning the preference off cancels future checks; a request already sent may finish.
+This fork contains no update check and makes no outbound request of any kind: it links no HTTP client, and `npm run check:egress` fails the build if network capability reappears. New versions are published as releases in this repository; download them yourself when you choose to.
 
 The optional [MCP agent access](docs/mcp.md) uses a stdio mode built into the
 desktop executable and is off by default. While enabled, it can read the collection open
