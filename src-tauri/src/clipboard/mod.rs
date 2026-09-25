@@ -8,5 +8,11 @@
 #![allow(dead_code)] // Removed in Task 5 once the runtime uses the module.
 
 pub mod detect;
+pub mod hygiene;
 pub mod service;
 pub mod store;
+
+#[cfg(target_os = "macos")]
+pub mod pasteboard;
+#[cfg(target_os = "macos")]
+pub mod watcher;
