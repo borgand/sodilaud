@@ -66,7 +66,13 @@ pub fn clip_select(window: Window, id: u64) -> Result<bool, ClipError> {
     require_popup(&window)?;
     #[cfg(target_os = "macos")]
     {
-        Ok(window.state::<ClipboardRuntime>().select(id))
+        let runtime = window.state::<ClipboardRuntime>();
+        let picked = runtime.select(id);
+        if picked {
+            runtime.request_paste_on_close();
+            super::popup::close(window.app_handle());
+        }
+        Ok(picked)
     }
     #[cfg(not(target_os = "macos"))]
     {

@@ -31,3 +31,9 @@ test("only the popup page calls popup commands", async () => {
     }
   }
 });
+
+test("popup page keeps values out of storage, logs, and the network", async () => {
+  const source = await readFile("src/clipboard.js", "utf8");
+  assert.doesNotMatch(source, /^\s*import\b/m);
+  assert.doesNotMatch(source, /\b(?:localStorage|sessionStorage|indexedDB|console|fetch|XMLHttpRequest|innerHTML|outerHTML|insertAdjacentHTML)\b/);
+});

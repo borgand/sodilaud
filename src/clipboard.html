@@ -1,0 +1,22 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Clipboard</title>
+  <link rel="stylesheet" href="clipboard.css">
+  <script type="module" src="clipboard.js"></script>
+</head>
+<body>
+  <div class="clip-popup" role="dialog" aria-labelledby="clip-title">
+    <header class="clip-header">
+      <h1 id="clip-title">Clipboard</h1>
+      <span id="clip-ttl" class="clip-ttl"></span>
+      <button type="button" id="clip-close" class="clip-icon" aria-label="Close">×</button>
+    </header>
+    <ol id="clip-list" class="clip-list" role="listbox" aria-label="Clipboard history"></ol>
+    <p id="clip-empty" class="clip-empty" hidden></p>
+    <footer class="clip-footer">1-9,0 paste · ↑↓ Enter · Space reveal · ⌫ delete · Esc close</footer>
+  </div>
+</body>
+</html>

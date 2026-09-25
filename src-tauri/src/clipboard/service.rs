@@ -91,9 +91,7 @@ pub enum ClipError {
     Unsupported,
     Disabled,
     WrongWindow,
-    #[allow(dead_code)] // Used from Task 6.
     HotkeyInvalid,
-    #[allow(dead_code)] // Used from Task 6.
     HotkeyUnavailable,
     #[allow(dead_code)] // Used from Task 7.
     Internal,

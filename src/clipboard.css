@@ -1,0 +1,22 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+
+:root { color-scheme: light dark; --bg: #fbfbfb; --fg: #1d1d1f; --muted: #6e6e73; --line: #e2e2e5; --focus: #dbe7ff; }
+@media (prefers-color-scheme: dark) { :root { --bg: #1e1e20; --fg: #f2f2f5; --muted: #a1a1a6; --line: #333338; --focus: #2c3a55; } }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 13px -apple-system, BlinkMacSystemFont, sans-serif; overflow: hidden; user-select: none; }
+.clip-popup { display: flex; flex-direction: column; height: 100%; }
+.clip-header { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px; border-bottom: 1px solid var(--line); }
+.clip-header h1 { flex: 1; margin: 0; font-size: 13px; font-weight: 600; }
+.clip-ttl, .clip-footer, .clip-time { color: var(--muted); }
+.clip-list { flex: 1; margin: 0; padding: 0; list-style: none; overflow-y: auto; }
+.clip-row { display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 4px 12px; cursor: pointer; }
+.clip-row.clip-focused { background: var(--focus); }
+.clip-row.clip-expiring { opacity: 0.55; }
+.clip-slot { width: 1.2em; color: var(--muted); font-variant-numeric: tabular-nums; }
+.clip-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, Menlo, monospace; }
+.clip-row.clip-revealed .clip-text { white-space: pre-wrap; word-break: break-all; max-height: 5.6em; overflow-y: auto; }
+.clip-extra { color: var(--muted); }
+.clip-icon { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 14px; padding: 2px 4px; }
+.clip-icon:hover { color: var(--fg); }
+.clip-empty { margin: 16px 12px; color: var(--muted); }
+.clip-footer { height: 30px; line-height: 30px; padding: 0 12px; border-top: 1px solid var(--line); font-size: 11px; }

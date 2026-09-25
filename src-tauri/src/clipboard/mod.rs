@@ -9,11 +9,14 @@
 pub mod commands;
 pub mod detect;
 pub mod hygiene;
+pub mod layout;
 pub mod service;
 pub mod store;
 
 #[cfg(target_os = "macos")]
 pub mod pasteboard;
+#[cfg(target_os = "macos")]
+pub mod popup;
 #[cfg(target_os = "macos")]
 pub mod runtime;
 #[cfg(target_os = "macos")]

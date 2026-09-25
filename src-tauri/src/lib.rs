@@ -826,7 +826,9 @@ pub fn run(context: tauri::Context<tauri::Wry>) {
     let builder = builder
         .menu(macos_menu)
         .on_menu_event(handle_macos_menu_event)
-        .manage(clipboard::runtime::ClipboardRuntime::default());
+        .manage(clipboard::runtime::ClipboardRuntime::default())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .on_window_event(clipboard::popup::on_window_event);
 
     builder
         // Only confirm_and_open_url uses the opener, from Rust; the webview has

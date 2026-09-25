@@ -1,12 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, PoisonError};
 
+use objc2_app_kit::{NSApplicationActivationOptions, NSRunningApplication, NSWorkspace};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 use super::hygiene::{disable_core_dumps, now_ms, silence_clipboard_panics};
 use super::pasteboard::MacPasteboard;
+use super::popup;
 use super::service::{ClipConfig, ClipError, ClipListing, Secret, Service};
 use super::watcher::{self, SharedService, Watcher};
 
@@ -26,6 +30,8 @@ pub struct ClipboardRuntime {
     service: SharedService,
     watcher: Mutex<Option<Watcher>>,
     config: Mutex<ClipConfig>,
+    frontmost_pid: Mutex<Option<i32>>,
+    paste_on_close: AtomicBool,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -56,7 +62,7 @@ impl ClipboardRuntime {
             if previous.enabled {
                 unregister_hotkey(app, &previous.hotkey);
             }
-            self.stop();
+            self.stop(app);
         }
 
         *lock(&self.config) = applied.clone();
@@ -90,7 +96,12 @@ impl ClipboardRuntime {
         }
     }
 
-    fn stop(&self) {
+    fn stop(&self, app: &AppHandle) {
+        self.halt();
+        popup::close(app);
+    }
+
+    fn halt(&self) {
         lock(&self.watcher).take();
         lock(&self.service).take();
     }
@@ -127,27 +138,75 @@ impl ClipboardRuntime {
         }
     }
 
-    #[allow(dead_code)] // Used from Task 6 (popup height depends on entry count).
     pub fn len(&self) -> usize {
         lock(&self.service).as_ref().map_or(0, Service::len)
+    }
+
+    pub fn remember_frontmost(&self) {
+        let pid = NSWorkspace::sharedWorkspace()
+            .frontmostApplication()
+            .map(|app| app.processIdentifier());
+        *lock(&self.frontmost_pid) = pid;
+    }
+
+    pub fn restore_frontmost(&self) {
+        let Some(pid) = lock(&self.frontmost_pid).take() else {
+            return;
+        };
+        if let Some(app) = NSRunningApplication::runningApplicationWithProcessIdentifier(pid) {
+            #[allow(deprecated)]
+            app.activateWithOptions(NSApplicationActivationOptions::ActivateIgnoringOtherApps);
+        }
+    }
+
+    pub fn request_paste_on_close(&self) {
+        let wanted = self.config().auto_paste && accessibility_trusted();
+        self.paste_on_close.store(wanted, Ordering::SeqCst);
+    }
+
+    pub fn take_paste_on_close(&self) -> bool {
+        self.paste_on_close.swap(false, Ordering::SeqCst)
     }
 
     /// Called on quit: stop polling, wipe, clear the pasteboard if it holds an entry.
     #[allow(dead_code)] // Used from Task 7 (quit flow).
     pub fn shutdown(&self) {
-        self.stop();
+        self.halt();
     }
 }
 
-// Replaced in Task 6.
-fn register_hotkey(_app: &AppHandle, _hotkey: &str, _old: Option<&str>) -> Result<(), ClipError> {
+fn register_hotkey(app: &AppHandle, hotkey: &str, old: Option<&str>) -> Result<(), ClipError> {
+    let shortcut: Shortcut = hotkey.parse().map_err(|_| ClipError::HotkeyInvalid)?;
+    app.global_shortcut()
+        .on_shortcut(shortcut, |app, _shortcut, event| {
+            if event.state == ShortcutState::Pressed {
+                // Carbon delivers hotkeys on the main run loop today; this keeps
+                // toggle() on the main thread even if that changes (inline if already there).
+                let handle = app.clone();
+                let _ = app.run_on_main_thread(move || popup::toggle(&handle));
+            }
+        })
+        .map_err(|_| ClipError::HotkeyUnavailable)?;
+    if let Some(old) = old.and_then(|old| old.parse::<Shortcut>().ok()) {
+        if old != shortcut {
+            let _ = app.global_shortcut().unregister(old);
+        }
+    }
     Ok(())
 }
 
-// Replaced in Task 6.
-fn unregister_hotkey(_app: &AppHandle, _hotkey: &str) {}
+fn unregister_hotkey(app: &AppHandle, hotkey: &str) {
+    if let Ok(shortcut) = hotkey.parse::<Shortcut>() {
+        let _ = app.global_shortcut().unregister(shortcut);
+    }
+}
 
-// Replaced in Task 6.
-fn accessibility_trusted() -> bool {
-    false
+#[link(name = "ApplicationServices", kind = "framework")]
+extern "C" {
+    fn AXIsProcessTrusted() -> bool;
+}
+
+pub fn accessibility_trusted() -> bool {
+    // SAFETY: AXIsProcessTrusted takes no arguments and only reads process state.
+    unsafe { AXIsProcessTrusted() }
 }
