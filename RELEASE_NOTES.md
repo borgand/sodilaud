@@ -2,6 +2,19 @@
 
 This is the first security-hardened release of the sodilaud fork. It removes every outbound network path and tightens what the app window is allowed to do.
 
+## Unreleased: Clipboard history (macOS)
+
+- An optional, off-by-default clipboard history: press `⌘⇧V` to open a popup listing your
+  recent copies and pick one back onto the clipboard, or paste it automatically.
+- Entries live only in memory, expire after a configurable time, and are wiped on quit; the
+  history and its settings never touch disk, the workspace database, or the network.
+- Secret-shaped values, such as tokens, JWTs, and credentials in URLs, are masked in the
+  popup until you reveal them.
+- Sodilaud stays in the menu bar with a tray icon and menu (Show, Clipboard History…, Clear,
+  Quit) while the app is open; closing the window hides the Dock icon instead of quitting.
+- Clipboard history is macOS only and is never part of the MCP snapshot sent to agents. See
+  [clipboard history](docs/clipboard-history.md) for the full write-up.
+
 ## Highlights
 
 - No network access: the update check and its HTTP client are gone, and CI fails if network capability comes back.

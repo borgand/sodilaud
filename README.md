@@ -45,6 +45,7 @@ See [release notes](RELEASE_NOTES.md) for highlights, compatibility details, and
 - Built-in and importable color themes with contrast-aware sidebar and active-note tones
 - Persistent editor zoom and adjustable editor line spacing
 - A sectioned Sodilaud menu, About panel, keyboard shortcut reference, and Markdown cheatsheet
+- Optional macOS clipboard history: in-memory only, expiring entries, secret masking, and a hotkey popup
 
 ## Storage and privacy
 
@@ -71,6 +72,12 @@ checks and support safe retries. A connected agent
 may send returned note contents to its model provider.
 
 Back up important workspace files like any other local document. Local-only notes remain tied to the app data stored by the operating system and may be lost if that data is cleared.
+
+On macOS, an optional clipboard history feature keeps recent copies in Rust process memory
+only. Entries are never written to disk, workspace files, local storage, or sent to
+agents; they expire automatically and are wiped on quit. See
+[clipboard history](docs/clipboard-history.md) for the settings, privacy guarantees, and a
+manual test checklist.
 
 ## Agent access (MCP)
 
@@ -100,6 +107,7 @@ The app displays `Cmd` on macOS and `Ctrl` on Windows or Linux.
 | Shortcut | Action |
 | --- | --- |
 | `Cmd/Ctrl + N` | Create a scratchpad |
+| `⌘⇧V` (macOS, configurable) | Open the clipboard history popup |
 | `Cmd/Ctrl + B` | Toggle the sidebar |
 | `Cmd/Ctrl + \` | Toggle two-note side-by-side editing |
 | `Alt + ↑` / `Alt + ↓` | Move a list branch, or the active sidebar note outside a list |

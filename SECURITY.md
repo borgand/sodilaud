@@ -29,6 +29,31 @@ Do not enable agent access on a machine you do not control, and do not store cli
 secrets in a collection you expose to agents. A Unix socket with a peer-UID check is the
 planned fix.
 
+## Clipboard history
+
+Clipboard history is optional, off by default, and macOS only. It is not compiled into
+Windows or Linux builds. Enabled, it captures every text copy into Rust process memory and
+never writes it to disk, the workspace database, logs, or the network.
+
+Trust boundary: only the clipboard popup window can list, reveal, select, or delete
+entries. The main Sodilaud window can only turn the feature on or off and change its
+settings; it has no permission to read entry contents. Clipboard history is never exposed
+to MCP: the clipboard module is not referenced by the MCP server, so no entry can reach an
+agent or its model provider.
+
+Known residue that cannot be wiped: the `NSString` AppKit hands back when reading the
+pasteboard, Tauri's IPC buffers for the popup's list and reveal responses, and the popup's
+JS heap until that window is destroyed. History is wiped on expiry, deletion, disable, and
+quit; quitting from the tray or `⌘Q` flushes pending note saves first, the same as closing
+the main window today, and a failed flush cancels the quit rather than losing data.
+
+Turning on auto-paste (paste automatically after picking an entry) requires granting
+Sodilaud Accessibility permission in System Settings. That permission lets Sodilaud send
+synthetic keystrokes to the frontmost app; Sodilaud uses it only to post `⌘V` after a pick,
+and only into the app that was frontmost when the popup opened, never into itself. See
+[clipboard history](docs/clipboard-history.md) for the full privacy guarantees and a manual
+test checklist.
+
 ## Network access
 
 This fork ships no HTTP client and makes no outbound request: there is no update check,
