@@ -110,20 +110,20 @@ impl ClipboardRuntime {
     pub fn listing(&self) -> ClipListing {
         let ttl_minutes = self.config().ttl_minutes;
         let items = lock(&self.service)
-            .as_ref()
+            .as_mut()
             .map(|service| service.list(now_ms()))
             .unwrap_or_default();
         ClipListing { ttl_minutes, items }
     }
 
     pub fn reveal(&self, id: u64) -> Option<Secret> {
-        lock(&self.service).as_ref()?.reveal(id)
+        lock(&self.service).as_mut()?.reveal(id, now_ms())
     }
 
     pub fn select(&self, id: u64) -> bool {
         lock(&self.service)
             .as_mut()
-            .is_some_and(|service| service.select(id))
+            .is_some_and(|service| service.select(id, now_ms()))
     }
 
     pub fn delete(&self, id: u64) -> bool {

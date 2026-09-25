@@ -51,7 +51,7 @@ pub fn classify(value: &str) -> Mask {
         return Mask::Full { prefix: 0 };
     }
     if trimmed.lines().count() > 1 {
-        return Mask::None;
+        return classify_lines(value);
     }
     if let Some((start, end)) = url_password(value).or_else(|| secret_assignment(value)) {
         return Mask::Partial { start, end };
@@ -60,6 +60,35 @@ pub fn classify(value: &str) -> Mask {
         return Mask::Full { prefix: 0 };
     }
     Mask::None
+}
+
+/// The preview shows only the first line, so that line gets the single-line
+/// partial mask; a secret-named assignment further down masks everything.
+fn classify_lines(value: &str) -> Mask {
+    let mut offset = 0;
+    let mut first = None;
+    for line in value.split_inclusive('\n') {
+        let line_start = offset;
+        offset += line.len();
+        if line.trim().is_empty() {
+            continue;
+        }
+        if first.is_none() {
+            first = Some((line_start, line));
+        } else if secret_assignment(line).is_some() {
+            return Mask::Full { prefix: 0 };
+        }
+    }
+    let Some((line_start, line)) = first else {
+        return Mask::None;
+    };
+    match url_password(line).or_else(|| secret_assignment(line)) {
+        Some((start, end)) => Mask::Partial {
+            start: line_start + start,
+            end: line_start + end,
+        },
+        None => Mask::None,
+    }
 }
 
 pub fn hint(value: &str, mask: &Mask) -> Option<String> {
@@ -88,7 +117,11 @@ pub fn preview(value: &str, max_chars: usize) -> (String, usize) {
     let mut lines = trimmed.lines();
     let first = lines.next().unwrap_or("").trim();
     let extra = lines.count();
-    let display: String = first.chars().map(display_char).collect();
+    let display: String = first
+        .chars()
+        .take(max_chars + 1)
+        .map(display_char)
+        .collect();
     if display.chars().count() <= max_chars {
         return (display, extra);
     }
@@ -160,8 +193,11 @@ fn url_password(value: &str) -> Option<(usize, usize)> {
 
 fn secret_assignment(value: &str) -> Option<(usize, usize)> {
     let separator = value.find(['=', ':'])?;
-    let name = value[..separator].trim();
+    let name = value[..separator]
+        .trim_start_matches(|c: char| matches!(c, '{' | ',') || c.is_whitespace());
+    let name = name.trim();
     let name = name.strip_prefix("export ").unwrap_or(name).trim();
+    let name = strip_quotes(name);
     if name.is_empty()
         || !name
             .chars()
@@ -177,11 +213,29 @@ fn secret_assignment(value: &str) -> Option<(usize, usize)> {
     let mut start = separator + 1 + (after.len() - after.trim_start().len());
     let mut end = value.trim_end().len();
     let bytes = value.as_bytes();
-    if end >= start + 2 && matches!(bytes[start], b'"' | b'\'') && bytes[end - 1] == bytes[start] {
+    let quoted_end = value
+        .trim_end_matches(|c: char| matches!(c, ',' | '}') || c.is_whitespace())
+        .len();
+    if quoted_end >= start + 2
+        && matches!(bytes[start], b'"' | b'\'')
+        && bytes[quoted_end - 1] == bytes[start]
+    {
         start += 1;
-        end -= 1;
+        end = quoted_end - 1;
     }
     (end > start).then_some((start, end))
+}
+
+fn strip_quotes(name: &str) -> &str {
+    for quote in ['"', '\''] {
+        if let Some(inner) = name
+            .strip_prefix(quote)
+            .and_then(|rest| rest.strip_suffix(quote))
+        {
+            return inner;
+        }
+    }
+    name
 }
 
 fn looks_random(value: &str) -> bool {
@@ -344,6 +398,42 @@ mod tests {
         assert_eq!(classify("API_KEY="), Mask::None);
     }
 
+    fn partial(value: &str) -> &str {
+        let Mask::Partial { start, end } = classify(value) else {
+            panic!("expected partial: {value:?}")
+        };
+        &value[start..end]
+    }
+
+    #[test]
+    fn env_block_masks_the_visible_first_line() {
+        let value = "DB_PASSWORD=hunter2hunter\nDB_HOST=localhost\nDB_PORT=5432\n";
+        assert_eq!(partial(value), "hunter2hunter");
+        let url = "\n  postgres://app:s3cr3tpw@db/main\nsecond line";
+        assert_eq!(partial(url), "s3cr3tpw");
+    }
+
+    #[test]
+    fn env_block_with_a_later_secret_is_fully_masked() {
+        assert_eq!(
+            classify("DB_HOST=localhost\nDB_PORT=5432\nDB_PASSWORD=hunter2hunter"),
+            Mask::Full { prefix: 0 }
+        );
+    }
+
+    #[test]
+    fn json_style_assignments_mask_only_the_value() {
+        assert_eq!(partial(r#"{"password": "x"}"#), "x");
+        assert_eq!(partial(r#""api_key": "abc","#), "abc");
+        assert_eq!(partial(r#"  , "token":"t0k3n" }"#), "t0k3n");
+    }
+
+    #[test]
+    fn ordinary_multi_line_text_stays_visible() {
+        assert_eq!(classify("hello\nworld"), Mask::None);
+        assert_eq!(classify("fn main() {\n    run();\n}"), Mask::None);
+    }
+
     #[test]
     fn random_looking_values_are_masked() {
         for value in [
@@ -434,6 +524,9 @@ mod tests {
         assert_eq!((text.chars().count(), extra), (50, 0));
         assert!(text.ends_with('…'));
         assert_eq!(preview("  \n  padded  \n", 50), ("padded".to_string(), 0));
+        let (text, extra) = preview(&format!("{}\nsecond", "y".repeat(65_536)), 50);
+        assert_eq!((text.chars().count(), extra), (50, 1));
+        assert_eq!(preview(&"z".repeat(50), 50).0, "z".repeat(50));
     }
 
     #[test]

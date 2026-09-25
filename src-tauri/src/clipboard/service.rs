@@ -53,10 +53,10 @@ impl ClipConfig {
         Self {
             capacity: self.capacity.clamp(MIN_CAPACITY, MAX_CAPACITY),
             ttl_minutes: self.ttl_minutes.clamp(MIN_TTL_MINUTES, MAX_TTL_MINUTES),
-            hotkey: if hotkey.is_empty() {
-                DEFAULT_HOTKEY.to_string()
-            } else {
+            hotkey: if is_valid_hotkey(&hotkey) {
                 hotkey
+            } else {
+                DEFAULT_HOTKEY.to_string()
             },
             ..self
         }
@@ -65,6 +65,49 @@ impl ClipConfig {
     pub fn ttl_ms(&self) -> u64 {
         self.ttl_minutes * 60_000
     }
+}
+
+const HOTKEY_MODIFIERS: &[&str] = &["super", "ctrl", "alt", "shift"];
+const HOTKEY_NAMED_KEYS: &[&str] = &[
+    "Space",
+    "Backquote",
+    "Minus",
+    "Equal",
+    "BracketLeft",
+    "BracketRight",
+    "Semicolon",
+    "Quote",
+    "Comma",
+    "Period",
+    "Slash",
+    "Backslash",
+];
+
+/// Mirrors isValidAccelerator in src/clipboard-settings.js.
+fn is_valid_hotkey(hotkey: &str) -> bool {
+    let mut parts: Vec<&str> = hotkey.split('+').collect();
+    let Some(code) = parts.pop() else {
+        return false;
+    };
+    !parts.is_empty()
+        && parts.iter().all(|part| HOTKEY_MODIFIERS.contains(part))
+        && parts.iter().any(|part| *part != "shift")
+        && is_hotkey_code(code)
+}
+
+fn is_hotkey_code(code: &str) -> bool {
+    let single =
+        |rest: &str, valid: fn(&u8) -> bool| rest.len() == 1 && rest.as_bytes().iter().all(valid);
+    if let Some(rest) = code.strip_prefix("Key") {
+        return single(rest, u8::is_ascii_uppercase);
+    }
+    if let Some(rest) = code.strip_prefix("Digit") {
+        return single(rest, u8::is_ascii_digit);
+    }
+    if let Some(rest) = code.strip_prefix('F') {
+        return matches!(rest.parse::<u8>(), Ok(1..=12)) && !rest.starts_with('0');
+    }
+    HOTKEY_NAMED_KEYS.contains(&code)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -129,19 +172,25 @@ impl<P: Pasteboard> Service<P> {
                 }
             }
         }
+        self.reap(now_ms);
+    }
+
+    fn reap(&mut self, now_ms: u64) {
         let expired = self.history.reap_expired(now_ms);
         self.discard(expired);
     }
 
-    pub fn list(&self, now_ms: u64) -> Vec<ListItem> {
+    pub fn list(&mut self, now_ms: u64) -> Vec<ListItem> {
+        self.reap(now_ms);
         self.history
             .entries()
             .map(|entry| {
                 let value = entry.value.as_str();
                 let mask = classify(value);
-                let (text, extra_lines) = match hint(value, &mask) {
-                    Some(shown) => (preview(&shown, PREVIEW_CHARS).0, 0),
-                    None => preview(value, PREVIEW_CHARS),
+                let (text, extra_lines) = match (hint(value, &mask), &mask) {
+                    (Some(shown), Mask::Partial { .. }) => preview(&shown, PREVIEW_CHARS),
+                    (Some(shown), _) => (preview(&shown, PREVIEW_CHARS).0, 0),
+                    (None, _) => preview(value, PREVIEW_CHARS),
                 };
                 ListItem {
                     id: entry.id,
@@ -154,13 +203,15 @@ impl<P: Pasteboard> Service<P> {
             .collect()
     }
 
-    pub fn reveal(&self, id: u64) -> Option<Secret> {
+    pub fn reveal(&mut self, id: u64, now_ms: u64) -> Option<Secret> {
+        self.reap(now_ms);
         self.history
             .get(id)
             .map(|entry| Zeroizing::new(entry.value.as_str().to_owned()))
     }
 
-    pub fn select(&mut self, id: u64) -> bool {
+    pub fn select(&mut self, id: u64, now_ms: u64) -> bool {
+        self.reap(now_ms);
         let Some(entry) = self.history.get(id) else {
             return false;
         };
@@ -182,8 +233,7 @@ impl<P: Pasteboard> Service<P> {
     pub fn set_limits(&mut self, capacity: usize, ttl_ms: u64, now_ms: u64) {
         let evicted = self.history.set_limits(capacity, ttl_ms);
         self.discard(evicted);
-        let expired = self.history.reap_expired(now_ms);
-        self.discard(expired);
+        self.reap(now_ms);
     }
 
     pub fn wipe(&mut self) {
@@ -267,7 +317,7 @@ mod tests {
         Service::new(fake.clone(), capacity, TTL)
     }
 
-    fn texts(service: &Service<Fake>) -> Vec<String> {
+    fn texts(service: &mut Service<Fake>) -> Vec<String> {
         service.list(0).into_iter().map(|item| item.text).collect()
     }
 
@@ -278,7 +328,7 @@ mod tests {
         fake.copy("repo-name");
         service.poll(0);
         service.poll(1);
-        assert_eq!(texts(&service), ["repo-name"]);
+        assert_eq!(texts(&mut service), ["repo-name"]);
     }
 
     #[test]
@@ -313,9 +363,9 @@ mod tests {
         fake.copy("b");
         service.poll(0);
         let id = service.list(0).last().unwrap().id;
-        assert!(service.select(id));
+        assert!(service.select(id, 0));
         service.poll(0);
-        assert_eq!(texts(&service), ["b", "a"]);
+        assert_eq!(texts(&mut service), ["b", "a"]);
         assert_eq!(fake.current().as_deref(), Some("a"));
     }
 
@@ -328,7 +378,7 @@ mod tests {
         fake.copy("new");
         service.poll(30_000);
         service.poll(TTL);
-        assert_eq!(texts(&service), ["new"]);
+        assert_eq!(texts(&mut service), ["new"]);
         assert!(fake.0.clears.borrow().is_empty());
         service.poll(30_000 + TTL);
         assert_eq!(service.len(), 0);
@@ -346,7 +396,7 @@ mod tests {
         service.poll(0);
         fake.copy("a");
         service.poll(0);
-        assert_eq!(texts(&service), ["a", "b"]);
+        assert_eq!(texts(&mut service), ["a", "b"]);
         assert_eq!(fake.current().as_deref(), Some("a"));
         assert!(fake.0.clears.borrow().is_empty());
     }
@@ -368,9 +418,44 @@ mod tests {
     fn unknown_ids_are_no_ops() {
         let fake = Fake::default();
         let mut service = service_with(&fake, 10);
-        assert!(!service.select(42));
-        assert!(service.reveal(42).is_none());
+        assert!(!service.select(42, 0));
+        assert!(service.reveal(42, 0).is_none());
         assert!(fake.0.writes.borrow().is_empty());
+    }
+
+    fn expired_entry(fake: &Fake) -> (Service<Fake>, u64) {
+        let mut service = service_with(fake, 10);
+        fake.copy("expiring-value");
+        service.poll(0);
+        let id = service.list(0)[0].id;
+        (service, id)
+    }
+
+    #[test]
+    fn select_after_ttl_writes_nothing() {
+        let fake = Fake::default();
+        let (mut service, id) = expired_entry(&fake);
+        fake.copy("something-else");
+        assert!(!service.select(id, TTL));
+        assert!(fake.0.writes.borrow().is_empty());
+        assert_eq!(fake.current().as_deref(), Some("something-else"));
+    }
+
+    #[test]
+    fn reveal_after_ttl_returns_nothing() {
+        let fake = Fake::default();
+        let (mut service, id) = expired_entry(&fake);
+        assert!(service.reveal(id, TTL).is_none());
+        assert_eq!(service.len(), 0);
+    }
+
+    #[test]
+    fn list_after_ttl_omits_the_entry_and_clears_the_pasteboard() {
+        let fake = Fake::default();
+        let (mut service, _) = expired_entry(&fake);
+        assert!(service.list(TTL).is_empty());
+        assert_eq!(fake.current(), None);
+        assert_eq!(*fake.0.clears.borrow(), ["expiring-value"]);
     }
 
     #[test]
@@ -388,9 +473,24 @@ mod tests {
         assert_eq!(items[1].text, "sodilaud-infra");
         assert!(!items[1].masked);
         assert_eq!(
-            service.reveal(items[0].id).as_deref().map(String::as_str),
+            service
+                .reveal(items[0].id, 31_000)
+                .as_deref()
+                .map(String::as_str),
             Some("ghp_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8")
         );
+    }
+
+    #[test]
+    fn env_block_lists_its_masked_first_line_and_extra_lines() {
+        let fake = Fake::default();
+        let mut service = service_with(&fake, 10);
+        fake.copy("DB_PASSWORD=hunter2hunter\nDB_HOST=localhost\nDB_PORT=5432\n");
+        service.poll(0);
+        let item = &service.list(0)[0];
+        assert_eq!(item.text, "DB_PASSWORD=••••");
+        assert!(item.masked);
+        assert_eq!(item.extra_lines, 2);
     }
 
     #[test]
@@ -402,7 +502,7 @@ mod tests {
         fake.copy("b");
         service.poll(0);
         service.set_limits(1, 1_000, 500);
-        assert_eq!(texts(&service), ["b"]);
+        assert_eq!(texts(&mut service), ["b"]);
         service.set_limits(1, 100, 500);
         assert_eq!(service.len(), 0);
         assert_eq!(*fake.0.clears.borrow(), ["b"]);
@@ -449,6 +549,40 @@ mod tests {
     }
 
     #[test]
+    fn config_rejects_hotkeys_the_settings_ui_would_reject() {
+        let hotkey = |value: &str| {
+            ClipConfig {
+                hotkey: value.into(),
+                ..ClipConfig::default()
+            }
+            .normalized()
+            .hotkey
+        };
+        for invalid in [
+            "KeyV",
+            "shift+KeyV",
+            "super+KeyV+KeyB",
+            "meta+KeyV",
+            "super+",
+            "super+F13",
+            "super+super",
+            "super+Enter",
+        ] {
+            assert_eq!(hotkey(invalid), DEFAULT_HOTKEY, "{invalid}");
+        }
+        for valid in [
+            "super+shift+KeyV",
+            "ctrl+alt+Digit1",
+            "super+F5",
+            "alt+F12",
+            "ctrl+Backslash",
+            "super+Space",
+        ] {
+            assert_eq!(hotkey(valid), valid);
+        }
+    }
+
+    #[test]
     fn config_deserializes_camel_case() {
         let config: ClipConfig = serde_json::from_str(
             r#"{"enabled":true,"capacity":5,"ttlMinutes":3,"hotkey":"super+shift+KeyV","autoPaste":true}"#,
@@ -458,6 +592,12 @@ mod tests {
             (config.capacity, config.ttl_minutes, config.auto_paste),
             (5, 3, true)
         );
+    }
+
+    #[test]
+    fn revealed_secrets_serialize_as_plain_strings() {
+        let secret: Secret = Zeroizing::new("s3cr3t".to_string());
+        assert_eq!(serde_json::to_string(&secret).unwrap(), "\"s3cr3t\"");
     }
 
     #[test]

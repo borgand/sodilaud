@@ -8,7 +8,7 @@ use tauri::{AppHandle, Window};
 #[cfg(target_os = "macos")]
 use tauri::Manager;
 
-use super::service::{ClipConfig, ClipError, ClipListing};
+use super::service::{ClipConfig, ClipError, ClipListing, Secret};
 
 pub const POPUP_LABEL: &str = "clipboard";
 
@@ -44,14 +44,14 @@ pub fn clip_list(window: Window) -> Result<ClipListing, ClipError> {
 }
 
 #[tauri::command]
-pub fn clip_reveal(window: Window, id: u64) -> Result<String, ClipError> {
+/// Returns the entry's own zeroizing copy, so nothing outlives serialization here.
+pub fn clip_reveal(window: Window, id: u64) -> Result<Secret, ClipError> {
     require_popup(&window)?;
     #[cfg(target_os = "macos")]
     {
         window
             .state::<ClipboardRuntime>()
             .reveal(id)
-            .map(|secret| secret.as_str().to_owned())
             .ok_or(ClipError::Disabled)
     }
     #[cfg(not(target_os = "macos"))]

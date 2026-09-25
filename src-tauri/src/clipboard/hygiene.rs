@@ -4,7 +4,8 @@
 /// from this module must not reach the default hook, which prints to stderr.
 pub fn is_clipboard_location(file: &str) -> bool {
     let normalized = file.replace('\\', "/");
-    normalized.contains("src/clipboard/")
+    let absolute = concat!(env!("CARGO_MANIFEST_DIR"), "/src/clipboard/").replace('\\', "/");
+    normalized.starts_with("src/clipboard/") || normalized.starts_with(&absolute)
 }
 
 #[cfg(target_os = "macos")]
@@ -76,6 +77,13 @@ mod tests {
         assert!(!is_clipboard_location(
             "/Users/x/.cargo/registry/src/tauri/lib.rs"
         ));
+        assert!(!is_clipboard_location(
+            "/Users/x/.cargo/registry/src/foo/src/clipboard/lib.rs"
+        ));
+        assert!(is_clipboard_location(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/clipboard/detect.rs"
+        )));
     }
 
     #[cfg(target_os = "macos")]
