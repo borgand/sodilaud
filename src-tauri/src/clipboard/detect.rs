@@ -1,0 +1,463 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+pub const PREVIEW_CHARS: usize = 50;
+const DOTS: &str = "••••";
+const SHORT_SECRET_CHARS: usize = 12;
+const SECRET_NAMES: &[&str] = &["KEY", "TOKEN", "SECRET", "PASS", "PWD", "AUTH"];
+const KNOWN_PREFIXES: &[(&str, usize)] = &[
+    ("github_pat_", 40),
+    ("ghp_", 20),
+    ("gho_", 20),
+    ("ghu_", 20),
+    ("ghs_", 20),
+    ("ghr_", 20),
+    ("glpat-", 20),
+    ("sk-ant-", 20),
+    ("sk-proj-", 20),
+    ("sk-", 20),
+    ("xoxa-", 15),
+    ("xoxb-", 15),
+    ("xoxp-", 15),
+    ("xoxr-", 15),
+    ("xoxs-", 15),
+    ("AIza", 30),
+    ("npm_", 30),
+    ("pypi-", 30),
+    ("hvs.", 20),
+    ("dop_v1_", 40),
+    ("SG.", 30),
+];
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Mask {
+    None,
+    Full { prefix: usize },
+    Partial { start: usize, end: usize },
+}
+
+pub fn classify(value: &str) -> Mask {
+    if value.contains("-----BEGIN") && value.contains("PRIVATE KEY-----") {
+        return Mask::Full { prefix: 0 };
+    }
+    let trimmed = value.trim();
+    if let Some(prefix) = known_token(trimmed) {
+        return Mask::Full { prefix };
+    }
+    let embedded = value
+        .split_whitespace()
+        .map(|word| word.trim_matches(|c| matches!(c, '"' | '\'' | ',' | ';')))
+        .any(|word| known_token(word).is_some());
+    if embedded {
+        return Mask::Full { prefix: 0 };
+    }
+    if trimmed.lines().count() > 1 {
+        return Mask::None;
+    }
+    if let Some((start, end)) = url_password(value).or_else(|| secret_assignment(value)) {
+        return Mask::Partial { start, end };
+    }
+    if looks_random(trimmed) {
+        return Mask::Full { prefix: 0 };
+    }
+    Mask::None
+}
+
+pub fn hint(value: &str, mask: &Mask) -> Option<String> {
+    match *mask {
+        Mask::None => None,
+        Mask::Full { prefix } => {
+            let secret = value.trim();
+            let count = secret.chars().count();
+            if count < SHORT_SECRET_CHARS {
+                return Some(format!("•••••••• ({count})"));
+            }
+            let tail: String = secret.chars().skip(count - 4).collect();
+            let head = secret.get(..prefix).unwrap_or("");
+            Some(format!("{head}{DOTS}{tail} ({count})"))
+        }
+        Mask::Partial { start, end } => Some(format!(
+            "{}{DOTS}{}",
+            value.get(..start).unwrap_or(""),
+            value.get(end..).unwrap_or("")
+        )),
+    }
+}
+
+pub fn preview(value: &str, max_chars: usize) -> (String, usize) {
+    let trimmed = value.trim();
+    let mut lines = trimmed.lines();
+    let first = lines.next().unwrap_or("").trim();
+    let extra = lines.count();
+    let display: String = first.chars().map(display_char).collect();
+    if display.chars().count() <= max_chars {
+        return (display, extra);
+    }
+    let mut cut: String = display.chars().take(max_chars.saturating_sub(1)).collect();
+    cut.push('…');
+    (cut, extra)
+}
+
+fn display_char(c: char) -> char {
+    match c {
+        '\t' => '⇥',
+        '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}' | '\u{200E}' | '\u{200F}' => '�',
+        c if c.is_control() => '�',
+        c => c,
+    }
+}
+
+fn known_token(word: &str) -> Option<usize> {
+    let body_ok = |body: &str| {
+        !body.is_empty()
+            && body
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+    };
+    for (prefix, min_len) in KNOWN_PREFIXES {
+        if let Some(body) = word.strip_prefix(prefix) {
+            if word.len() >= *min_len && body_ok(body) {
+                return Some(prefix.len());
+            }
+        }
+    }
+    if (word.starts_with("AKIA") || word.starts_with("ASIA"))
+        && word.len() == 20
+        && word
+            .chars()
+            .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
+    {
+        return Some(4);
+    }
+    let segments: Vec<&str> = word.split('.').collect();
+    let base64url = |s: &str| {
+        !s.is_empty()
+            && s.chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '='))
+    };
+    if word.starts_with("eyJ")
+        && word.len() >= 30
+        && segments.len() == 3
+        && segments.iter().all(|s| base64url(s))
+    {
+        return Some(3);
+    }
+    None
+}
+
+fn url_password(value: &str) -> Option<(usize, usize)> {
+    let scheme_end = value.find("://")? + 3;
+    let rest = &value[scheme_end..];
+    let authority_len = rest
+        .find(|c: char| matches!(c, '/' | '?' | '#') || c.is_whitespace())
+        .unwrap_or(rest.len());
+    let authority = &rest[..authority_len];
+    let at = authority.rfind('@')?;
+    let colon = authority[..at].find(':')?;
+    let start = scheme_end + colon + 1;
+    let end = scheme_end + at;
+    (end > start).then_some((start, end))
+}
+
+fn secret_assignment(value: &str) -> Option<(usize, usize)> {
+    let separator = value.find(['=', ':'])?;
+    let name = value[..separator].trim();
+    let name = name.strip_prefix("export ").unwrap_or(name).trim();
+    if name.is_empty()
+        || !name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
+    {
+        return None;
+    }
+    let upper = name.to_ascii_uppercase();
+    if !SECRET_NAMES.iter().any(|secret| upper.contains(secret)) {
+        return None;
+    }
+    let after = &value[separator + 1..];
+    let mut start = separator + 1 + (after.len() - after.trim_start().len());
+    let mut end = value.trim_end().len();
+    let bytes = value.as_bytes();
+    if end >= start + 2 && matches!(bytes[start], b'"' | b'\'') && bytes[end - 1] == bytes[start] {
+        start += 1;
+        end -= 1;
+    }
+    (end > start).then_some((start, end))
+}
+
+fn looks_random(value: &str) -> bool {
+    if value.is_empty() || value.chars().any(char::is_whitespace) {
+        return false;
+    }
+    if value.contains("://") || is_email(value) || is_identifier_like(value) {
+        return false;
+    }
+    // `NAME=value` with a harmless name was already judged by secret_assignment.
+    if let Some((name, _)) = value.split_once('=') {
+        if !name.is_empty() && is_identifier_like(name) {
+            return false;
+        }
+    }
+    let length = value.chars().count();
+    if length >= 16 {
+        let hex_like = value.chars().any(|c| c.is_ascii_digit())
+            && value.chars().all(|c| c.is_ascii_hexdigit() || c == '-');
+        return hex_like || shannon_entropy(value) >= 3.5;
+    }
+    length >= 8 && character_classes(value) >= 3
+}
+
+fn is_email(value: &str) -> bool {
+    let mut parts = value.split('@');
+    match (parts.next(), parts.next(), parts.next()) {
+        (Some(local), Some(domain), None) => {
+            !local.is_empty() && domain.contains('.') && !domain.starts_with('.')
+        }
+        _ => false,
+    }
+}
+
+fn is_identifier_like(value: &str) -> bool {
+    value
+        .split(['-', '_', '.', '/'])
+        .filter(|piece| !piece.is_empty())
+        .all(|piece| {
+            piece.chars().all(char::is_alphabetic) || piece.chars().all(|c| c.is_ascii_digit())
+        })
+}
+
+fn character_classes(value: &str) -> usize {
+    let lower = value.chars().any(|c| c.is_lowercase());
+    let upper = value.chars().any(|c| c.is_uppercase());
+    let digit = value.chars().any(|c| c.is_ascii_digit());
+    let symbol = value.chars().any(|c| !c.is_alphanumeric());
+    [lower, upper, digit, symbol]
+        .into_iter()
+        .filter(|x| *x)
+        .count()
+}
+
+fn shannon_entropy(value: &str) -> f64 {
+    let mut counts = std::collections::HashMap::new();
+    let mut total = 0.0;
+    for c in value.chars() {
+        *counts.entry(c).or_insert(0.0) += 1.0;
+        total += 1.0;
+    }
+    counts
+        .values()
+        .map(|count: &f64| {
+            let p = count / total;
+            -p * p.log2()
+        })
+        .sum()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn masked(value: &str) -> bool {
+        classify(value) != Mask::None
+    }
+
+    #[test]
+    fn known_tokens_are_fully_masked_with_their_prefix() {
+        let cases = [
+            ("ghp_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8", "ghp_"),
+            (
+                "github_pat_11ABCDEFG0123456789_abcdefghijklmnopqrstuvwxyz",
+                "github_pat_",
+            ),
+            ("glpat-abcdefghijklmnopqrst", "glpat-"),
+            ("sk-ant-api03-abcdefghijklmnopqrstuv", "sk-ant-"),
+            ("sk-proj-abcdefghijklmnopqrstuv", "sk-proj-"),
+            ("sk-abcdefghijklmnopqrstuvwx", "sk-"),
+            ("xoxb-123456789012-abcdefghij", "xoxb-"),
+            ("AKIAIOSFODNN7EXAMPLE", "AKIA"),
+            ("ASIAIOSFODNN7EXAMPLE", "ASIA"),
+            ("AIzaSyA1234567890abcdefghijklmnopqrs", "AIza"),
+            ("npm_abcdefghijklmnopqrstuvwxyz0123456789", "npm_"),
+            ("hvs.CAESIabcdefghijklmnop", "hvs."),
+        ];
+        for (value, prefix) in cases {
+            assert_eq!(
+                classify(value),
+                Mask::Full {
+                    prefix: prefix.len()
+                },
+                "{value}"
+            );
+        }
+    }
+
+    #[test]
+    fn jwt_and_private_keys_are_masked() {
+        assert!(masked("eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U"));
+        assert_eq!(
+            classify("-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAA\n-----END OPENSSH PRIVATE KEY-----\n"),
+            Mask::Full { prefix: 0 }
+        );
+    }
+
+    #[test]
+    fn token_inside_text_masks_the_whole_entry() {
+        assert_eq!(
+            classify("curl -H \"Authorization: Bearer ghp_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8\""),
+            Mask::Full { prefix: 0 }
+        );
+    }
+
+    #[test]
+    fn near_misses_are_not_known_tokens() {
+        assert_eq!(classify("ghp"), Mask::None);
+        assert_eq!(classify("sk-learn"), Mask::None);
+        assert_eq!(classify("AKIA-docs"), Mask::None);
+    }
+
+    #[test]
+    fn url_credentials_mask_only_the_password() {
+        let value = "postgres://app:s3cr3tpw@db.internal:5432/main";
+        let Mask::Partial { start, end } = classify(value) else {
+            panic!("expected partial")
+        };
+        assert_eq!(&value[start..end], "s3cr3tpw");
+        assert_eq!(classify("https://example.com/path?q=1"), Mask::None);
+        assert_eq!(classify("https://user@example.com/"), Mask::None);
+    }
+
+    #[test]
+    fn secret_named_assignments_mask_only_the_value() {
+        let cases = [
+            ("API_KEY=abc123def", "abc123def"),
+            ("export GH_TOKEN=\"tok_value_1\"", "tok_value_1"),
+            ("password: hunter2", "hunter2"),
+            ("DB_PASSWORD='x y z'", "x y z"),
+            ("Authorization: Bearer abc", "Bearer abc"),
+        ];
+        for (value, secret) in cases {
+            let Mask::Partial { start, end } = classify(value) else {
+                panic!("{value}")
+            };
+            assert_eq!(&value[start..end], secret, "{value}");
+        }
+        assert_eq!(classify("LOG_LEVEL=debug"), Mask::None);
+        assert_eq!(classify("API_KEY="), Mask::None);
+    }
+
+    #[test]
+    fn random_looking_values_are_masked() {
+        for value in [
+            "550e8400-e29b-41d4-a716-446655440000",
+            "9f86d081884c7d659a2feaa0c55ad015",
+            "dGhpcyBpcyBhIHNlY3JldCB2YWx1ZQ==",
+            "Zq8vR2mXw4LpT9sKj3Nb",
+            "Hunter2!x",
+            "Tr0ub4dor&3",
+        ] {
+            assert!(masked(value), "{value}");
+        }
+    }
+
+    #[test]
+    fn ordinary_values_stay_visible() {
+        for value in [
+            "sodilaud-infra",
+            "DATABASE_URL",
+            "src/main.js",
+            "feat/add-search",
+            "v1.2.3",
+            "2026-09-25",
+            "10.0.0.1",
+            "user@example.com",
+            "getUserAccountSettingsHandler",
+            "aaaaaaaaaaaaaaaaaaaaaaaa",
+            "hello world, this is a sentence",
+            "a1b2c3d4",
+            "",
+        ] {
+            assert_eq!(classify(value), Mask::None, "{value}");
+        }
+    }
+
+    #[test]
+    fn hints_expose_at_most_prefix_and_four_characters() {
+        assert_eq!(
+            hint(
+                "ghp_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8",
+                &classify("ghp_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8")
+            )
+            .unwrap(),
+            "ghp_••••Q7r8 (40)"
+        );
+        assert_eq!(
+            hint("Zq8vR2mXw4LpT9sKj3Nb", &Mask::Full { prefix: 0 }).unwrap(),
+            "••••j3Nb (20)"
+        );
+        assert_eq!(
+            hint("Hunter2!x", &Mask::Full { prefix: 0 }).unwrap(),
+            "•••••••• (9)"
+        );
+        let url = "postgres://app:s3cr3tpw@db";
+        assert_eq!(hint(url, &classify(url)).unwrap(), "postgres://app:••••@db");
+        assert_eq!(hint("plain", &Mask::None), None);
+    }
+
+    #[test]
+    fn hint_never_leaks_more_than_four_secret_characters() {
+        let secrets = [
+            "Zq8vR2mXw4LpT9sKj3Nb",
+            "9f86d081884c7d659a2feaa0c55ad015",
+            "ghp_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8",
+        ];
+        for secret in secrets {
+            let mask = classify(secret);
+            let Mask::Full { prefix } = mask else {
+                panic!("{secret}")
+            };
+            let shown = hint(secret, &mask).unwrap();
+            let body = &secret[prefix..];
+            let leaked = (5..=body.len()).any(|n| {
+                body.as_bytes()
+                    .windows(n)
+                    .any(|w| shown.contains(std::str::from_utf8(w).unwrap()))
+            });
+            assert!(!leaked, "{secret} -> {shown}");
+        }
+    }
+
+    #[test]
+    fn preview_truncates_and_counts_extra_lines() {
+        assert_eq!(preview("one\ntwo\nthree", 50), ("one".to_string(), 2));
+        assert_eq!(preview("a\tb", 50), ("a⇥b".to_string(), 0));
+        let long = "x".repeat(60);
+        let (text, extra) = preview(&long, 50);
+        assert_eq!((text.chars().count(), extra), (50, 0));
+        assert!(text.ends_with('…'));
+        assert_eq!(preview("  \n  padded  \n", 50), ("padded".to_string(), 0));
+    }
+
+    #[test]
+    fn preview_and_hint_are_char_safe() {
+        let emoji = "👍🏽".repeat(40);
+        let (text, _) = preview(&emoji, 50);
+        assert!(text.chars().count() <= 50);
+        for value in [
+            "é",
+            "ééééééééééééééééééé",
+            "パスワード=秘密の値です",
+            "user:pässwörd@host",
+            "a://b:é@c",
+        ] {
+            let mask = classify(value);
+            let _ = hint(value, &mask);
+            let _ = preview(value, 50);
+        }
+    }
+
+    #[test]
+    fn bidi_controls_are_neutralized() {
+        let (text, _) = preview("abc\u{202E}fed\u{2066}x", 50);
+        assert!(!text.contains('\u{202E}') && !text.contains('\u{2066}'));
+        assert!(text.contains('�'));
+    }
+}
