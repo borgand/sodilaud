@@ -6,6 +6,8 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
+use objc2::rc::autoreleasepool;
+
 use super::hygiene::now_ms;
 use super::pasteboard::MacPasteboard;
 use super::service::Service;
@@ -29,13 +31,15 @@ pub fn spawn(on_panic: impl Fn() + Send + 'static, service: SharedService) -> Wa
         .spawn(move || {
             let outcome = panic::catch_unwind(AssertUnwindSafe(|| {
                 while !thread_stop.load(Ordering::Relaxed) {
-                    if let Some(active) = service
-                        .lock()
-                        .unwrap_or_else(PoisonError::into_inner)
-                        .as_mut()
-                    {
-                        active.poll(now_ms());
-                    }
+                    autoreleasepool(|_| {
+                        if let Some(active) = service
+                            .lock()
+                            .unwrap_or_else(PoisonError::into_inner)
+                            .as_mut()
+                        {
+                            active.poll(now_ms());
+                        }
+                    });
                     thread::sleep(POLL_INTERVAL);
                 }
             }));
