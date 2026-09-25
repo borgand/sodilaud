@@ -48,6 +48,8 @@ See [release notes](RELEASE_NOTES.md) for highlights, compatibility details, and
 
 ## Storage and privacy
 
+This fork uses its own app identifier, `io.github.borgand.sodilaud`, so it does not read upstream Scratchpad's local notes or preferences, and it never copies or deletes them. Reopen a workspace file to restore it; [docs/MIGRATION.md](docs/MIGRATION.md) explains how to bring local notes across. Workspace files and preferences are kept owner-only (`0600`), and deleted note bodies are overwritten in workspace files.
+
 By default, notes, folders, and trash stay in the desktop webview's local storage. Scratchpad also supports optional portable workspace files for a durable collection of notes, folders, trash, pinned state, and sidebar order. Workspace files use SQLite internally and may have a `.db` or `.sqlite` extension. Notes without a folder remain at the top level of the sidebar; deleting a folder from the sidebar returns its notes there rather than deleting them. Agent folder deletion requires an empty folder.
 
 Local notes and workspace notes are two separate collections, each with its own trash. While a workspace is connected, changes are written to that workspace and the local collection is left exactly as it was, so disconnecting returns the notes and trash you had before. Connecting an empty workspace seeds it with the active notes and folders already available in the app; local trash stays local. A workspace with existing notes, folders, or trash opens its own collection.

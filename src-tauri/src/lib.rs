@@ -45,7 +45,8 @@ fn write_preferences(path: &Path, preferences: &AppPreferences) -> Result<(), St
         .map_err(|e| format!("Could not create native preferences directory: {e}"))?;
     let contents = serde_json::to_vec_pretty(preferences)
         .map_err(|e| format!("Could not serialize native preferences: {e}"))?;
-    fs::write(path, contents).map_err(|e| format!("Could not write native preferences: {e}"))
+    fs::write(path, contents).map_err(|e| format!("Could not write native preferences: {e}"))?;
+    restrict_to_owner(path)
 }
 
 fn load_workspace_preference_from(
@@ -133,6 +134,47 @@ pub(crate) struct TrashEntry {
     note: Note,
     deleted_at: i64,
     folder_name: Option<String>,
+}
+
+/// Restrict a file to its owner. SQLite creates databases 0644 minus umask, which
+/// leaves note content readable by every local user; a clipboard history must not be.
+fn restrict_to_owner(path: &Path) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o600))
+            .map_err(|e| format!("Could not restrict permissions on {}: {e}", path.display()))?;
+    }
+    #[cfg(not(unix))]
+    let _ = path;
+    Ok(())
+}
+
+/// Opens a workspace owner-only with `secure_delete` on, so replaced and deleted
+/// note bodies are overwritten instead of lingering in free pages. That makes
+/// bulk saves slower, which is deliberate for a store that may hold secrets.
+fn open_workspace_db(db_path: &str) -> Result<rusqlite::Connection, String> {
+    let conn = rusqlite::Connection::open(db_path).map_err(|e| e.to_string())?;
+    let path = Path::new(db_path);
+    restrict_to_owner(path)?;
+    for suffix in ["-wal", "-shm", "-journal"] {
+        let sibling = PathBuf::from(format!("{db_path}{suffix}"));
+        if sibling.exists() {
+            restrict_to_owner(&sibling)?;
+        }
+    }
+    conn.pragma_update(None, "secure_delete", "ON")
+        .map_err(|e| format!("Could not enable secure_delete: {e}"))?;
+    ensure_workspace_schema(&conn)?;
+    Ok(conn)
+}
+
+/// Drops free pages that predate `secure_delete`. `VACUUM` cannot run inside a
+/// transaction, so it runs on a fresh connection.
+fn vacuum_workspace_at(db_path: &str) -> Result<(), String> {
+    open_workspace_db(db_path)?
+        .execute_batch("VACUUM")
+        .map_err(|e| format!("Could not reclaim workspace space: {e}"))
 }
 
 fn ensure_workspace_schema(conn: &rusqlite::Connection) -> Result<(), String> {
@@ -338,8 +380,7 @@ fn select_db_file(
 }
 
 fn load_db_notes_at(db_path: String) -> Result<Vec<Note>, String> {
-    let conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
-    ensure_workspace_schema(&conn)?;
+    let conn = open_workspace_db(&db_path)?;
 
     let mut stmt = conn
         .prepare(
@@ -373,8 +414,7 @@ fn load_db_notes_at(db_path: String) -> Result<Vec<Note>, String> {
 }
 
 fn save_note_db_at(db_path: String, note: Note, sort_order: i64) -> Result<(), String> {
-    let conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
-    ensure_workspace_schema(&conn)?;
+    let conn = open_workspace_db(&db_path)?;
 
     conn.execute(
         "INSERT INTO notes (
@@ -405,8 +445,7 @@ fn save_note_db_at(db_path: String, note: Note, sort_order: i64) -> Result<(), S
 }
 
 fn save_notes_db_at(db_path: String, notes: Vec<Note>) -> Result<(), String> {
-    let mut conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
-    ensure_workspace_schema(&conn)?;
+    let mut conn = open_workspace_db(&db_path)?;
 
     let transaction = conn.transaction().map_err(|e| e.to_string())?;
     transaction
@@ -443,8 +482,7 @@ fn save_notes_db_at(db_path: String, notes: Vec<Note>) -> Result<(), String> {
 }
 
 fn load_db_folders_at(db_path: String) -> Result<Vec<Folder>, String> {
-    let conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
-    ensure_workspace_schema(&conn)?;
+    let conn = open_workspace_db(&db_path)?;
 
     let mut stmt = conn
         .prepare("SELECT id, name FROM folders ORDER BY sortOrder ASC, name COLLATE NOCASE ASC")
@@ -466,8 +504,7 @@ fn load_db_folders_at(db_path: String) -> Result<Vec<Folder>, String> {
 }
 
 fn load_db_trash_at(db_path: String) -> Result<Vec<TrashEntry>, String> {
-    let conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
-    ensure_workspace_schema(&conn)?;
+    let conn = open_workspace_db(&db_path)?;
     let mut stmt = conn
         .prepare("SELECT entry FROM trash ORDER BY rowid")
         .map_err(|e| e.to_string())?;
@@ -481,8 +518,7 @@ fn load_db_trash_at(db_path: String) -> Result<Vec<TrashEntry>, String> {
 }
 
 fn save_folders_db_at(db_path: String, folders: Vec<Folder>) -> Result<(), String> {
-    let mut conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
-    ensure_workspace_schema(&conn)?;
+    let mut conn = open_workspace_db(&db_path)?;
 
     let transaction = conn.transaction().map_err(|e| e.to_string())?;
     transaction
@@ -524,8 +560,7 @@ fn save_workspace_db_at(
             }
         }
     }
-    let mut conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
-    ensure_workspace_schema(&conn)?;
+    let mut conn = open_workspace_db(&db_path)?;
 
     let transaction = conn.transaction().map_err(|e| e.to_string())?;
     transaction
@@ -712,6 +747,15 @@ fn confirm_and_open_url(app: tauri::AppHandle, url: String) -> Result<bool, Stri
 }
 
 #[tauri::command]
+fn vacuum_workspace(
+    workspaces: tauri::State<'_, workspace::Workspaces>,
+    db_path: String,
+) -> Result<(), String> {
+    workspaces.require(&db_path)?;
+    vacuum_workspace_at(&db_path)
+}
+
+#[tauri::command]
 fn show_alert_dialog(title: String, message: String) {
     rfd::MessageDialog::new()
         .set_title(&title)
@@ -798,6 +842,7 @@ pub fn run(context: tauri::Context<tauri::Wry>) {
             save_file_native,
             import_file_native,
             select_db_file,
+            vacuum_workspace,
             load_db_notes,
             load_db_folders,
             load_db_trash,
@@ -881,6 +926,69 @@ mod tests {
         assert_eq!(stale_legacy, None);
 
         std::fs::remove_file(path).expect("temporary preferences should be removable");
+    }
+
+    #[cfg(unix)]
+    fn mode_of(path: &Path) -> u32 {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::metadata(path)
+            .expect("file should exist")
+            .permissions()
+            .mode()
+            & 0o777
+    }
+
+    #[test]
+    fn a_workspace_file_is_owner_readable_only() {
+        let path = temporary_db_path("modes");
+        let db_path = path.to_string_lossy().into_owned();
+        save_notes_db_at(db_path, vec![note("a", "secret", 1)]).expect("workspace should save");
+        #[cfg(unix)]
+        assert_eq!(
+            mode_of(&path),
+            0o600,
+            "the workspace must not be group or world readable"
+        );
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn native_preferences_are_owner_readable_only() {
+        let path = temporary_db_path("preferences-mode").with_extension("json");
+        write_preferences(&path, &AppPreferences::default()).expect("preferences should save");
+        #[cfg(unix)]
+        assert_eq!(mode_of(&path), 0o600);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn secure_delete_is_enabled_on_the_workspace() {
+        let path = temporary_db_path("secure-delete");
+        let conn = open_workspace_db(&path.to_string_lossy()).expect("workspace should open");
+        let on: i64 = conn
+            .query_row("PRAGMA secure_delete", [], |row| row.get(0))
+            .expect("the pragma should be readable");
+        assert_eq!(on, 1, "superseded note bodies must be overwritten");
+        drop(conn);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn reclaiming_a_workspace_drops_free_pages() {
+        let path = temporary_db_path("reclaim");
+        let db_path = path.to_string_lossy().into_owned();
+        let bulky: Vec<Note> = (0..200)
+            .map(|index| note(&index.to_string(), &"x".repeat(4096), index))
+            .collect();
+        save_notes_db_at(db_path.clone(), bulky).expect("bulk save should succeed");
+        save_notes_db_at(db_path.clone(), vec![note("kept", "small", 1)])
+            .expect("shrinking save should succeed");
+        let before = std::fs::metadata(&path).unwrap().len();
+        vacuum_workspace_at(&db_path).expect("vacuum should succeed");
+        let after = std::fs::metadata(&path).unwrap().len();
+        assert!(after < before, "expected {after} < {before}");
+        assert_eq!(load_db_notes_at(db_path).unwrap()[0].id, "kept");
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]

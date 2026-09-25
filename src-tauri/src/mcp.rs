@@ -2373,7 +2373,7 @@ mod tests {
 
     #[test]
     fn mcp_token_path_uses_the_supplied_identifier() {
-        let identifier = "io.github.crims0n.scratchpad.beta";
+        let identifier = "io.github.borgand.sodilaud.beta";
         assert_eq!(
             mcp_token_path(identifier).unwrap(),
             dirs::config_dir()

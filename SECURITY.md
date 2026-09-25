@@ -16,7 +16,9 @@ Notes deleted in v0.7.0 or later remain in persistent trash until the user empti
 it. MCP can list trash metadata but cannot read trashed note bodies, restore
 notes, or permanently empty trash. Local storage and workspace databases,
 including their trash, are not encrypted by Scratchpad. Protect them and their
-backups with the same care as active notes.
+backups with the same care as active notes. Workspace files and native preferences
+are set to mode 0600 when opened, and SQLite `secure_delete` overwrites replaced and
+deleted note bodies. Local notes in webview storage get neither protection.
 
 Agent access listens on 127.0.0.1:39393 and authenticates with a local token file. The
 token proves nothing about the peer: any process running as your user can read the token

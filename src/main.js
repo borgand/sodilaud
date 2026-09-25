@@ -2930,6 +2930,16 @@ async function switchMcpCollection(operation) {
   }
 }
 
+// Compaction only scrubs free pages left from before secure_delete; the
+// workspace stays usable without it, so a failure is logged, not surfaced.
+async function reclaimWorkspaceSpace(dbPath) {
+  try {
+    await invoke("vacuum_workspace", { dbPath });
+  } catch (err) {
+    console.error("Failed to reclaim workspace space", err);
+  }
+}
+
 function connectDatabase() { return switchMcpCollection(connectDatabaseImpl); }
 function disconnectDatabase() { return switchMcpCollection(disconnectDatabaseImpl); }
 
@@ -2978,6 +2988,8 @@ async function connectDatabaseImpl() {
     showNotification("Could not open workspace; using local notes");
     return;
   }
+
+  await reclaimWorkspaceSpace(path);
 
   // Seeding deletes and rewrites the workspace's rows, so an unreadable
   // response must not be mistaken for an empty workspace.
@@ -3042,6 +3054,7 @@ async function disconnectDatabaseImpl() {
     return;
   }
 
+  if (activeDbPath) await reclaimWorkspaceSpace(activeDbPath);
   activeDbPath = null;
   localStorage.removeItem("scratchpad_active_db");
 
