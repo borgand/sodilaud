@@ -10,6 +10,7 @@ use tauri::{
     AppHandle, Emitter, Runtime,
 };
 
+mod clipboard;
 mod mcp;
 mod workspace;
 pub use mcp::run_mcp_stdio;
