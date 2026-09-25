@@ -96,3 +96,34 @@ test("values render as text, never markup", async () => {
   const { doc } = await setup({ ttlMinutes: 10, items: [{ id: 1, text: "<img src=x onerror=alert(1)>", masked: false, secondsLeft: 60, extraLines: 0 }] });
   assert.equal(doc.querySelector("img"), null);
 });
+
+test("focus follows the entry across a refresh that inserts a new copy at the top", async () => {
+  const listing = structuredClone(LISTING);
+  const { calls, key, popup } = await setup(listing);
+  await key("ArrowDown");
+  listing.items.unshift({ id: 20, text: "new copy", masked: false, secondsLeft: 600, extraLines: 0 });
+  await popup.refresh();
+  await key("Enter");
+  assert.deepEqual(calls.at(-1), { command: "clip_select", args: { id: 9 } });
+});
+
+test("keys with a modifier do nothing", async () => {
+  const { dom, calls, popup } = await setup();
+  const before = calls.length;
+  for (const modifier of ["metaKey", "ctrlKey", "altKey"]) {
+    await popup.onKey(new dom.window.KeyboardEvent("keydown", { key: "2", [modifier]: true }));
+    await popup.onKey(new dom.window.KeyboardEvent("keydown", { key: "Backspace", [modifier]: true }));
+  }
+  assert.equal(calls.length, before);
+});
+
+test("the focused row is scrolled into view", async () => {
+  const { dom, key } = await setup();
+  const scrolled = [];
+  dom.window.HTMLElement.prototype.scrollIntoView = function (options) { scrolled.push({ row: this, options }); };
+  await key("ArrowDown");
+  const last = scrolled.at(-1);
+  assert.ok(last.row.classList.contains("clip-focused"));
+  assert.equal(last.row.querySelector(".clip-slot").textContent, "2");
+  assert.deepEqual(last.options, { block: "nearest" });
+});

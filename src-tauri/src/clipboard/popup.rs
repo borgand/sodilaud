@@ -11,7 +11,7 @@ use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
 use super::commands::POPUP_LABEL;
 use super::layout::{popup_height, popup_origin, Rect, WIDTH};
-use super::runtime::ClipboardRuntime;
+use super::runtime::{frontmost_pid, own_pid, should_paste, ClipboardRuntime};
 
 const PASTE_DELAY: Duration = Duration::from_millis(120);
 const KEY_V: u16 = 9;
@@ -63,11 +63,13 @@ pub fn on_window_event(window: &tauri::Window, event: &WindowEvent) {
         WindowEvent::Focused(false) => close(app),
         WindowEvent::Destroyed => {
             let runtime = app.state::<ClipboardRuntime>();
-            runtime.restore_frontmost();
-            if runtime.take_paste_on_close() {
-                thread::spawn(|| {
+            let restored = runtime.restore_frontmost();
+            if let (true, Some(target)) = (runtime.take_paste_on_close(), restored) {
+                thread::spawn(move || {
                     thread::sleep(PASTE_DELAY);
-                    post_command_v();
+                    if should_paste(target, frontmost_pid(), own_pid()) {
+                        post_command_v();
+                    }
                 });
             }
         }

@@ -143,20 +143,18 @@ impl ClipboardRuntime {
     }
 
     pub fn remember_frontmost(&self) {
-        let pid = NSWorkspace::sharedWorkspace()
-            .frontmostApplication()
-            .map(|app| app.processIdentifier());
-        *lock(&self.frontmost_pid) = pid;
+        *lock(&self.frontmost_pid) = frontmost_pid();
     }
 
-    pub fn restore_frontmost(&self) {
-        let Some(pid) = lock(&self.frontmost_pid).take() else {
-            return;
-        };
-        if let Some(app) = NSRunningApplication::runningApplicationWithProcessIdentifier(pid) {
-            #[allow(deprecated)]
+    /// Returns the pid a paste may target: the remembered app, if it is another
+    /// process and accepted the activation request.
+    pub fn restore_frontmost(&self) -> Option<i32> {
+        let pid = lock(&self.frontmost_pid).take()?;
+        let app = NSRunningApplication::runningApplicationWithProcessIdentifier(pid)?;
+        #[allow(deprecated)]
+        let activated =
             app.activateWithOptions(NSApplicationActivationOptions::ActivateIgnoringOtherApps);
-        }
+        (activated && pid != own_pid()).then_some(pid)
     }
 
     pub fn request_paste_on_close(&self) {
@@ -173,6 +171,22 @@ impl ClipboardRuntime {
     pub fn shutdown(&self) {
         self.halt();
     }
+}
+
+pub fn frontmost_pid() -> Option<i32> {
+    NSWorkspace::sharedWorkspace()
+        .frontmostApplication()
+        .map(|app| app.processIdentifier())
+}
+
+pub fn own_pid() -> i32 {
+    std::process::id() as i32
+}
+
+/// Cmd+V goes only to the app focus was restored to, checked right before posting,
+/// so a secret can never land in Sodilaud's own editor or an unrelated app.
+pub fn should_paste(target: i32, frontmost: Option<i32>, own: i32) -> bool {
+    target != own && frontmost == Some(target)
 }
 
 fn register_hotkey(app: &AppHandle, hotkey: &str, old: Option<&str>) -> Result<(), ClipError> {
@@ -209,4 +223,29 @@ extern "C" {
 pub fn accessibility_trusted() -> bool {
     // SAFETY: AXIsProcessTrusted takes no arguments and only reads process state.
     unsafe { AXIsProcessTrusted() }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_paste;
+
+    const OWN: i32 = 100;
+    const TARGET: i32 = 200;
+
+    #[test]
+    fn pastes_only_into_the_restored_app_while_it_is_frontmost() {
+        assert!(should_paste(TARGET, Some(TARGET), OWN));
+    }
+
+    #[test]
+    fn does_not_paste_when_another_app_is_frontmost() {
+        assert!(!should_paste(TARGET, Some(300), OWN));
+        assert!(!should_paste(TARGET, Some(OWN), OWN));
+        assert!(!should_paste(TARGET, None, OWN));
+    }
+
+    #[test]
+    fn never_pastes_into_sodilaud_itself() {
+        assert!(!should_paste(OWN, Some(OWN), OWN));
+    }
 }

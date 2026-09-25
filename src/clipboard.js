@@ -21,7 +21,13 @@ export function createPopup({ document, invoke, close }) {
   const ttl = document.getElementById("clip-ttl");
   let items = [];
   let focused = 0;
+  let focusedId;
   const revealed = new Map();
+
+  function focus(index) {
+    focused = index;
+    focusedId = items[index]?.id;
+  }
 
   function element(tag, className, text) {
     const node = document.createElement(tag);
@@ -46,7 +52,7 @@ export function createPopup({ document, invoke, close }) {
         const eye = element("button", "clip-icon clip-reveal", plain === undefined ? "👁" : "◡");
         eye.type = "button";
         eye.setAttribute("aria-label", plain === undefined ? "Reveal" : "Hide");
-        eye.addEventListener("click", (event) => { event.stopPropagation(); focused = index; toggleReveal(index); });
+        eye.addEventListener("click", (event) => { event.stopPropagation(); focus(index); toggleReveal(index); });
         row.append(eye);
       }
       row.append(element("span", "clip-time", formatRemaining(item.secondsLeft)));
@@ -60,6 +66,7 @@ export function createPopup({ document, invoke, close }) {
     });
     list.replaceChildren(...rows);
     empty.hidden = items.length > 0;
+    rows[focused]?.scrollIntoView?.({ block: "nearest" });
   }
 
   async function refresh() {
@@ -74,7 +81,8 @@ export function createPopup({ document, invoke, close }) {
     for (const id of [...revealed.keys()]) {
       if (!items.some((item) => item.id === id)) revealed.delete(id);
     }
-    focused = Math.min(focused, Math.max(items.length - 1, 0));
+    const kept = items.findIndex((item) => item.id === focusedId);
+    focus(kept >= 0 ? kept : Math.min(focused, Math.max(items.length - 1, 0)));
     render();
   }
 
@@ -108,11 +116,12 @@ export function createPopup({ document, invoke, close }) {
   }
 
   async function onKey(event) {
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
     const slot = event.key === "0" ? 9 : Number.parseInt(event.key, 10) - 1;
     if (/^[0-9]$/.test(event.key)) return pick(slot);
     switch (event.key) {
-      case "ArrowDown": focused = Math.min(focused + 1, Math.max(items.length - 1, 0)); render(); break;
-      case "ArrowUp": focused = Math.max(focused - 1, 0); render(); break;
+      case "ArrowDown": focus(Math.min(focused + 1, Math.max(items.length - 1, 0))); render(); break;
+      case "ArrowUp": focus(Math.max(focused - 1, 0)); render(); break;
       case "Enter": return pick(focused);
       case " ": event.preventDefault?.(); return toggleReveal(focused);
       case "Backspace": case "Delete": return remove(focused);
