@@ -14,7 +14,7 @@ import { createTrashUi } from "./trash-ui.js";
 import { createMcpWriter, createNoteRevisionTracker, createFolderRevisionTracker } from "./mcp-writes.js";
 import { renderMarkdown, resolveLinkAction, sanitizeMarkdownHtml } from "./markdown.js";
 import { getNotePreview } from "./note-preview.js";
-import { ACTIVE_TEXT_PROPERTIES, DERIVED_THEME_PROPERTIES, deriveThemeSurfaceColors } from "./theme-colors.js";
+import { ACTIVE_TEXT_PROPERTIES, DERIVED_THEME_PROPERTIES, deriveThemeSurfaceColors, isValidColor } from "./theme-colors.js";
 import { createCssColorResolver, createOpaqueColorParser, isColorDark } from "./css-color.js";
 import { PRESET_THEMES } from "./preset-themes.js";
 import { compareNoteText, emptyNoteComparison } from "./note-compare.js";
@@ -25,7 +25,7 @@ import { handleMarkdownAutocomplete } from "./editor-autocomplete.js";
 import { handleEditorSmartKeydown, handleMarkdownPaste } from "./editor-smart.js";
 import { applyEditorEdit } from "./editor-edit.js";
 import { getMarkdownTemplateEdit } from "./markdown-insert.js";
-import { highlightPreviewCode, renderEditorBackdrop } from "./syntax-highlighting.js";
+import { escapeHTML, highlightPreviewCode, renderEditorBackdrop } from "./syntax-highlighting.js";
 import { renderEditorLineNumbers } from "./editor-line-numbers.js";
 import { createEditorRenderScheduler } from "./editor-render-scheduler.js";
 import { WELCOME_NOTE_CONTENT, WELCOME_NOTE_TITLE } from "./welcome-note.js";
@@ -2805,17 +2805,6 @@ function handlePreviewLinkClick(event) {
   });
 }
 
-function escapeHTML(str) {
-  return str.replace(/[&<>'"]/g, 
-    tag => ({
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      "'": '&#39;',
-      '"': '&quot;'
-    }[tag] || tag)
-  );
-}
 
 // Database helpers
 function loadNotesFromLocalStorage() {
@@ -4605,14 +4594,6 @@ function clearCustomThemeStyles() {
   delete root.dataset.themeStyle;
 }
 
-function isValidColor(str) {
-  if (!str || typeof str !== "string") return false;
-  const s = str.trim();
-  if (/["'<>;&\\\u0000-\u001f\u007f]/.test(s)) return false;
-  return /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(s) ||
-    (typeof CSS !== "undefined" && CSS.supports("color", s));
-}
-
 function normalizeCustomTheme(theme, index = 0) {
   if (!theme || typeof theme !== "object") return null;
   if (!isValidColor(theme.background) || !isValidColor(theme.foreground)) return null;
@@ -4810,7 +4791,7 @@ function parseThemeContent(content, fileName) {
       success: true,
       theme: {
         id: "custom_" + Date.now(),
-        name: data.name || cleanName,
+        name: typeof data.name === "string" && data.name.trim() ? data.name.trim() : cleanName,
         background: bg,
         foreground: fg,
         sidebar: isValidColor(sb) ? sb : bg,
@@ -4856,7 +4837,7 @@ function parseThemeContent(content, fileName) {
       success: true,
       theme: {
         id: "custom_" + Date.now(),
-        name: kv.name || cleanName,
+        name: typeof kv.name === "string" && kv.name.trim() ? kv.name.trim() : cleanName,
         background: bg,
         foreground: fg,
         sidebar: isValidColor(sb) ? sb : bg,

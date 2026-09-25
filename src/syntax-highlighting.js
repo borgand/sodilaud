@@ -16,7 +16,7 @@ const DECORATION_CLASSES = new Set([
   "diff-text-removed"
 ]);
 
-function escapeHTML(value) {
+export function escapeHTML(value) {
   return String(value)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")

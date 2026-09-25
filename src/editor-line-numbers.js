@@ -1,13 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-function escapeHTML(value) {
-  return String(value)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
+import { escapeHTML } from "./syntax-highlighting.js";
 
 export function renderEditorLineNumbers(text, { changedLines = [], changeType = null } = {}) {
   const changedLineSet = new Set(changedLines);

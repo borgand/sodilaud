@@ -27,6 +27,18 @@ const MIN_ACTIVE_SURFACE_HEADROOM = 8;
 // backdrop isn't ours to assume -- so #RGBA and #RRGGBBAA are reported as
 // unmeasurable, exactly like the rgba()/hsl() forms an imported theme may use.
 // Callers leave such colours alone rather than guessing at an opaque stand-in.
+// CSS.supports defers var() and similar functions to computed-value time, so it
+// accepts them as colours; an imported theme could then smuggle url() into a
+// declaration. Only literal colours are allowed.
+export function isValidColor(str) {
+  if (!str || typeof str !== "string") return false;
+  const s = str.trim();
+  if (/["'<>;&\\\u0000-\u001f\u007f]/.test(s)) return false;
+  if (/(?:var|url|attr|image-set|element|calc|env)\s*\(/i.test(s)) return false;
+  return /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(s) ||
+    (typeof CSS !== "undefined" && CSS.supports("color", s));
+}
+
 export function parseColor(value) {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
