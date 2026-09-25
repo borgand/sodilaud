@@ -37,6 +37,7 @@ pub fn toggle(app: &AppHandle) {
             .resizable(false)
             .skip_taskbar(true)
             .visible_on_all_workspaces(true)
+            .content_protected(true)
             .inner_size(WIDTH, popup_height(runtime.len()))
             .position(x, y)
             .focused(true)
