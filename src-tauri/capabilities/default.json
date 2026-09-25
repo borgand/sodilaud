@@ -3,5 +3,30 @@
   "identifier": "default",
   "description": "Capability for the main window",
   "windows": ["main"],
-  "permissions": ["core:default", "core:window:allow-destroy"]
+  "permissions": [
+    "core:default",
+    "core:window:allow-destroy",
+    "allow-confirm-and-open-url",
+    "allow-load-workspace-preference",
+    "allow-set-last-workspace",
+    "allow-save-file-native",
+    "allow-import-file-native",
+    "allow-select-db-file",
+    "allow-vacuum-workspace",
+    "allow-load-db-notes",
+    "allow-load-db-folders",
+    "allow-load-db-trash",
+    "allow-save-note-db",
+    "allow-save-notes-db",
+    "allow-save-folders-db",
+    "allow-save-workspace-db",
+    "allow-show-alert-dialog",
+    "allow-update-mcp-snapshot",
+    "allow-update-mcp-note",
+    "allow-get-mcp-connection-info",
+    "allow-start-mcp-server",
+    "allow-set-mcp-permissions",
+    "allow-complete-mcp-write",
+    "allow-stop-mcp-server"
+  ]
 }
