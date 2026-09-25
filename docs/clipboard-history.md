@@ -2,7 +2,9 @@
 
 Clipboard history is an optional, macOS-only feature that keeps the last few things you
 copied so you can pick one back up without re-copying it from its source. It is off by
-default and never built on Windows or Linux.
+default. On Windows and Linux it is not wired up: the platform-independent core and the
+command stubs compile there, but the settings section is hidden and every clipboard command
+returns `Unsupported`.
 
 When enabled, every text copy from any app is captured automatically, including copies
 from password managers. Press the hotkey (`⌘⇧V` by default) to open a small popup listing
@@ -26,8 +28,11 @@ database, or sent anywhere.
 | Hotkey | key capture + Reset | Cmd+Shift+V |
 | Paste automatically after picking | on/off | off |
 
-Open **Sodilaud menu → Clipboard History…** to change these. A rejected hotkey shows an
-inline error and keeps the previous hotkey registered. Turning on auto-paste checks
+Open the **Sodilaud menu** and choose **Clipboard settings** in its Clipboard history
+section to change these. The tray's **Clipboard History…** item opens the popup, not the
+settings. A rejected hotkey shows an inline error. If another hotkey was registered, it
+stays active; if none was, the error says that no hotkey is active, and Sodilaud keeps the
+requested hotkey so the next settings change retries it. Turning on auto-paste checks
 Accessibility; without it, Sodilaud shows a "Grant Accessibility in System Settings" row
 with an Open button and falls back to copy-only until you grant it and restart Sodilaud.
 Lowering the history size evicts the oldest entries immediately. Changing the expiry time
@@ -43,31 +48,41 @@ button.
 - History is wiped, and the system clipboard cleared if it still holds the value, on: entry
   expiry, entry deletion, lowering the history size below an entry's slot, disabling the
   feature, and quitting Sodilaud.
-- Quitting from the tray or with `⌘Q` in the main window flushes any pending note saves
-  first; a failed flush cancels the quit and shows an error, the same as today's close
-  behavior. Once the flush succeeds, Sodilaud wipes the clipboard history and clears the
-  system clipboard if it still holds a picked entry, then exits. System-initiated exits
-  (logout, the Dock's Quit, or `terminate:`) skip the flush, as before this feature, but
-  still wipe the history on the way out.
+- Quitting from the tray or with `⌘Q` in the main window first wipes the clipboard history
+  and clears the system clipboard if it still holds a picked entry. Sodilaud then flushes
+  any pending note saves and exits; a failed flush cancels the quit and shows an error, the
+  same as today's close behavior, but the history is already gone and capture stays
+  stopped until you change a clipboard setting or restart Sodilaud. If the main window has
+  not registered its quit handler, Sodilaud exits directly without the flush, as `⌘Q` did
+  before this feature. System-initiated exits (logout, the Dock's Quit, or `terminate:`)
+  skip the flush, as before this feature, but still wipe the history on the way out.
 - Every write Sodilaud makes to the system clipboard is marked current-host-only and
   concealed/transient, and carries a private marker type so Sodilaud's own writes are never
   re-captured into history. This keeps picked values out of Universal Clipboard and out of
   third-party clipboard managers that respect those markers.
 - The main Sodilaud window can only configure the feature (`clip_set_config`); it cannot
   list, reveal, select, or delete entries. Only the popup window holds the `clip_list`,
-  `clip_reveal`, `clip_select`, and `clip_delete` permissions.
+  `clip_reveal`, `clip_select`, `clip_delete`, and `clip_close` permissions, and it has no
+  general window permissions: `clip_close` closes only the popup itself.
+- The popup window is content-protected, so screen sharing and screenshots should show it
+  blank. This is best effort: some capture paths may ignore it.
 - Clipboard history is never reachable from MCP. The MCP snapshot sent to agents never
   includes it, by capability boundary as well as by code: the clipboard module is not
   referenced from the MCP server.
 
 ## Known residue
 
-Some short-lived copies cannot be wiped because they are held by frameworks Sodilaud does
-not control:
+Some copies cannot be wiped because they are held by frameworks Sodilaud does not control:
 
-- The `NSString` returned by AppKit when reading the pasteboard.
-- Tauri IPC buffers for `clip_list`/`clip_reveal` responses.
-- The popup's JS heap, until the popup window is destroyed.
+- The `NSString` objects AppKit creates when Sodilaud reads the pasteboard, and when it
+  writes a picked entry to the pasteboard or compares the pasteboard's contents before
+  clearing it.
+- Tauri IPC buffers for `clip_list` and `clip_reveal` responses.
+- The heap of the popup webview's WebContent process. Freed memory there is not zeroed, so
+  list previews and revealed values can outlive the popup window until the memory is
+  reused.
+- Any app you have granted Accessibility permission can read the popup's visible text
+  through the macOS Accessibility (AX) API while the popup is open.
 
 ## Known limitations
 
@@ -110,6 +125,11 @@ implementation:
   and search your workspace `.db` file. Expected: no matches.
 - [ ] On Windows or Linux (if available), the settings section is absent and closing the
   window quits.
+- [ ] Share the screen or take a screenshot while the popup is open. The popup should be
+  blank or missing in the capture.
+- [ ] On macOS versions with a system clipboard history (Spotlight), pick an entry in the
+  popup and check whether the value appears in the system clipboard history. If it does,
+  turn the system clipboard history off when you use Sodilaud with secrets.
 
 The following were deferred during implementation for lack of a human tester and should be
 checked before release, in addition to the items above:
@@ -121,5 +141,5 @@ checked before release, in addition to the items above:
   Sodilaud so the grant takes effect.
 - [ ] Every tray menu item (Show, Clipboard History…, Clear, Quit) does what its label says.
 - [ ] Hiding and showing the app through the Dock and through the tray both work.
-- [ ] Quit from the tray and `⌘Q` in the main window both flush, wipe, and exit.
+- [ ] Quit from the tray and `⌘Q` in the main window both wipe, flush, and exit.
 - [ ] Pressing `⌘Q` while the popup is open closes only the popup, not the app.
