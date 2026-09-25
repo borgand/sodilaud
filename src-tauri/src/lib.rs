@@ -11,6 +11,7 @@ use tauri::{
 };
 
 mod mcp;
+mod workspace;
 pub use mcp::run_mcp_stdio;
 
 const PREFERENCES_FILE_NAME: &str = "scratchpad-preferences.json";
@@ -55,7 +56,9 @@ fn load_workspace_preference_from(
         return Ok(preferences.last_workspace);
     }
 
-    let migrated_path = legacy_path.filter(|value| !value.is_empty());
+    // The legacy value comes from the webview, so it may only name a workspace
+    // that already exists; it must never become a way to create a file.
+    let migrated_path = legacy_path.filter(|value| !value.is_empty() && Path::new(value).is_file());
     write_preferences(
         path,
         &AppPreferences {
@@ -75,13 +78,25 @@ fn preferences_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
 #[tauri::command]
 fn load_workspace_preference(
     app: tauri::AppHandle,
+    workspaces: tauri::State<'_, workspace::Workspaces>,
     legacy_path: Option<String>,
 ) -> Result<Option<String>, String> {
-    load_workspace_preference_from(&preferences_path(&app)?, legacy_path)
+    let restored = load_workspace_preference_from(&preferences_path(&app)?, legacy_path)?;
+    if let Some(path) = &restored {
+        workspaces.authorize(PathBuf::from(path))?;
+    }
+    Ok(restored)
 }
 
 #[tauri::command]
-fn set_last_workspace(app: tauri::AppHandle, db_path: Option<String>) -> Result<(), String> {
+fn set_last_workspace(
+    app: tauri::AppHandle,
+    workspaces: tauri::State<'_, workspace::Workspaces>,
+    db_path: Option<String>,
+) -> Result<(), String> {
+    if let Some(path) = &db_path {
+        workspaces.require(path)?;
+    }
     write_preferences(
         &preferences_path(&app)?,
         &AppPreferences {
@@ -271,7 +286,9 @@ fn import_file_native() -> Result<Option<ImportedFile>, String> {
 
 // Database commands
 #[tauri::command]
-fn select_db_file() -> Result<Option<String>, String> {
+fn select_db_file(
+    workspaces: tauri::State<'_, workspace::Workspaces>,
+) -> Result<Option<String>, String> {
     const OPEN_EXISTING: &str = "Open Existing Workspace";
     const CREATE_NEW: &str = "Create New Workspace";
     const CANCEL: &str = "Cancel";
@@ -312,11 +329,15 @@ fn select_db_file() -> Result<Option<String>, String> {
         _ => None,
     };
 
-    Ok(file_path.map(|path| path.to_string_lossy().to_string()))
+    let Some(path) = file_path else {
+        return Ok(None);
+    };
+    let chosen = path.to_string_lossy().to_string();
+    workspaces.authorize(PathBuf::from(&chosen))?;
+    Ok(Some(chosen))
 }
 
-#[tauri::command]
-fn load_db_notes(db_path: String) -> Result<Vec<Note>, String> {
+fn load_db_notes_at(db_path: String) -> Result<Vec<Note>, String> {
     let conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
     ensure_workspace_schema(&conn)?;
 
@@ -351,8 +372,7 @@ fn load_db_notes(db_path: String) -> Result<Vec<Note>, String> {
     Ok(notes)
 }
 
-#[tauri::command]
-fn save_note_db(db_path: String, note: Note, sort_order: i64) -> Result<(), String> {
+fn save_note_db_at(db_path: String, note: Note, sort_order: i64) -> Result<(), String> {
     let conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
     ensure_workspace_schema(&conn)?;
 
@@ -384,8 +404,7 @@ fn save_note_db(db_path: String, note: Note, sort_order: i64) -> Result<(), Stri
     Ok(())
 }
 
-#[tauri::command]
-fn save_notes_db(db_path: String, notes: Vec<Note>) -> Result<(), String> {
+fn save_notes_db_at(db_path: String, notes: Vec<Note>) -> Result<(), String> {
     let mut conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
     ensure_workspace_schema(&conn)?;
 
@@ -423,8 +442,7 @@ fn save_notes_db(db_path: String, notes: Vec<Note>) -> Result<(), String> {
     Ok(())
 }
 
-#[tauri::command]
-fn load_db_folders(db_path: String) -> Result<Vec<Folder>, String> {
+fn load_db_folders_at(db_path: String) -> Result<Vec<Folder>, String> {
     let conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
     ensure_workspace_schema(&conn)?;
 
@@ -447,8 +465,7 @@ fn load_db_folders(db_path: String) -> Result<Vec<Folder>, String> {
     Ok(folders)
 }
 
-#[tauri::command]
-fn load_db_trash(db_path: String) -> Result<Vec<TrashEntry>, String> {
+fn load_db_trash_at(db_path: String) -> Result<Vec<TrashEntry>, String> {
     let conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
     ensure_workspace_schema(&conn)?;
     let mut stmt = conn
@@ -463,8 +480,7 @@ fn load_db_trash(db_path: String) -> Result<Vec<TrashEntry>, String> {
     .collect()
 }
 
-#[tauri::command]
-fn save_folders_db(db_path: String, folders: Vec<Folder>) -> Result<(), String> {
+fn save_folders_db_at(db_path: String, folders: Vec<Folder>) -> Result<(), String> {
     let mut conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
     ensure_workspace_schema(&conn)?;
 
@@ -488,8 +504,7 @@ fn save_folders_db(db_path: String, folders: Vec<Folder>) -> Result<(), String> 
     Ok(())
 }
 
-#[tauri::command]
-fn save_workspace_db(
+fn save_workspace_db_at(
     db_path: String,
     notes: Vec<Note>,
     folders: Vec<Folder>,
@@ -573,6 +588,78 @@ fn save_workspace_db(
     Ok(())
 }
 
+// The webview names the workspace it is showing, but only a path that the user
+// chose in a native dialog, or that native preferences restored, is opened.
+#[tauri::command]
+fn load_db_notes(
+    workspaces: tauri::State<'_, workspace::Workspaces>,
+    db_path: String,
+) -> Result<Vec<Note>, String> {
+    workspaces.require(&db_path)?;
+    load_db_notes_at(db_path)
+}
+
+#[tauri::command]
+fn save_note_db(
+    workspaces: tauri::State<'_, workspace::Workspaces>,
+    db_path: String,
+    note: Note,
+    sort_order: i64,
+) -> Result<(), String> {
+    workspaces.require(&db_path)?;
+    save_note_db_at(db_path, note, sort_order)
+}
+
+#[tauri::command]
+fn save_notes_db(
+    workspaces: tauri::State<'_, workspace::Workspaces>,
+    db_path: String,
+    notes: Vec<Note>,
+) -> Result<(), String> {
+    workspaces.require(&db_path)?;
+    save_notes_db_at(db_path, notes)
+}
+
+#[tauri::command]
+fn load_db_folders(
+    workspaces: tauri::State<'_, workspace::Workspaces>,
+    db_path: String,
+) -> Result<Vec<Folder>, String> {
+    workspaces.require(&db_path)?;
+    load_db_folders_at(db_path)
+}
+
+#[tauri::command]
+fn load_db_trash(
+    workspaces: tauri::State<'_, workspace::Workspaces>,
+    db_path: String,
+) -> Result<Vec<TrashEntry>, String> {
+    workspaces.require(&db_path)?;
+    load_db_trash_at(db_path)
+}
+
+#[tauri::command]
+fn save_folders_db(
+    workspaces: tauri::State<'_, workspace::Workspaces>,
+    db_path: String,
+    folders: Vec<Folder>,
+) -> Result<(), String> {
+    workspaces.require(&db_path)?;
+    save_folders_db_at(db_path, folders)
+}
+
+#[tauri::command]
+fn save_workspace_db(
+    workspaces: tauri::State<'_, workspace::Workspaces>,
+    db_path: String,
+    notes: Vec<Note>,
+    folders: Vec<Folder>,
+    trash: Option<Vec<TrashEntry>>,
+) -> Result<(), String> {
+    workspaces.require(&db_path)?;
+    save_workspace_db_at(db_path, notes, folders, trash)
+}
+
 #[tauri::command]
 fn show_alert_dialog(title: String, message: String) {
     rfd::MessageDialog::new()
@@ -636,7 +723,9 @@ fn handle_macos_menu_event<R: Runtime>(app: &AppHandle<R>, event: tauri::menu::M
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run(context: tauri::Context<tauri::Wry>) {
-    let builder = tauri::Builder::default().manage(mcp::McpState::default());
+    let builder = tauri::Builder::default()
+        .manage(mcp::McpState::default())
+        .manage(workspace::Workspaces::default());
     #[cfg(target_os = "macos")]
     let builder = builder
         .menu(macos_menu)
@@ -711,11 +800,14 @@ mod tests {
     #[test]
     fn migrates_legacy_workspace_once_and_respects_an_explicit_disconnect() {
         let path = temporary_db_path("native-preferences").with_extension("json");
-        let legacy_path = "/tmp/legacy-workspace.db".to_string();
+        let legacy_file = temporary_db_path("legacy-workspace");
+        std::fs::write(&legacy_file, b"").expect("legacy workspace should be creatable");
+        let legacy_path = legacy_file.to_string_lossy().into_owned();
 
         let migrated = load_workspace_preference_from(&path, Some(legacy_path.clone()))
             .expect("legacy preference should migrate");
         assert_eq!(migrated, Some(legacy_path));
+        std::fs::remove_file(legacy_file).expect("legacy workspace should be removable");
 
         write_preferences(
             &path,
@@ -736,33 +828,47 @@ mod tests {
     }
 
     #[test]
+    fn a_legacy_preference_naming_a_missing_file_is_not_migrated() {
+        let path = temporary_db_path("missing-legacy").with_extension("json");
+        let missing = temporary_db_path("never-created");
+
+        let migrated =
+            load_workspace_preference_from(&path, Some(missing.to_string_lossy().into_owned()))
+                .expect("migration should complete");
+        assert_eq!(migrated, None);
+        assert!(!missing.exists());
+
+        std::fs::remove_file(path).expect("temporary preferences should be removable");
+    }
+
+    #[test]
     fn saves_the_complete_workspace_in_sidebar_order() {
         let path = temporary_db_path("ordered-workspace");
         let db_path = path.to_string_lossy().into_owned();
 
-        save_notes_db(
+        save_notes_db_at(
             db_path.clone(),
             vec![note("older", "left", 1), note("newer", "right", 2)],
         )
         .expect("workspace should save");
 
-        save_note_db(
+        save_note_db_at(
             db_path.clone(),
             note("newer", "edited in secondary pane", 3),
             1,
         )
         .expect("secondary note should save independently");
 
-        let loaded = load_db_notes(db_path.clone()).expect("workspace should load");
+        let loaded = load_db_notes_at(db_path.clone()).expect("workspace should load");
         assert_eq!(loaded[0].id, "older");
         assert_eq!(loaded[1].content, "edited in secondary pane");
 
         let mut pinned_note = loaded[1].clone();
         pinned_note.is_pinned = true;
         let reordered = vec![pinned_note, loaded[0].clone()];
-        save_notes_db(db_path.clone(), reordered.clone()).expect("workspace should resave");
+        save_notes_db_at(db_path.clone(), reordered.clone()).expect("workspace should resave");
 
-        let loaded = load_db_notes(db_path).expect("workspace should load");
+        let loaded = load_db_notes_at(db_path).expect("workspace should load");
         assert_eq!(loaded.len(), 2);
         assert_eq!(loaded[0].id, "newer");
         assert_eq!(loaded[0].content, "edited in secondary pane");
@@ -777,14 +883,14 @@ mod tests {
         let path = temporary_db_path("folder-workspace");
         let db_path = path.to_string_lossy().into_owned();
         let folders = vec![folder("work", "Work"), folder("personal", "Personal")];
-        save_folders_db(db_path.clone(), folders).expect("folders should save");
+        save_folders_db_at(db_path.clone(), folders).expect("folders should save");
 
         let mut assigned = note("assigned", "in work", 1);
         assigned.folder_id = Some("work".to_string());
-        save_notes_db(db_path.clone(), vec![assigned]).expect("assigned note should save");
+        save_notes_db_at(db_path.clone(), vec![assigned]).expect("assigned note should save");
 
-        let loaded_folders = load_db_folders(db_path.clone()).expect("folders should load");
-        let loaded_notes = load_db_notes(db_path.clone()).expect("notes should load");
+        let loaded_folders = load_db_folders_at(db_path.clone()).expect("folders should load");
+        let loaded_notes = load_db_notes_at(db_path.clone()).expect("notes should load");
         assert_eq!(loaded_folders[0].id, "work");
         assert_eq!(loaded_folders[1].name, "Personal");
         assert_eq!(loaded_notes[0].folder_id.as_deref(), Some("work"));
@@ -803,7 +909,7 @@ mod tests {
             deleted_at: 2,
             folder_name: None,
         };
-        save_workspace_db(
+        save_workspace_db_at(
             db_path.clone(),
             vec![original.clone()],
             vec![],
@@ -812,7 +918,7 @@ mod tests {
         .unwrap();
         // A duplicate recovery ID fails after the active rows have been replaced;
         // the entire transaction must roll back, retaining the live note.
-        assert!(save_workspace_db(
+        assert!(save_workspace_db_at(
             db_path.clone(),
             vec![],
             vec![],
@@ -820,38 +926,43 @@ mod tests {
         )
         .is_err());
         assert_eq!(
-            load_db_notes(db_path.clone()).unwrap()[0].content,
+            load_db_notes_at(db_path.clone()).unwrap()[0].content,
             original.content
         );
-        assert!(load_db_trash(db_path.clone()).unwrap().is_empty());
-        save_workspace_db(db_path.clone(), vec![], vec![], Some(vec![entry.clone()])).unwrap();
-        assert!(load_db_notes(db_path.clone()).unwrap().is_empty());
+        assert!(load_db_trash_at(db_path.clone()).unwrap().is_empty());
+        save_workspace_db_at(db_path.clone(), vec![], vec![], Some(vec![entry.clone()])).unwrap();
+        assert!(load_db_notes_at(db_path.clone()).unwrap().is_empty());
         assert_eq!(
-            load_db_trash(db_path.clone()).unwrap()[0].note.content,
+            load_db_trash_at(db_path.clone()).unwrap()[0].note.content,
             original.content
         );
-        save_workspace_db(
+        save_workspace_db_at(
             db_path.clone(),
             vec![note("other", "typed", 3)],
             vec![],
             None,
         )
         .unwrap();
-        assert_eq!(load_db_trash(db_path.clone()).unwrap().len(), 1);
+        assert_eq!(load_db_trash_at(db_path.clone()).unwrap().len(), 1);
         // An invalid restored folder cannot remove the recovery entry.
         let mut invalid = original.clone();
         invalid.folder_id = Some("missing".into());
-        assert!(save_workspace_db(db_path.clone(), vec![invalid], vec![], Some(vec![])).is_err());
-        assert_eq!(load_db_trash(db_path.clone()).unwrap().len(), 1);
-        save_workspace_db(
+        assert!(
+            save_workspace_db_at(db_path.clone(), vec![invalid], vec![], Some(vec![])).is_err()
+        );
+        assert_eq!(load_db_trash_at(db_path.clone()).unwrap().len(), 1);
+        save_workspace_db_at(
             db_path.clone(),
             vec![original.clone()],
             vec![],
             Some(vec![]),
         )
         .unwrap();
-        assert_eq!(load_db_notes(db_path.clone()).unwrap()[0].id, original.id);
-        assert!(load_db_trash(db_path.clone()).unwrap().is_empty());
+        assert_eq!(
+            load_db_notes_at(db_path.clone()).unwrap()[0].id,
+            original.id
+        );
+        assert!(load_db_trash_at(db_path.clone()).unwrap().is_empty());
         std::fs::remove_file(path).unwrap();
     }
 
@@ -861,7 +972,7 @@ mod tests {
         let db_path = path.to_string_lossy().into_owned();
         let mut original_note = note("original", "keep me", 1);
         original_note.folder_id = Some("original-folder".to_string());
-        save_workspace_db(
+        save_workspace_db_at(
             db_path.clone(),
             vec![original_note],
             vec![folder("original-folder", "Original")],
@@ -869,7 +980,7 @@ mod tests {
         )
         .expect("initial workspace should save");
 
-        let failed = save_workspace_db(
+        let failed = save_workspace_db_at(
             db_path.clone(),
             vec![note("replacement", "must roll back", 2)],
             vec![folder("duplicate", "One"), folder("duplicate", "Two")],
@@ -879,11 +990,11 @@ mod tests {
 
         let mut orphan = note("orphan", "must not save", 3);
         orphan.folder_id = Some("missing".into());
-        assert!(save_workspace_db(db_path.clone(), vec![orphan], vec![], None).is_err());
+        assert!(save_workspace_db_at(db_path.clone(), vec![orphan], vec![], None).is_err());
 
-        let loaded_notes = load_db_notes(db_path.clone()).expect("original notes should remain");
+        let loaded_notes = load_db_notes_at(db_path.clone()).expect("original notes should remain");
         let loaded_folders =
-            load_db_folders(db_path.clone()).expect("original folders should remain");
+            load_db_folders_at(db_path.clone()).expect("original folders should remain");
         assert_eq!(loaded_notes.len(), 1);
         assert_eq!(loaded_notes[0].id, "original");
         assert_eq!(loaded_notes[0].content, "keep me");
@@ -912,7 +1023,7 @@ mod tests {
             .expect("legacy schema should be created");
         drop(connection);
 
-        let loaded = load_db_notes(db_path).expect("legacy schema should migrate");
+        let loaded = load_db_notes_at(db_path).expect("legacy schema should migrate");
         assert!(loaded.is_empty());
 
         let connection = rusqlite::Connection::open(&path).expect("database should reopen");
