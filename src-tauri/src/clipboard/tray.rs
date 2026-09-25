@@ -8,7 +8,6 @@ use tauri::{ActivationPolicy, AppHandle, Emitter, Manager, Wry};
 use super::layout::tray_glyph;
 use super::popup;
 use super::runtime::ClipboardRuntime;
-use super::service::ClipConfig;
 
 pub const QUIT_REQUESTED_EVENT: &str = "sodilaud-quit-requested";
 const TRAY_ID: &str = "sodilaud";
@@ -54,16 +53,16 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-pub fn refresh(app: &AppHandle, config: &ClipConfig) {
+/// `hotkey` is the registered one, so the menu never advertises a dead shortcut.
+pub fn refresh(app: &AppHandle, enabled: bool, hotkey: Option<&str>) {
     let Some(items) = app.try_state::<TrayItems>() else {
         return;
     };
-    let _ = items.history.set_enabled(config.enabled);
-    let _ = items.clear.set_enabled(config.enabled);
-    let label = if config.enabled {
-        format!("Clipboard History…  {}", hotkey_label(&config.hotkey))
-    } else {
-        "Clipboard History…".to_string()
+    let _ = items.history.set_enabled(enabled);
+    let _ = items.clear.set_enabled(enabled);
+    let label = match hotkey {
+        Some(hotkey) if enabled => format!("Clipboard History…  {}", hotkey_label(hotkey)),
+        _ => "Clipboard History…".to_string(),
     };
     let _ = items.history.set_text(label);
 }

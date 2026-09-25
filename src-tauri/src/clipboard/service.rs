@@ -110,6 +110,31 @@ fn is_hotkey_code(code: &str) -> bool {
     HOTKEY_NAMED_KEYS.contains(&code)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HotkeyPlan {
+    Keep,
+    Register {
+        new: String,
+        unregister_old: Option<String>,
+    },
+    Unregister(String),
+}
+
+/// `registered` is the hotkey actually held; `requested` is `None` while the
+/// feature is off. Decides from what is registered, never from the last config,
+/// so a failed registration is retried on the next apply.
+pub fn plan_hotkey(registered: Option<&str>, requested: Option<&str>) -> HotkeyPlan {
+    match (registered, requested) {
+        (None, None) => HotkeyPlan::Keep,
+        (Some(old), None) => HotkeyPlan::Unregister(old.to_string()),
+        (Some(old), Some(new)) if old == new => HotkeyPlan::Keep,
+        (old, Some(new)) => HotkeyPlan::Register {
+            new: new.to_string(),
+            unregister_old: old.map(str::to_string),
+        },
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ListItem {
@@ -580,6 +605,56 @@ mod tests {
         ] {
             assert_eq!(hotkey(valid), valid);
         }
+    }
+
+    fn register(new: &str, unregister_old: Option<&str>) -> HotkeyPlan {
+        HotkeyPlan::Register {
+            new: new.to_string(),
+            unregister_old: unregister_old.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn hotkey_plan_registers_on_first_enable() {
+        assert_eq!(
+            plan_hotkey(None, Some(DEFAULT_HOTKEY)),
+            register(DEFAULT_HOTKEY, None)
+        );
+    }
+
+    #[test]
+    fn hotkey_plan_swaps_on_change() {
+        assert_eq!(
+            plan_hotkey(Some(DEFAULT_HOTKEY), Some("ctrl+alt+Digit1")),
+            register("ctrl+alt+Digit1", Some(DEFAULT_HOTKEY))
+        );
+    }
+
+    #[test]
+    fn hotkey_plan_keeps_a_registered_hotkey() {
+        assert_eq!(
+            plan_hotkey(Some(DEFAULT_HOTKEY), Some(DEFAULT_HOTKEY)),
+            HotkeyPlan::Keep
+        );
+        assert_eq!(plan_hotkey(None, None), HotkeyPlan::Keep);
+    }
+
+    #[test]
+    fn hotkey_plan_unregisters_on_disable() {
+        assert_eq!(
+            plan_hotkey(Some(DEFAULT_HOTKEY), None),
+            HotkeyPlan::Unregister(DEFAULT_HOTKEY.to_string())
+        );
+    }
+
+    #[test]
+    fn hotkey_plan_retries_after_a_failed_registration() {
+        // A failed first registration leaves nothing registered, so the next
+        // apply with the same hotkey (a TTL change, say) must try again.
+        assert_eq!(
+            plan_hotkey(None, Some(DEFAULT_HOTKEY)),
+            register(DEFAULT_HOTKEY, None)
+        );
     }
 
     #[test]

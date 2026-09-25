@@ -11,6 +11,14 @@ const HOTKEY_MESSAGES = {
   HotkeyUnavailable: "That shortcut is already in use. The previous hotkey is still active."
 };
 
+const NO_HOTKEY_MESSAGE = "That shortcut could not be registered. No hotkey is active; choose another.";
+
+function hotkeyMessage(status) {
+  if (!status?.hotkeyError) return "";
+  if (!status.hotkey) return NO_HOTKEY_MESSAGE;
+  return HOTKEY_MESSAGES[status.hotkeyError] ?? HOTKEY_MESSAGES.HotkeyInvalid;
+}
+
 export async function setupClipboardHistory({ document, invoke, listen, storage, notify, isMac }) {
   if (!isMac) return;
   const $ = (id) => document.getElementById(id);
@@ -63,8 +71,9 @@ export async function setupClipboardHistory({ document, invoke, listen, storage,
     try {
       const status = await invoke("clip_set_config", { config: requested });
       accessibilityTrusted = status?.accessibilityTrusted === true;
-      settings = { ...requested, hotkey: status?.hotkey ?? requested.hotkey };
-      setStatus(status?.hotkeyError ? HOTKEY_MESSAGES[status.hotkeyError] ?? HOTKEY_MESSAGES.HotkeyInvalid : "");
+      // An empty hotkey means none is registered: keep the request so it can be retried.
+      settings = { ...requested, hotkey: status?.hotkey || requested.hotkey };
+      setStatus(hotkeyMessage(status));
     } catch {
       settings = { ...requested, enabled: false };
       setStatus("Clipboard history could not be started.");

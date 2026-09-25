@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { bootApp, settle } from "./helpers/app-harness.js";
 
-const ok = (config) => ({ enabled: config.enabled, hotkey: config.hotkey, hotkeyError: null, accessibilityTrusted: false });
+// Mirrors Rust: `hotkey` is the registered hotkey, empty while the feature is off.
+const ok = (config) => ({ enabled: config.enabled, hotkey: config.enabled ? config.hotkey : "", hotkeyError: null, accessibilityTrusted: false });
 
 test("macOS shows the section, pushes stored settings at startup, and toggles", async () => {
   const app = await bootApp({
@@ -136,4 +137,35 @@ test("blurring the hotkey button while capturing restores the formatted label", 
   hotkeyBtn.dispatchEvent(new Event("blur"));
   await settle();
   assert.equal(hotkeyBtn.textContent, "⌘⇧V");
+});
+
+test("a hotkey that never registered says none is active and keeps the request for a retry", async () => {
+  const app = await bootApp({
+    instance: 10,
+    platform: "MacIntel",
+    storage: { "clipboardHistory.settings": { enabled: true, capacity: 10, ttlMinutes: 10, hotkey: "ctrl+alt+Digit1", autoPaste: false } },
+    handlers: { clip_set_config: ({ config }) => ({ enabled: config.enabled, hotkey: "", hotkeyError: "HotkeyUnavailable", accessibilityTrusted: false }) }
+  });
+  const { document } = app.dom.window;
+  assert.equal(document.getElementById("clipboard-settings-status").textContent,
+    "That shortcut could not be registered. No hotkey is active; choose another.");
+  assert.equal(JSON.parse(app.storage.getItem("clipboardHistory.settings")).hotkey, "ctrl+alt+Digit1");
+  assert.equal(document.getElementById("clipboard-hotkey-btn").textContent, "⌃⌥1");
+
+  document.getElementById("clipboard-ttl-input").value = "20";
+  document.getElementById("clipboard-ttl-input").dispatchEvent(new app.dom.window.Event("change"));
+  await settle();
+  assert.equal(app.invocations.findLast(i => i.command === "clip_set_config").args.config.hotkey, "ctrl+alt+Digit1");
+  assert.match(document.getElementById("clipboard-settings-status").textContent, /No hotkey is active/);
+});
+
+test("turning the feature off keeps the chosen hotkey", async () => {
+  const app = await bootApp({
+    instance: 11,
+    platform: "MacIntel",
+    storage: { "clipboardHistory.settings": { enabled: false, capacity: 10, ttlMinutes: 10, hotkey: "ctrl+alt+Digit1", autoPaste: false } },
+    handlers: { clip_set_config: ({ config }) => ok(config) }
+  });
+  assert.equal(JSON.parse(app.storage.getItem("clipboardHistory.settings")).hotkey, "ctrl+alt+Digit1");
+  assert.equal(app.dom.window.document.getElementById("clipboard-hotkey-btn").textContent, "⌃⌥1");
 });
