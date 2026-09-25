@@ -17,8 +17,9 @@ export const settle = (ms = 50) => new Promise((resolve) => setTimeout(resolve, 
 // `instance` gives the module a distinct URL so a single process can boot the
 // app more than once, which is what a two-launch test needs. `globals` installs
 // globals jsdom does not implement -- `CSS.supports`, say, which the app uses to
-// validate imported theme colours.
-export async function bootApp({ storage = {}, handlers = {}, instance = 1, windowApi = {}, globals = {}, platform } = {}) {
+// validate imported theme colours. `beforeBoot(dom)` runs just before main.js
+// loads, to break a browser or Tauri API the app relies on.
+export async function bootApp({ storage = {}, handlers = {}, instance = 1, windowApi = {}, globals = {}, platform, beforeBoot } = {}) {
   const html = await readFile(new URL("../../src/index.html", import.meta.url), "utf8");
   const dom = new JSDOM(html, { url: "http://localhost/", pretendToBeVisual: true });
 
@@ -66,6 +67,7 @@ export async function bootApp({ storage = {}, handlers = {}, instance = 1, windo
     );
   });
 
+  beforeBoot?.(dom);
   await import(`${new URL("../../src/main.js", import.meta.url).href}?boot=${instance}`);
   await settle();
 

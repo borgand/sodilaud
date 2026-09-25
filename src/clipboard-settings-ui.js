@@ -78,7 +78,11 @@ export async function setupClipboardHistory({ document, invoke, listen, storage,
       settings = { ...requested, enabled: false };
       setStatus("Clipboard history could not be started.");
     }
-    saveClipboardSettings(storage, settings);
+    try {
+      saveClipboardSettings(storage, settings);
+    } catch {
+      // Storage can be full; the settings still apply for this session.
+    }
     render();
   }
 

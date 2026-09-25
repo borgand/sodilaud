@@ -611,14 +611,18 @@ async function init() {
   await registerNativeAboutHandler();
   await registerCloseHandler();
   await registerQuitHandler();
-  await setupClipboardHistory({
-    document,
-    invoke,
-    listen: window.__TAURI__?.event?.listen,
-    storage: localStorage,
-    notify: showNotification,
-    isMac: Boolean(window.__TAURI__) && isMacPlatform(navigator)
-  });
+  try {
+    await setupClipboardHistory({
+      document,
+      invoke,
+      listen: window.__TAURI__?.event?.listen,
+      storage: localStorage,
+      notify: showNotification,
+      isMac: Boolean(window.__TAURI__) && isMacPlatform(navigator)
+    });
+  } catch (error) {
+    console.error("Failed to set up clipboard history", error);
+  }
   await registerWindowResizeHandler();
 
   // 2. Load the saved theme (Default Dark on first launch) and layout mode
