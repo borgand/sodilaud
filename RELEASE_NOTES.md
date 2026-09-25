@@ -1,34 +1,41 @@
-# Scratchpad Beta v0.7.3
+# Scratchpad Beta v0.7.9
+
+This is the first security-hardened release of the sodilaud fork. It removes every outbound network path and tightens what the app window is allowed to do.
 
 ## Highlights
 
-- Create a scratchpad by double-clicking empty space below the sidebar list. New blank scratchpads open ready to edit, even when Preview was selected.
-- Keep imported themes readable with sidebar and active-note tones derived from the theme's own colors.
-- Use RGB, HSL, named colors, and `color(srgb …)` in custom themes without light themes being mistaken for dark ones.
-- On macOS, **About Scratchpad** in the native application menu now opens the same in-app About and update panel as the Scratchpad menu.
+- No network access: the update check and its HTTP client are gone, and CI fails if network capability comes back.
+- Links you click in the preview open only after a native dialog shows their real destination.
+- Workspace files and preferences are readable by your user account only, and deleted note bodies are overwritten in workspace files.
+- The fork has its own app identity, so it no longer shares a data directory or MCP token with an upstream Scratchpad install.
 
-## Faster note creation
+## No outbound requests
 
-- Double-click the empty sidebar area to create and select a new scratchpad. Double-clicks on notes, folders, buttons, and other controls keep their existing behavior.
-- A newly created blank scratchpad switches from Preview to Edit automatically so there is always somewhere to type. Split view remains in place because it already includes an editor, and notes created with content retain the selected layout.
-- The in-app Help and welcome guide describe the new sidebar gesture.
+- The About panel no longer checks for updates, and the app links no HTTP client. New versions are published as releases in this repository.
+- `npm run check:egress` scans shipped source for network APIs and remote URLs and runs in CI.
 
-## Theme readability
+## A tighter app window
 
-- Secondary and muted sidebar text is now derived from each theme's foreground, background, sidebar, hover, and active-row surfaces instead of inheriting tones measured for the built-in palette.
-- Across all 17 built-in themes, secondary and muted text meets the 4.5:1 contrast target on idle and hover surfaces, as does every text tone on active rows. GitHub Dark's active-row background is adjusted so both its title and dimmer preview remain readable.
-- Imported opaque RGB, HSL, named, and `color(srgb …)` colors are resolved by the browser and measured like equivalent hex colors. This fixes light non-hex themes receiving dark fallback tones.
-- Switching themes clears previously derived tones before applying the new set, preventing colors from the prior theme leaking into partially measurable themes.
-- Translucent colors are preserved rather than flattened for contrast calculations. Colors that the browser retains in another color space, such as `oklch()` or Display P3, also remain unchanged and use the documented dark fallback when light/dark classification cannot be measured safely.
+- The window can only show the bundled app. A script cannot navigate it to a website.
+- External links go through a Rust command that accepts only `https`, `http` and `mailto` and asks before opening your browser. The window no longer has direct access to the system opener.
+- Workspace commands only open database files you chose in the native dialog or that the app restored from its own preferences.
+- Every application command now needs an explicit capability grant.
+- The content security policy adds `base-uri`, `form-action`, `object-src` and `frame-src` limits and drops unused sources.
+- Imported themes can no longer use `var()`, `url()` or other CSS functions as colors, and a theme with a non-text name no longer breaks rendering.
 
-## Menu and agent-access polish
+## Data at rest
 
-- The native macOS About command focuses the main window and opens Scratchpad's existing About panel, including release notes and update controls. Reopening it does not disturb the element that receives focus when the panel closes.
-- Enabling MCP access now says that reads are available immediately while writes remain disabled until explicitly allowed in **MCP Configuration**. Connection metadata no longer describes the whole session as read-only after write permissions are enabled.
-- The MCP permission summary now has its own status identity, keeping its live read/write count distinct and reliable for assistive technology.
+- Workspace files and native preferences are set to mode `0600`.
+- SQLite `secure_delete` is on for workspace files, and connecting or leaving a workspace compacts it once to remove older free pages.
+- A workspace file the app cannot restrict (for example on a read-only disk, or owned by another user) no longer opens.
 
-## Compatibility and beta notice
+## Release pipeline
 
-- Existing local notes, folders, trash, themes, preferences, and workspace files continue to work; no manual migration is required from v0.7.2.
-- Existing welcome notes are left untouched. The updated guide is used for newly created welcome notes.
-- v0.7.3 retains the existing beta application identity and packaging. Builds are not yet production-signed; macOS and Windows may display a security warning.
+- Builds run with a read-only token; a separate job with no third-party code drafts the release.
+- Beta releases can only be built from `main`, Cargo runs with `--locked`, CI installs npm packages without scripts, and Dependabot waits seven days before proposing new versions.
+
+## Compatibility
+
+- The app identifier is now `io.github.borgand.sodilaud`, so the first launch starts with an empty local collection. Upstream data is not copied or deleted. Reopen a workspace file to restore it; see `docs/MIGRATION.md` for bringing local notes across.
+- Existing MCP client configurations keep working. The app creates a new token under its own identifier.
+- Builds are not production-signed; macOS and Windows may display a security warning.
