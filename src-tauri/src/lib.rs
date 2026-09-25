@@ -14,12 +14,12 @@ mod mcp;
 mod workspace;
 pub use mcp::run_mcp_stdio;
 
-const PREFERENCES_FILE_NAME: &str = "scratchpad-preferences.json";
+const PREFERENCES_FILE_NAME: &str = "sodilaud-preferences.json";
 
 #[cfg(target_os = "macos")]
-const NATIVE_ABOUT_MENU_ID: &str = "scratchpad-native-about";
+const NATIVE_ABOUT_MENU_ID: &str = "sodilaud-native-about";
 #[cfg(target_os = "macos")]
-const OPEN_ABOUT_EVENT: &str = "scratchpad-open-about";
+const OPEN_ABOUT_EVENT: &str = "sodilaud-open-about";
 
 #[derive(serde::Serialize, serde::Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -312,7 +312,7 @@ fn import_file_native() -> Result<Option<ImportedFile>, String> {
                 rfd::MessageDialog::new()
                     .set_title("Unsupported File Format")
                     .set_description(format!(
-                        "The file \"{}\" could not be opened because it is not a valid text file.\n\nOnly text-encoded files (Markdown, source code, config files, plain text) can be imported into Scratchpad.",
+                        "The file \"{}\" could not be opened because it is not a valid text file.\n\nOnly text-encoded files (Markdown, source code, config files, plain text) can be imported into Sodilaud.",
                         name
                     ))
                     .set_buttons(rfd::MessageButtons::Ok)
@@ -336,8 +336,8 @@ fn select_db_file(
     const CANCEL: &str = "Cancel";
 
     let choice = rfd::MessageDialog::new()
-        .set_title("Choose a Scratchpad Workspace")
-        .set_description("Open an existing Scratchpad workspace, or create a new one.")
+        .set_title("Choose a Sodilaud Workspace")
+        .set_description("Open an existing Sodilaud workspace, or create a new one.")
         .set_buttons(rfd::MessageButtons::YesNoCancelCustom(
             OPEN_EXISTING.to_string(),
             CREATE_NEW.to_string(),
@@ -348,25 +348,25 @@ fn select_db_file(
     let file_path = match choice {
         rfd::MessageDialogResult::Custom(action) if action == OPEN_EXISTING => {
             rfd::FileDialog::new()
-                .set_title("Open Scratchpad Workspace")
-                .add_filter("Scratchpad Workspace", &["db", "sqlite"])
+                .set_title("Open Sodilaud Workspace")
+                .add_filter("Sodilaud Workspace", &["db", "sqlite"])
                 .pick_file()
         }
         rfd::MessageDialogResult::Custom(action) if action == CREATE_NEW => rfd::FileDialog::new()
-            .set_title("Create Scratchpad Workspace")
-            .set_file_name("scratchpad.db")
-            .add_filter("Scratchpad Workspace", &["db", "sqlite"])
+            .set_title("Create Sodilaud Workspace")
+            .set_file_name("sodilaud.db")
+            .add_filter("Sodilaud Workspace", &["db", "sqlite"])
             .save_file(),
         // These fallbacks preserve the intended behavior on any native backend
         // that reports standard results for custom-labeled buttons.
         rfd::MessageDialogResult::Yes => rfd::FileDialog::new()
-            .set_title("Open Scratchpad Workspace")
-            .add_filter("Scratchpad Workspace", &["db", "sqlite"])
+            .set_title("Open Sodilaud Workspace")
+            .add_filter("Sodilaud Workspace", &["db", "sqlite"])
             .pick_file(),
         rfd::MessageDialogResult::No => rfd::FileDialog::new()
-            .set_title("Create Scratchpad Workspace")
-            .set_file_name("scratchpad.db")
-            .add_filter("Scratchpad Workspace", &["db", "sqlite"])
+            .set_title("Create Sodilaud Workspace")
+            .set_file_name("sodilaud.db")
+            .add_filter("Sodilaud Workspace", &["db", "sqlite"])
             .save_file(),
         _ => None,
     };
@@ -733,7 +733,7 @@ fn confirm_and_open_url(app: tauri::AppHandle, url: String) -> Result<bool, Stri
     let proceed = rfd::MessageDialog::new()
         .set_title("Open external link")
         .set_description(format!(
-            "{parsed}\n\nThis opens {destination} in your default app. It, not Scratchpad, makes the request."
+            "{parsed}\n\nThis opens {destination} in your default app. It, not Sodilaud, makes the request."
         ))
         .set_buttons(rfd::MessageButtons::YesNo)
         .show()
@@ -811,7 +811,7 @@ fn handle_macos_menu_event<R: Runtime>(app: &AppHandle<R>, event: tauri::menu::M
         let _ = window.show();
         let _ = window.set_focus();
         if let Err(error) = window.emit(OPEN_ABOUT_EVENT, ()) {
-            eprintln!("Could not open the Scratchpad About panel: {error}");
+            eprintln!("Could not open the Sodilaud About panel: {error}");
         }
     }
 }
@@ -874,7 +874,7 @@ mod tests {
             .expect("clock should be after the Unix epoch")
             .as_nanos();
         std::env::temp_dir().join(format!(
-            "scratchpad-{test_name}-{}-{unique}.sqlite",
+            "sodilaud-{test_name}-{}-{unique}.sqlite",
             std::process::id()
         ))
     }

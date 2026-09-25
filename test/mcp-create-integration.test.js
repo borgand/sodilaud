@@ -10,9 +10,9 @@ test("MCP creations persist, preserve editor work, and cannot cross workspace sw
   let holdSave = null;
   let failSave = false;
   const app = await bootApp({
-    storage: { scratchpad_notes: [seed] },
+    storage: { sodilaud_notes: [seed] },
     handlers: {
-      start_mcp_server: () => ({ command: "/scratchpad", args: ["--mcp-stdio"] }),
+      start_mcp_server: () => ({ command: "/sodilaud", args: ["--mcp-stdio"] }),
       select_db_file: () => "/tmp/mcp-create.db",
       load_db_notes: () => structuredClone(disk.notes),
       load_db_folders: () => structuredClone(disk.folders),
@@ -46,11 +46,11 @@ test("MCP creations persist, preserve editor work, and cannot cross workspace sw
   const folderArgs = { collectionId: localCollection, requestId: "local-folder", name: "Research" };
   const folder = await send("create_folder", folderArgs);
   assert.equal(folder.ok, true);
-  assert.equal(app.read("scratchpad_folders")[0].id, folder.folder.id);
+  assert.equal(app.read("sodilaud_folders")[0].id, folder.folder.id);
   const localNoteArgs = { collectionId: localCollection, requestId: "local-note", title: "Agent note", content: "Saved text", folderId: folder.folder.id };
   const localNote = await send("create_note", localNoteArgs);
   assert.equal(localNote.ok, true);
-  assert.equal(app.read("scratchpad_notes").filter(n => n.id === localNote.note.id).length, 1);
+  assert.equal(app.read("sodilaud_notes").filter(n => n.id === localNote.note.id).length, 1);
   assert.equal((await send("create_note", localNoteArgs)).note.id, localNote.note.id);
   assert.equal(document.getElementById("note-title").value, "Original");
   assert.equal(document.getElementById("editor-textarea").value, "Original body");
@@ -58,7 +58,7 @@ test("MCP creations persist, preserve editor work, and cannot cross workspace sw
   const storagePrototype = app.dom.window.Storage.prototype;
   const originalSetItem = storagePrototype.setItem;
   storagePrototype.setItem = function(key, value) {
-    if (key === "scratchpad_notes") throw new Error("Quota exceeded");
+    if (key === "sodilaud_notes") throw new Error("Quota exceeded");
     return originalSetItem.call(this, key, value);
   };
   const quotaArgs = { ...localNoteArgs, requestId: "quota", title: "Retry after quota" };

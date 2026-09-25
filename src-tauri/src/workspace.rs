@@ -19,7 +19,7 @@ impl Workspaces {
         if self.paths()?.contains(Path::new(db_path)) {
             Ok(())
         } else {
-            Err("This workspace was not chosen in Scratchpad. Open it again from the Scratchpad menu.".to_string())
+            Err("This workspace was not chosen in Sodilaud. Open it again from the Sodilaud menu.".to_string())
         }
     }
 
@@ -37,19 +37,19 @@ mod tests {
     #[test]
     fn a_path_the_user_never_chose_is_rejected() {
         let workspaces = Workspaces::default();
-        let outside = std::env::temp_dir().join("scratchpad-not-authorized.sqlite");
+        let outside = std::env::temp_dir().join("sodilaud-not-authorized.sqlite");
         assert!(workspaces.require(&outside.to_string_lossy()).is_err());
     }
 
     #[test]
     fn a_chosen_path_is_accepted_and_others_stay_rejected() {
         let workspaces = Workspaces::default();
-        let chosen = std::env::temp_dir().join("scratchpad-chosen.sqlite");
+        let chosen = std::env::temp_dir().join("sodilaud-chosen.sqlite");
         workspaces
             .authorize(chosen.clone())
             .expect("authorizing should succeed");
         assert!(workspaces.require(&chosen.to_string_lossy()).is_ok());
-        let sibling = chosen.with_file_name("scratchpad-sibling.sqlite");
+        let sibling = chosen.with_file_name("sodilaud-sibling.sqlite");
         assert!(workspaces.require(&sibling.to_string_lossy()).is_err());
     }
 }

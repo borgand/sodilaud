@@ -2,7 +2,7 @@
 import { LOCAL_NOTES_KEY } from "./storage.js";
 import { validFolderId } from "./folders.js";
 
-export const LOCAL_TRASH_KEY = "scratchpad_trash";
+export const LOCAL_TRASH_KEY = "sodilaud_trash";
 
 // Fail closed on unreadable recovery data: never overwrite it with an empty list.
 export function readTrash(raw) {

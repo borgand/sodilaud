@@ -12,7 +12,7 @@ const manifest = JSON.parse(
 
 test("the landing page renders the recommended package and complete download catalog", async () => {
   const dom = new JSDOM(html, {
-    url: "https://crims0n.github.io/scratchpad/",
+    url: "https://borgand.github.io/sodilaud/",
     pretendToBeVisual: true
   });
   Object.defineProperty(dom.window.navigator, "userAgentData", {

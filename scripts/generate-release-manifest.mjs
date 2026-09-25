@@ -5,7 +5,7 @@ import { dirname } from "node:path";
 import { pathToFileURL } from "node:url";
 import semver from "semver";
 
-const REPOSITORY = "crims0n/scratchpad";
+const REPOSITORY = "borgand/sodilaud";
 const DOWNLOAD_PREFIX = `/${REPOSITORY}/releases/download/`;
 
 const ASSET_RULES = [
@@ -40,7 +40,7 @@ function getSha256(digest) {
 }
 
 export function buildReleaseManifest(releases, { generatedAt = new Date().toISOString() } = {}) {
-  const versionOf = (release) => String(release.tag_name || "").replace(/^(scratchpad-beta-v|v)/, "");
+  const versionOf = (release) => String(release.tag_name || "").replace(/^(sodilaud-beta-v|v)/, "");
   const hasCanonicalVersion = (release) => {
     const version = versionOf(release);
     const parsed = semver.parse(version);
@@ -79,7 +79,7 @@ export function buildReleaseManifest(releases, { generatedAt = new Date().toISOS
 
     const tag = String(release.tag_name || "");
     const version = versionOf(release);
-    const channel = release.prerelease || tag.startsWith("scratchpad-beta-v") || semver.prerelease(version) ? "beta" : "stable";
+    const channel = release.prerelease || tag.startsWith("sodilaud-beta-v") || semver.prerelease(version) ? "beta" : "stable";
     if (channels[channel]) continue;
     // Construct the link from a validated tag; never forward arbitrary release URLs.
     const selected = {
@@ -98,7 +98,7 @@ export function buildReleaseManifest(releases, { generatedAt = new Date().toISOS
 
   // Keep the website's schema-1 release field; desktop clients require channels.
   if (latest) return { schemaVersion: 1, generatedAt, repository: REPOSITORY, release: latest, channels };
-  throw new Error("No published Scratchpad release with recognized installer assets was found");
+  throw new Error("No published Sodilaud release with recognized installer assets was found");
 }
 
 function getArgument(name) {

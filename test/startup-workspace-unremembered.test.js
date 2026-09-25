@@ -13,13 +13,13 @@ const LOCAL_NOTES = [
 ];
 
 const app = await bootApp({
-  storage: { scratchpad_notes: LOCAL_NOTES },
+  storage: { sodilaud_notes: LOCAL_NOTES },
   handlers: { load_workspace_preference: () => null }
 });
 
 test("start-up without a workspace shows the local collection", () => {
   assert.deepEqual(app.sidebarTitles(), ["Local one", "Local two"]);
-  assert.deepEqual(app.read("scratchpad_notes"), LOCAL_NOTES);
+  assert.deepEqual(app.read("sodilaud_notes"), LOCAL_NOTES);
 });
 
 test("no workspace command is issued", () => {

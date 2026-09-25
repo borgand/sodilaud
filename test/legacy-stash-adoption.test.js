@@ -19,14 +19,14 @@ const CURRENT = [
 
 const app = await bootApp({
   storage: {
-    scratchpad_notes: CURRENT,
-    scratchpad_local_notes: STASHED
+    sodilaud_notes: CURRENT,
+    sodilaud_local_notes: STASHED
   },
   handlers: { load_workspace_preference: () => null }
 });
 
 test("set-aside notes are folded back into the local collection", () => {
-  const stored = app.read("scratchpad_notes");
+  const stored = app.read("sodilaud_notes");
 
   assert.deepEqual(
     stored.map((note) => note.id).sort(),
@@ -41,5 +41,5 @@ test("set-aside notes are folded back into the local collection", () => {
 });
 
 test("the old key is cleared once folded in", () => {
-  assert.equal(app.storage.getItem("scratchpad_local_notes"), null);
+  assert.equal(app.storage.getItem("sodilaud_local_notes"), null);
 });

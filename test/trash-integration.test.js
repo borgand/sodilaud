@@ -9,8 +9,8 @@ const folders = [{ id: "f", name: "Work" }];
 test("trash UI and MCP deletions support recovery, workspace isolation, retries, and user-only emptying", async () => {
   let disk = { notes: [structuredClone(note)], folders: structuredClone(folders), trash: [] };
   let fail = false;
-  const app = await bootApp({ storage: { scratchpad_notes: [note], scratchpad_folders: folders }, handlers: {
-    start_mcp_server: () => ({ command: "/scratchpad", args: ["--mcp-stdio"] }),
+  const app = await bootApp({ storage: { sodilaud_notes: [note], sodilaud_folders: folders }, handlers: {
+    start_mcp_server: () => ({ command: "/sodilaud", args: ["--mcp-stdio"] }),
     select_db_file: () => "/tmp/trash.db",
     load_db_notes: () => structuredClone(disk.notes),
     load_db_folders: () => structuredClone(disk.folders),
@@ -41,40 +41,40 @@ test("trash UI and MCP deletions support recovery, workspace isolation, retries,
   const removed = await send("delete_note", originalDelete);
   assert.equal(removed.ok, true, removed.error);
   const trashId = removed.trash.id;
-  assert.equal(app.read("scratchpad_notes").some(n => n.id === "n"), false);
-  assert.deepEqual(app.read("scratchpad_trash")[0].note, note);
+  assert.equal(app.read("sodilaud_notes").some(n => n.id === "n"), false);
+  assert.deepEqual(app.read("sodilaud_trash")[0].note, note);
   assert.deepEqual(await send("delete_note", originalDelete), removed);
   assert.equal(snapshot().trash[0].id, trashId);
   assert.equal(Object.hasOwn(snapshot().trash[0], "content"), false);
   assert.equal((await send("delete_folder", folderArgs)).ok, true);
-  assert.deepEqual(app.read("scratchpad_folders"), []);
+  assert.deepEqual(app.read("sodilaud_folders"), []);
 
   app.click("trash-btn");
   assert.equal(document.getElementById("trash-modal-backdrop").getAttribute("aria-hidden"), "false");
   assert.match(document.getElementById("trash-list").textContent, /Keep this/);
   await restore(trashId);
-  const restored = app.read("scratchpad_notes").find(n => n.id === "n");
+  const restored = app.read("sodilaud_notes").find(n => n.id === "n");
   assert.equal(restored.content, note.content);
   assert.equal(restored.isPinned, true);
   assert.equal(restored.isTitleLocked, true);
   assert.equal(restored.folderId, null, "missing original folder falls back to top level");
-  assert.deepEqual(app.read("scratchpad_trash"), []);
+  assert.deepEqual(app.read("sodilaud_trash"), []);
   assert.deepEqual(await send("delete_note", originalDelete), removed, "old retry never deletes a restored note");
-  assert.ok(app.read("scratchpad_notes").some(n => n.id === "n"));
+  assert.ok(app.read("sodilaud_notes").some(n => n.id === "n"));
   assert.match((await send("delete_note", { ...originalDelete, requestId: "stale-after-restore" })).error, /Revision conflict/);
   app.click("close-trash-btn");
 
   // Local deletion failures retain recoverable state, and an identical retry saves it.
   const prototype = app.dom.window.Storage.prototype;
   const setItem = prototype.setItem;
-  prototype.setItem = function(key, value) { if (key === "scratchpad_notes") throw new Error("Quota exceeded"); return setItem.call(this, key, value); };
+  prototype.setItem = function(key, value) { if (key === "sodilaud_notes") throw new Error("Quota exceeded"); return setItem.call(this, key, value); };
   const localRequest = deletion("local-failure");
   try { assert.match((await send("delete_note", localRequest)).error, /Deletion applied.*save failed/); }
   finally { prototype.setItem = setItem; }
   assert.equal(document.getElementById("save-status").textContent, "Save failed");
-  assert.equal(app.read("scratchpad_trash").length, 1, "recovery copy is saved before active removal");
+  assert.equal(app.read("sodilaud_trash").length, 1, "recovery copy is saved before active removal");
   assert.equal((await send("delete_note", localRequest)).ok, true);
-  const localTrash = structuredClone(app.read("scratchpad_trash"));
+  const localTrash = structuredClone(app.read("sodilaud_trash"));
 
   // Each database has its own trash; reopening loads it from disk.
   app.click("db-connect-btn"); await settle(100);
@@ -90,7 +90,7 @@ test("trash UI and MCP deletions support recovery, workspace isolation, retries,
   assert.equal(disk.notes.some(n => n.id === "n"), false);
   assert.equal(disk.trash[0].note.content, note.content);
   app.click("db-disconnect-btn"); await settle(100);
-  assert.deepEqual(app.read("scratchpad_trash"), localTrash);
+  assert.deepEqual(app.read("sodilaud_trash"), localTrash);
   assert.equal(snapshot().trash[0].id, localTrash[0].id);
   app.click("db-connect-btn"); await settle(100);
   assert.equal(snapshot().trash[0].id, dbRemoved.trash.id);
@@ -113,7 +113,7 @@ test("trash UI and MCP deletions support recovery, workspace isolation, retries,
   fail = false;
   app.click("confirm-empty-trash-btn"); await settle(100);
   assert.deepEqual(disk.trash, []);
-  assert.deepEqual(app.read("scratchpad_trash"), localTrash, "emptying workspace trash leaves local trash untouched");
+  assert.deepEqual(app.read("sodilaud_trash"), localTrash, "emptying workspace trash leaves local trash untouched");
   assert.deepEqual(snapshot().trash, []);
   assert.equal((await send("empty_trash", { collectionId: snapshot().collectionId, requestId: "agent-purge" })).ok, false);
 });

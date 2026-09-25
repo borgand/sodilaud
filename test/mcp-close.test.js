@@ -13,7 +13,7 @@ test("closing drains an in-flight creation and rejects additional writes", async
     handlers: {
       load_workspace_preference: () => "/tmp/close-mcp.db",
       load_db_notes: () => [{ id: "original", title: "Original", content: "", updatedAt: 1 }],
-      start_mcp_server: () => ({ command: "/scratchpad", args: ["--mcp-stdio"] }),
+      start_mcp_server: () => ({ command: "/sodilaud", args: ["--mcp-stdio"] }),
       save_workspace_db: async ({ notes }) => {
         if (hold) await new Promise(resolve => { release = resolve; });
         savedNotes = structuredClone(notes);

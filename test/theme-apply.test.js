@@ -10,7 +10,7 @@ import { contrastRatio, deriveThemeSurfaceColors, parseColor } from "../src/them
 const githubDark = PRESET_THEMES.find(theme => theme.id === "github-dark");
 
 test("applying GitHub Dark publishes readable sidebar tones onto the root element", async () => {
-  await bootApp({ storage: { scratchpad_active_theme: "github-dark" } });
+  await bootApp({ storage: { sodilaud_active_theme: "github-dark" } });
 
   const root = document.documentElement;
   const expected = deriveThemeSurfaceColors(githubDark);

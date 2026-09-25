@@ -13,8 +13,8 @@ const NOTES = [
 
 const app = await bootApp({
   storage: {
-    scratchpad_notes: NOTES,
-    scratchpad_folders: FOLDERS
+    sodilaud_notes: NOTES,
+    sodilaud_folders: FOLDERS
   }
 });
 
@@ -30,7 +30,7 @@ test("double-clicking the empty space below the list creates a scratchpad", () =
   doubleClick(document.getElementById("note-list-container"));
 
   assert.equal(noteCount(), 3);
-  const created = app.read("scratchpad_notes").find(note => note.title === "Untitled Scratchpad");
+  const created = app.read("sodilaud_notes").find(note => note.title === "Untitled Scratchpad");
   assert.ok(created, "a blank scratchpad was stored");
   assert.equal(document.querySelector(".note-item.active").dataset.id, created.id);
   assert.equal(document.getElementById("note-title").value, "Untitled Scratchpad");

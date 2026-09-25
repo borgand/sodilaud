@@ -1,17 +1,18 @@
 {
-  "name": "scratchpad",
+  "name": "sodilaud",
   "private": true,
   "version": "0.7.9",
   "description": "A lightweight, offline-first Markdown scratchpad for the desktop.",
   "license": "GPL-3.0-or-later",
-  "author": "crims0n",
+  "author": "Laas Toom",
+  "contributors": ["crims0n"],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/crims0n/scratchpad.git"
+    "url": "git+https://github.com/borgand/sodilaud.git"
   },
-  "homepage": "https://crims0n.github.io/scratchpad/",
+  "homepage": "https://borgand.github.io/sodilaud/",
   "bugs": {
-    "url": "https://github.com/crims0n/scratchpad/issues"
+    "url": "https://github.com/borgand/sodilaud/issues"
   },
   "engines": {
     "node": ">=20"

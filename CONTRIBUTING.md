@@ -1,6 +1,6 @@
-# Contributing to Scratchpad
+# Contributing to Sodilaud
 
-Thanks for helping improve Scratchpad. Bug fixes, accessibility improvements, documentation, tests, and focused feature proposals are welcome.
+Thanks for helping improve Sodilaud. Bug fixes, accessibility improvements, documentation, tests, and focused feature proposals are welcome.
 
 ## Before you start
 
@@ -24,8 +24,8 @@ Keep `main` deployable and do not commit or push to it directly. Every change sh
 You need Node.js 20 or newer, Rust 1.98.0, and the platform dependencies from the [Tauri prerequisites guide](https://tauri.app/start/prerequisites/).
 
 ```bash
-git clone https://github.com/crims0n/scratchpad.git
-cd scratchpad
+git clone https://github.com/borgand/sodilaud.git
+cd sodilaud
 npm install
 npm run tauri -- dev
 ```

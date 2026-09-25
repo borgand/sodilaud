@@ -73,7 +73,7 @@ jobs:
       - name: Ensure release version is new
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: scratchpad-beta-v${{ steps.version.outputs.version }}
+          RELEASE_TAG: sodilaud-beta-v${{ steps.version.outputs.version }}
         run: |
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "::error::Release $RELEASE_TAG already exists. Bump the application version before starting another beta release."
@@ -182,10 +182,10 @@ jobs:
           VERSION: ${{ needs.validate.outputs.version }}
         run: |
           mapfile -t installers < <(find artifacts -type f)
-          gh release create "scratchpad-beta-v$VERSION" "${installers[@]}" \
+          gh release create "sodilaud-beta-v$VERSION" "${installers[@]}" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "Scratchpad Beta v$VERSION" \
+            --title "Sodilaud Beta v$VERSION" \
             --notes-file RELEASE_NOTES.md \
             --generate-notes \
             --draft \

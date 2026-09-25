@@ -10,7 +10,7 @@ const LOCAL_NOTES = [
 let workspaceNotes = [];
 
 const app = await bootApp({
-  storage: { scratchpad_notes: LOCAL_NOTES },
+  storage: { sodilaud_notes: LOCAL_NOTES },
   handlers: {
     select_db_file: () => "/tmp/pending-edits.db",
     load_db_notes: () => workspaceNotes,
@@ -27,7 +27,7 @@ test("connecting and disconnecting flush edits that are still inside the debounc
   app.click("db-connect-btn");
   await app.settle(100);
   assert.equal(workspaceNotes[0].content, "Latest local body");
-  assert.equal(app.read("scratchpad_notes")[0].content, "Latest local body");
+  assert.equal(app.read("sodilaud_notes")[0].content, "Latest local body");
 
   editor.value = "Latest workspace body";
   editor.dispatchEvent(new app.dom.window.Event("input", { bubbles: true }));

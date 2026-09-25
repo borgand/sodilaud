@@ -5,29 +5,29 @@ import test from "node:test";
 import { buildReleaseManifest } from "../scripts/generate-release-manifest.mjs";
 
 const release = {
-  tag_name: "scratchpad-beta-v0.4.0",
-  name: "Scratchpad Beta v0.4.0",
+  tag_name: "sodilaud-beta-v0.4.0",
+  name: "Sodilaud Beta v0.4.0",
   draft: false,
   prerelease: true,
   published_at: "2026-08-23T22:03:45Z",
-  html_url: "https://github.com/crims0n/scratchpad/releases/tag/scratchpad-beta-v0.4.0",
+  html_url: "https://github.com/borgand/sodilaud/releases/tag/sodilaud-beta-v0.4.0",
   body: "A useful beta release.",
   assets: [
     {
-      name: "Scratchpad.Beta_0.4.0_universal.dmg",
-      browser_download_url: "https://github.com/crims0n/scratchpad/releases/download/scratchpad-beta-v0.4.0/Scratchpad.Beta_0.4.0_universal.dmg",
+      name: "Sodilaud.Beta_0.4.0_universal.dmg",
+      browser_download_url: "https://github.com/borgand/sodilaud/releases/download/sodilaud-beta-v0.4.0/Sodilaud.Beta_0.4.0_universal.dmg",
       size: 10_000_000,
       digest: `sha256:${"a".repeat(64)}`
     },
     {
-      name: "Scratchpad.Beta_0.4.0_x64-setup.exe",
-      browser_download_url: "https://github.com/crims0n/scratchpad/releases/download/scratchpad-beta-v0.4.0/Scratchpad.Beta_0.4.0_x64-setup.exe",
+      name: "Sodilaud.Beta_0.4.0_x64-setup.exe",
+      browser_download_url: "https://github.com/borgand/sodilaud/releases/download/sodilaud-beta-v0.4.0/Sodilaud.Beta_0.4.0_x64-setup.exe",
       size: 3_000_000,
       digest: `sha256:${"b".repeat(64)}`
     },
     {
-      name: "Scratchpad.Beta_0.4.0_amd64.AppImage",
-      browser_download_url: "https://github.com/crims0n/scratchpad/releases/download/scratchpad-beta-v0.4.0/Scratchpad.Beta_0.4.0_amd64.AppImage",
+      name: "Sodilaud.Beta_0.4.0_amd64.AppImage",
+      browser_download_url: "https://github.com/borgand/sodilaud/releases/download/sodilaud-beta-v0.4.0/Sodilaud.Beta_0.4.0_amd64.AppImage",
       size: 80_000_000,
       digest: `sha256:${"c".repeat(64)}`
     },
@@ -63,29 +63,29 @@ test("release manifests include beta installers, metadata, and trusted checksums
 test("manifest generation ignores drafts and chooses the newest published release", () => {
   const older = {
     ...release,
-    tag_name: "scratchpad-beta-v0.3.1",
+    tag_name: "sodilaud-beta-v0.3.1",
     published_at: "2026-08-22T12:00:00Z"
   };
   const draft = {
     ...release,
-    tag_name: "scratchpad-beta-v0.5.0",
+    tag_name: "sodilaud-beta-v0.5.0",
     draft: true,
     published_at: "2026-08-29T12:00:00Z"
   };
 
   const manifest = buildReleaseManifest([older, draft, release]);
-  assert.equal(manifest.release.tag, "scratchpad-beta-v0.4.0");
+  assert.equal(manifest.release.tag, "sodilaud-beta-v0.4.0");
 });
 
 test("manifest generation fails closed without recognized trusted assets", () => {
   assert.throws(
     () => buildReleaseManifest([{ ...release, assets: release.assets.slice(3) }]),
-    /No published Scratchpad release/
+    /No published Sodilaud release/
   );
 });
 
 test("channels select semantic versions, not publication order, and construct release links", () => {
-  const make = (version, prerelease, published_at = release.published_at) => ({ ...release, tag_name: `${prerelease ? "scratchpad-beta-v" : "v"}${version}`, prerelease, published_at, html_url: "https://untrusted.example/" });
+  const make = (version, prerelease, published_at = release.published_at) => ({ ...release, tag_name: `${prerelease ? "sodilaud-beta-v" : "v"}${version}`, prerelease, published_at, html_url: "https://untrusted.example/" });
   const manifest = buildReleaseManifest([
     make("0.9.0", true, "2026-09-01T00:00:00Z"),
     make("0.10.0", true), make("0.8.0", false),
@@ -95,7 +95,7 @@ test("channels select semantic versions, not publication order, and construct re
   assert.equal(manifest.channels.beta.version, "1.0.0-beta.10");
   assert.equal(manifest.channels.stable.version, "0.8.0");
   assert.equal(manifest.channels.stable.channel, "stable");
-  assert.equal(manifest.channels.stable.url, "https://github.com/crims0n/scratchpad/releases/tag/v0.8.0");
+  assert.equal(manifest.channels.stable.url, "https://github.com/borgand/sodilaud/releases/tag/v0.8.0");
   assert.equal(buildReleaseManifest([release]).channels.stable, null);
   assert.equal(buildReleaseManifest([[make("0.3.0", true)], [release]]).channels.beta.version, "0.4.0");
   assert.throws(() => buildReleaseManifest([make("v9.0.0", false), make(" 9.0.0 ", false)]), /No published/);

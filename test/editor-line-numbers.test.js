@@ -24,8 +24,8 @@ test("line number rows preserve source lines and escape their mirror text", () =
 test("primary and secondary line-number gutters update and follow editor scrolling", async () => {
   const app = await bootApp({
     storage: {
-      scratchpad_editor_line_numbers: "true",
-      scratchpad_notes: [
+      sodilaud_editor_line_numbers: "true",
+      sodilaud_notes: [
         {
           id: "primary-note",
           title: "Primary",
@@ -84,7 +84,7 @@ test("line numbers are off by default and their hidden gutters stay empty", asyn
   const app = await bootApp({
     instance: 2,
     storage: {
-      scratchpad_notes: [{
+      sodilaud_notes: [{
         id: "default-note",
         title: "Default",
         content: "one\ntwo",

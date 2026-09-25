@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-export const LOCAL_NOTES_KEY = "scratchpad_notes";
-export const LOCAL_FOLDERS_KEY = "scratchpad_folders";
+export const LOCAL_NOTES_KEY = "sodilaud_notes";
+export const LOCAL_FOLDERS_KEY = "sodilaud_folders";
 
 // Used by earlier builds of this branch to set notes aside while local storage
 // was shared between the local-only collection and the active workspace. Read
 // once at start-up so nothing is stranded; never written to.
-export const LOCAL_NOTES_BACKUP_KEY = "scratchpad_local_notes";
+export const LOCAL_NOTES_BACKUP_KEY = "sodilaud_local_notes";
 
 export function persistNotesLocally(storage, notes) {
   try {

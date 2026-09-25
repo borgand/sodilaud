@@ -24,7 +24,7 @@ const NOTES = [
 
 test("closing split view immediately clears its enabled notification", async () => {
   const app = await bootApp({
-    storage: { scratchpad_notes: NOTES },
+    storage: { sodilaud_notes: NOTES },
     handlers: { load_workspace_preference: () => null }
   });
   const { document } = app.dom.window;
@@ -54,9 +54,9 @@ test("compare mode highlights live note differences and clears with split view",
   const app = await bootApp({
     instance: 2,
     storage: {
-      scratchpad_syntax_highlighting: "true",
-      scratchpad_editor_line_numbers: "true",
-      scratchpad_notes: [
+      sodilaud_syntax_highlighting: "true",
+      sodilaud_editor_line_numbers: "true",
+      sodilaud_notes: [
         { ...NOTES[0], content: "# Shared heading\nLeft old wording\nSame ending" },
         { ...NOTES[1], content: "# Shared heading\nRight new wording\nSame ending" }
       ]
@@ -112,7 +112,7 @@ test("compare mode highlights live note differences and clears with split view",
 test("switching the secondary pane to the primary note stops comparison cleanly", async () => {
   const app = await bootApp({
     instance: 3,
-    storage: { scratchpad_notes: NOTES },
+    storage: { sodilaud_notes: NOTES },
     handlers: { load_workspace_preference: () => null }
   });
   const { document } = app.dom.window;
@@ -136,7 +136,7 @@ test("compare shows a change rail for blank lines when line numbers are off", as
   const app = await bootApp({
     instance: 4,
     storage: {
-      scratchpad_notes: [
+      sodilaud_notes: [
         { ...NOTES[0], content: "first\nlast" },
         { ...NOTES[1], content: "first\n\nlast" }
       ]
@@ -162,7 +162,7 @@ test("compare shows a change rail for blank lines when line numbers are off", as
 test("compare is unavailable when both panes show the same note", async () => {
   const app = await bootApp({
     instance: 5,
-    storage: { scratchpad_notes: [NOTES[0]] },
+    storage: { sodilaud_notes: [NOTES[0]] },
     handlers: { load_workspace_preference: () => null }
   });
   const compareButton = app.dom.window.document.getElementById("compare-notes-btn");
@@ -177,7 +177,7 @@ test("compare debounces changed text and reuses cached results for redraws", asy
   const app = await bootApp({
     instance: 6,
     storage: {
-      scratchpad_notes: [
+      sodilaud_notes: [
         { ...NOTES[0], content: "Shared\nLeft wording" },
         { ...NOTES[1], content: "Shared\nRight wording" }
       ]
@@ -234,7 +234,7 @@ test("compare debounces changed text and reuses cached results for redraws", asy
 test("closing compare cancels a pending comparison", async () => {
   const app = await bootApp({
     instance: 7,
-    storage: { scratchpad_notes: NOTES },
+    storage: { sodilaud_notes: NOTES },
     handlers: { load_workspace_preference: () => null }
   });
   const { document } = app.dom.window;

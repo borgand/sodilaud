@@ -10,7 +10,7 @@ import {
   selectPrimaryAsset
 } from "./release-ui.js";
 
-const RELEASES_URL = "https://github.com/crims0n/scratchpad/releases";
+const RELEASES_URL = "https://github.com/borgand/sodilaud/releases";
 const elements = {
   releaseBadge: document.getElementById("release-badge"),
   releaseDate: document.getElementById("release-date"),

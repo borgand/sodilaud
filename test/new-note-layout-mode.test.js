@@ -9,8 +9,8 @@ const app = await bootApp({
     import_file_native: () => ({ title: "Imported", content: "# Imported heading" })
   },
   storage: {
-    scratchpad_layout_mode: "preview",
-    scratchpad_notes: [
+    sodilaud_layout_mode: "preview",
+    sodilaud_notes: [
       { id: "written", title: "Written", content: "# Heading", updatedAt: 1, isTitleLocked: true }
     ]
   }
@@ -33,7 +33,7 @@ test("a blank scratchpad opens in edit mode instead of an empty preview", () => 
   assert.equal(document.getElementById("mode-preview").getAttribute("aria-pressed"), "false");
   // The buttons and the remembered mode have to agree, or the next launch
   // reopens in a mode the toolbar was not showing.
-  assert.equal(app.storage.getItem("scratchpad_layout_mode"), "edit");
+  assert.equal(app.storage.getItem("sodilaud_layout_mode"), "edit");
 });
 
 // Split still shows an editor, so a new scratchpad there is already typable and
@@ -43,7 +43,7 @@ test("split mode is left alone", () => {
   document.getElementById("new-note-btn").click();
 
   assert.equal(mode(), "split");
-  assert.equal(app.storage.getItem("scratchpad_layout_mode"), "split");
+  assert.equal(app.storage.getItem("sodilaud_layout_mode"), "split");
 });
 
 // An import arrives with Markdown worth rendering, so preview is the right view.
@@ -56,5 +56,5 @@ test("a scratchpad created with content keeps preview", async () => {
 
   assert.equal(document.getElementById("editor-textarea").value, "# Imported heading");
   assert.equal(mode(), "preview");
-  assert.equal(app.storage.getItem("scratchpad_layout_mode"), "preview");
+  assert.equal(app.storage.getItem("sodilaud_layout_mode"), "preview");
 });

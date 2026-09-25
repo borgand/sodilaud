@@ -11,14 +11,14 @@ fn main() {
     // subsystem build; diagnostics must only go to stderr in this mode.
     if std::env::args_os().any(|argument| argument == "--mcp-stdio") {
         if std::env::args_os().count() != 2 {
-            eprintln!("Usage: scratchpad --mcp-stdio");
+            eprintln!("Usage: sodilaud --mcp-stdio");
             std::process::exit(2);
         }
-        if let Err(error) = scratchpad_lib::run_mcp_stdio(&context.config().identifier) {
-            eprintln!("Scratchpad MCP: {error}");
+        if let Err(error) = sodilaud_lib::run_mcp_stdio(&context.config().identifier) {
+            eprintln!("Sodilaud MCP: {error}");
             std::process::exit(1);
         }
         return;
     }
-    scratchpad_lib::run(context)
+    sodilaud_lib::run(context)
 }

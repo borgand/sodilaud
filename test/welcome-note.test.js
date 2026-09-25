@@ -8,7 +8,7 @@ import { WELCOME_NOTE_CONTENT, WELCOME_NOTE_TITLE } from "../src/welcome-note.js
 
 test("a fresh install creates the current welcome guide", async () => {
   const app = await bootApp({ handlers: { load_workspace_preference: () => null } });
-  const notes = app.read("scratchpad_notes");
+  const notes = app.read("sodilaud_notes");
 
   assert.equal(notes.length, 1);
   assert.equal(notes[0].title, WELCOME_NOTE_TITLE);

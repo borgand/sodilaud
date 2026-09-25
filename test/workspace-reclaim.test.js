@@ -7,11 +7,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { bootApp } from "./helpers/app-harness.js";
 
-const WORKSPACE = "/tmp/scratchpad-reclaim-workspace.db";
+const WORKSPACE = "/tmp/sodilaud-reclaim-workspace.db";
 
 const app = await bootApp({
   storage: {
-    scratchpad_notes: [{ id: "local", title: "Local", content: "local", updatedAt: 1, isTitleLocked: true }]
+    sodilaud_notes: [{ id: "local", title: "Local", content: "local", updatedAt: 1, isTitleLocked: true }]
   },
   handlers: {
     select_db_file: () => WORKSPACE,

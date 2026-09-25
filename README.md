@@ -1,22 +1,22 @@
-# Scratchpad
+# Sodilaud
 
-[![CI](https://github.com/crims0n/scratchpad/actions/workflows/ci.yml/badge.svg)](https://github.com/crims0n/scratchpad/actions/workflows/ci.yml)
-[![Latest release](https://img.shields.io/github/v/release/crims0n/scratchpad?include_prereleases)](https://github.com/crims0n/scratchpad/releases)
+[![CI](https://github.com/borgand/sodilaud/actions/workflows/ci.yml/badge.svg)](https://github.com/borgand/sodilaud/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/borgand/sodilaud?include_prereleases)](https://github.com/borgand/sodilaud/releases)
 [![License: GPL v3 or later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 
-Scratchpad is a lightweight, open-source, local-first desktop editor for notes, snippets, and Markdown. It runs on macOS, Windows, and Linux with no account, cloud service, or telemetry.
+Sodilaud is a lightweight, open-source, local-first desktop editor for notes, snippets, and Markdown. It runs on macOS, Windows, and Linux with no account, cloud service, or telemetry.
 
-[Visit the Scratchpad website](https://crims0n.github.io/scratchpad/) for an OS-aware download and SHA-256 checksums.
+[Visit the Sodilaud website](https://borgand.github.io/sodilaud/) for an OS-aware download and SHA-256 checksums.
 
 <p align="center">
-  <img src="images/preview.png" alt="Scratchpad application preview" width="900">
+  <img src="images/preview.png" alt="Sodilaud application preview" width="900">
 </p>
 
 ## Install
 
-Scratchpad is in beta. Download the newest prerelease from the [Scratchpad website](https://crims0n.github.io/scratchpad/) or [GitHub Releases](https://github.com/crims0n/scratchpad/releases):
+Sodilaud is in beta. Download the newest prerelease from the [Sodilaud website](https://borgand.github.io/sodilaud/) or [GitHub Releases](https://github.com/borgand/sodilaud/releases):
 
-- **macOS:** open the `.dmg` and drag Scratchpad Beta to Applications.
+- **macOS:** open the `.dmg` and drag Sodilaud Beta to Applications.
 - **Windows:** run the `.msi` or `.exe` installer.
 - **Linux:** install the `.deb`, or make the `.AppImage` executable and run it.
 
@@ -44,25 +44,25 @@ See [release notes](RELEASE_NOTES.md) for highlights, compatibility details, and
 - Recoverable note deletion with persistent trash, Restore actions, and user-confirmed Empty Trash
 - Built-in and importable color themes with contrast-aware sidebar and active-note tones
 - Persistent editor zoom and adjustable editor line spacing
-- A sectioned Scratchpad menu, About panel, keyboard shortcut reference, and Markdown cheatsheet
+- A sectioned Sodilaud menu, About panel, keyboard shortcut reference, and Markdown cheatsheet
 
 ## Storage and privacy
 
-This fork uses its own app identifier, `io.github.borgand.sodilaud`, so it does not read upstream Scratchpad's local notes or preferences, and it never copies or deletes them. Reopen a workspace file to restore it; [docs/MIGRATION.md](docs/MIGRATION.md) explains how to bring local notes across. Workspace files and preferences are kept owner-only (`0600`), and deleted note bodies are overwritten in workspace files.
+Sodilaud keeps its state under the app identifier `io.github.borgand.sodilaud`. Workspace files and preferences are kept owner-only (`0600`), and deleted note bodies are overwritten in workspace files.
 
-By default, notes, folders, and trash stay in the desktop webview's local storage. Scratchpad also supports optional portable workspace files for a durable collection of notes, folders, trash, pinned state, and sidebar order. Workspace files use SQLite internally and may have a `.db` or `.sqlite` extension. Notes without a folder remain at the top level of the sidebar; deleting a folder from the sidebar returns its notes there rather than deleting them. Agent folder deletion requires an empty folder.
+By default, notes, folders, and trash stay in the desktop webview's local storage. Sodilaud also supports optional portable workspace files for a durable collection of notes, folders, trash, pinned state, and sidebar order. Workspace files use SQLite internally and may have a `.db` or `.sqlite` extension. Notes without a folder remain at the top level of the sidebar; deleting a folder from the sidebar returns its notes there rather than deleting them. Agent folder deletion requires an empty folder.
 
 Local notes and workspace notes are two separate collections, each with its own trash. While a workspace is connected, changes are written to that workspace and the local collection is left exactly as it was, so disconnecting returns the notes and trash you had before. Connecting an empty workspace seeds it with the active notes and folders already available in the app; local trash stays local. A workspace with existing notes, folders, or trash opens its own collection.
 
-Pending workspace changes are flushed before the desktop window closes; if that save fails, Scratchpad cancels the close and reports the error. If a workspace cannot be opened at start-up, Scratchpad reports it and falls back to your local notes, leaving the workspace file untouched.
+Pending workspace changes are flushed before the desktop window closes; if that save fails, Sodilaud cancels the close and reports the error. If a workspace cannot be opened at start-up, Sodilaud reports it and falls back to your local notes, leaving the workspace file untouched.
 
-Scratchpad has no analytics, advertising, accounts, or sync service. Markdown is parsed on-device, preview HTML is sanitized, and remote images are blocked so merely previewing a note does not contact an image host. Links in the preview open in your default browser rather than inside the app; following one is an explicit network action and may contact that destination.
+Sodilaud has no analytics, advertising, accounts, or sync service. Markdown is parsed on-device, preview HTML is sanitized, and remote images are blocked so merely previewing a note does not contact an image host. Links in the preview open in your default browser rather than inside the app; following one is an explicit network action and may contact that destination.
 
 This fork contains no update check and makes no outbound request of any kind: it links no HTTP client, and `npm run check:egress` fails the build if network capability reappears. New versions are published as releases in this repository; download them yourself when you choose to.
 
 The optional [MCP agent access](docs/mcp.md) uses a stdio mode built into the
 desktop executable and is off by default. While enabled, it can read the collection open
-in Scratchpad, including edits that have not been saved yet. Individually enabled
+in Sodilaud, including edits that have not been saved yet. Individually enabled
 write functions can create notes and folders, append text, rename notes and
 folders, move notes between folders, move notes to recoverable trash, and delete
 empty folders. Agents can list trash metadata; restoring and permanently
@@ -74,7 +74,7 @@ Back up important workspace files like any other local document. Local-only note
 
 ## Agent access (MCP)
 
-Open **Scratchpad menu → Agent access** and turn access **On**. Choose **MCP Configuration** to copy the executable path, `--mcp-stdio` argument, or generic JSON example into a client that supports local stdio MCP servers. Configuration stays available while access is off. Scratchpad must remain open; the accent-colored **MCP listening** indicator appears beside the save status while access is enabled.
+Open **Sodilaud menu → Agent access** and turn access **On**. Choose **MCP Configuration** to copy the executable path, `--mcp-stdio` argument, or generic JSON example into a client that supports local stdio MCP servers. Configuration stays available while access is off. Sodilaud must remain open; the accent-colored **MCP listening** indicator appears beside the save status while access is enabled.
 
 Each time access starts, all five read permissions are on and all eight write permissions are off. Use the **Read** and **Write** checkboxes to choose individual functions or select all in a section. Changes apply to connected clients immediately and reset when access is restarted.
 
@@ -83,7 +83,7 @@ Each time access starts, all five read permissions are on and all eight write pe
 | Read | List folders, list notes, search notes, read note content, list trash metadata |
 | Write | Create note, create folder, append to note, rename note, move note, rename folder, delete note to trash, delete empty folder |
 
-Writes to existing items check the current revision before changing anything. Request IDs make retries safe after a timeout or failed save. Agents cannot replace an entire note, read trashed note bodies, restore notes, or empty trash. Access applies to all connected local clients and to the collection currently open in Scratchpad, including unsaved edits.
+Writes to existing items check the current revision before changing anything. Request IDs make retries safe after a timeout or failed save. Agents cannot replace an entire note, read trashed note bodies, restore notes, or empty trash. Access applies to all connected local clients and to the collection currently open in Sodilaud, including unsaved edits.
 
 See the [MCP reference](docs/mcp.md) for client setup, tool arguments, limits, retry behavior, and the privacy boundary.
 
@@ -121,7 +121,7 @@ The app displays `Cmd` on macOS and `Ctrl` on Windows or Linux.
 
 ## Markdown editing
 
-Scratchpad keeps its Markdown assistance lightweight and works directly in the native text editor:
+Sodilaud keeps its Markdown assistance lightweight and works directly in the native text editor:
 
 - `Enter` preserves the marker and spacing of bullet lists, advances ordered-list numbering, and creates unchecked task items. An empty item outdents or exits its list.
 - `Tab` at the start of a list item nests the complete item and its children; `Shift+Tab` outdents them. Elsewhere, Tab inserts indentation. Fenced code always receives literal indentation.
@@ -131,15 +131,15 @@ Scratchpad keeps its Markdown assistance lightweight and works directly in the n
 - Pasting a URL over selected text makes a Markdown link. Pasting a rectangular tab-separated spreadsheet range makes a Markdown table; ragged or uniformly indented tab-separated text stays literal.
 - Right-click in either editor and choose **Insert** for a starter table, task list, fenced code block, inline link, or reference-style link. The first useful placeholder is selected so typing replaces it immediately.
 
-Syntax highlighting is enabled by default. Open **Scratchpad menu → Appearance → Syntax highlighting** to toggle both the editor’s Markdown coloring and language-aware Preview highlighting. Preview code highlighting requires a supported language after the opening fence, such as <code>```javascript</code>; unknown and unlabeled fences remain plain code.
+Syntax highlighting is enabled by default. Open **Sodilaud menu → Appearance → Syntax highlighting** to toggle both the editor’s Markdown coloring and language-aware Preview highlighting. Preview code highlighting requires a supported language after the opening fence, such as <code>```javascript</code>; unknown and unlabeled fences remain plain code.
 
-Source line numbers are off by default. Open **Scratchpad menu → Appearance → Line numbers** to show a subtle, theme-aware gutter in both editor panes; the preference is remembered between launches.
+Source line numbers are off by default. Open **Sodilaud menu → Appearance → Line numbers** to show a subtle, theme-aware gutter in both editor panes; the preference is remembered between launches.
 
 Open two notes side by side, then choose **Compare** in the toolbar to highlight source differences without changing either note. Removed text is marked on the left, added text on the right, and related words receive contiguous substring detail. The toolbar reports the total number of changed lines across both notes. Comparison refreshes after a brief pause in typing, showing **Updating comparison…** while pending, and turns off when split view closes.
 
 ## Themes
 
-Scratchpad includes Default Dark and Light, Dracula, Catppuccin Mocha, Nord, Tokyo Night, Monokai Pro, One Dark Pro, Solarized Dark and Light, Amber CRT, Green CRT, Pastel Daydream, Macintosh System 6, Mac OS 9 Platinum, Windows Classic, and GitHub Dark.
+Sodilaud includes Default Dark and Light, Dracula, Catppuccin Mocha, Nord, Tokyo Night, Monokai Pro, One Dark Pro, Solarized Dark and Light, Amber CRT, Green CRT, Pastel Daydream, Macintosh System 6, Mac OS 9 Platinum, Windows Classic, and GitHub Dark.
 
 A custom JSON theme requires `background` and `foreground`. Other colors receive defaults when omitted:
 
@@ -168,8 +168,8 @@ Simple TOML/key-value theme files using the same names are also accepted. Import
 ### Run locally
 
 ```bash
-git clone https://github.com/crims0n/scratchpad.git
-cd scratchpad
+git clone https://github.com/borgand/sodilaud.git
+cd sodilaud
 npm install
 npm run tauri -- dev
 ```
@@ -223,4 +223,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow. Please repo
 
 ## License
 
-Scratchpad is free software licensed under [GPL-3.0-or-later](LICENSE). The bundled Marked parser is provided under the MIT License; Highlight.js and jsdiff are provided under the BSD 3-Clause License. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Sodilaud is free software licensed under [GPL-3.0-or-later](LICENSE). It is a hard fork of [Scratchpad](https://github.com/crims0n/scratchpad) by crims0n, used under the same license. The bundled Marked parser is provided under the MIT License; Highlight.js and jsdiff are provided under the BSD 3-Clause License. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

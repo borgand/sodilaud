@@ -11,7 +11,7 @@ test("MCP status follows confirmed access and workspace changes preserve the liv
   let finishWorkspaceSnapshot;
   const app = await bootApp({
     storage: {
-      scratchpad_notes: [{
+      sodilaud_notes: [{
         id: "local", title: "Local note", content: "Local body",
         updatedAt: 1, isTitleLocked: true
       }]
@@ -51,7 +51,7 @@ test("MCP status follows confirmed access and workspace changes preserve the liv
   await settle();
   assert.equal(status.hidden, true, "wait for the native listener to start");
   assert.equal(toggle.disabled, true);
-  finishStarting({ command: "/Applications/Scratchpad.app/Contents/MacOS/scratchpad", args: ["--mcp-stdio"] });
+  finishStarting({ command: "/Applications/Sodilaud.app/Contents/MacOS/sodilaud", args: ["--mcp-stdio"] });
   await settle();
   assert.equal(status.hidden, false);
   assert.equal(saveStatus.textContent, "Agent access enabled — reads only until you allow write functions in MCP Configuration");

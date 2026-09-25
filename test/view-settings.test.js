@@ -9,12 +9,12 @@ import { bootApp } from "./helpers/app-harness.js";
 test("editor and sidebar view settings are adjustable and persistent", async () => {
   const app = await bootApp({
     storage: {
-      scratchpad_editor_zoom: "1.2",
-      scratchpad_editor_line_spacing: "1.8",
-      scratchpad_note_preview_lines: "2",
-      scratchpad_syntax_highlighting: "true",
-      scratchpad_editor_line_numbers: "true",
-      scratchpad_notes: [{
+      sodilaud_editor_zoom: "1.2",
+      sodilaud_editor_line_spacing: "1.8",
+      sodilaud_note_preview_lines: "2",
+      sodilaud_syntax_highlighting: "true",
+      sodilaud_editor_line_numbers: "true",
+      sodilaud_notes: [{
         id: "preview-note",
         title: "Preview note",
         content: "First detail\nSecond detail\nThird detail",
@@ -43,8 +43,8 @@ test("editor and sidebar view settings are adjustable and persistent", async () 
   assert.equal(document.getElementById("agent-access-toggle-btn").textContent, "Off");
   assert.equal(document.getElementById("agent-access-config-btn").textContent, "MCP Configuration");
   assert.equal(document.getElementById("help-menu-btn").textContent, "Help & reference");
-  assert.equal(document.getElementById("about-menu-btn").firstChild.textContent.trim(), "About Scratchpad");
-  assert.equal(document.getElementById("actions-btn").getAttribute("aria-label"), "Open Scratchpad menu");
+  assert.equal(document.getElementById("about-menu-btn").firstChild.textContent.trim(), "About Sodilaud");
+  assert.equal(document.getElementById("actions-btn").getAttribute("aria-label"), "Open Sodilaud menu");
   [...document.querySelectorAll("#actions-dropdown-content button")].forEach((button) => {
     assert.doesNotMatch(button.textContent.trim(), /\.\.\.$/);
   });
@@ -87,11 +87,11 @@ test("editor and sidebar view settings are adjustable and persistent", async () 
   assert.equal(root.style.getPropertyValue("zoom"), "");
   assert.equal(root.style.getPropertyValue("--editor-font-size"), "1.3rem");
   assert.equal(root.style.getPropertyValue("--editor-line-height"), "1.9");
-  assert.equal(app.storage.getItem("scratchpad_editor_zoom"), "1.3");
-  assert.equal(app.storage.getItem("scratchpad_editor_line_spacing"), "1.9");
-  assert.equal(app.storage.getItem("scratchpad_note_preview_lines"), "3");
-  assert.equal(app.storage.getItem("scratchpad_syntax_highlighting"), "false");
-  assert.equal(app.storage.getItem("scratchpad_editor_line_numbers"), "false");
+  assert.equal(app.storage.getItem("sodilaud_editor_zoom"), "1.3");
+  assert.equal(app.storage.getItem("sodilaud_editor_line_spacing"), "1.9");
+  assert.equal(app.storage.getItem("sodilaud_note_preview_lines"), "3");
+  assert.equal(app.storage.getItem("sodilaud_syntax_highlighting"), "false");
+  assert.equal(app.storage.getItem("sodilaud_editor_line_numbers"), "false");
   assert.equal(root.classList.contains("syntax-highlighting-enabled"), false);
   assert.equal(document.getElementById("syntax-highlighting-toggle").textContent, "Off");
   assert.equal(document.getElementById("line-numbers-toggle").textContent, "Off");
@@ -103,7 +103,7 @@ test("editor and sidebar view settings are adjustable and persistent", async () 
   }
   assert.equal(document.getElementById("preview-lines-value").textContent, "10");
   assert.equal(document.getElementById("preview-lines-increase-btn").disabled, true);
-  assert.equal(app.storage.getItem("scratchpad_note_preview_lines"), "10");
+  assert.equal(app.storage.getItem("sodilaud_note_preview_lines"), "10");
 
   const zoomOutEvent = new app.dom.window.KeyboardEvent("keydown", {
     key: "-",
@@ -117,15 +117,15 @@ test("editor and sidebar view settings are adjustable and persistent", async () 
 
   document.getElementById("zoom-reset-btn").click();
   assert.equal(root.style.getPropertyValue("--editor-font-size"), "1rem");
-  assert.equal(app.storage.getItem("scratchpad_editor_zoom"), "1");
+  assert.equal(app.storage.getItem("sodilaud_editor_zoom"), "1");
 
   document.getElementById("line-spacing-value").click();
   assert.equal(root.style.getPropertyValue("--editor-line-height"), "1.6");
-  assert.equal(app.storage.getItem("scratchpad_editor_line_spacing"), "1.6");
+  assert.equal(app.storage.getItem("sodilaud_editor_line_spacing"), "1.6");
 
   document.getElementById("preview-lines-value").click();
   assert.equal(root.style.getPropertyValue("--note-preview-lines"), "2");
-  assert.equal(app.storage.getItem("scratchpad_note_preview_lines"), "2");
+  assert.equal(app.storage.getItem("sodilaud_note_preview_lines"), "2");
 
   document.getElementById("theme-picker-btn").click();
   document.querySelector('[aria-label="Use Default Light theme"]').click();

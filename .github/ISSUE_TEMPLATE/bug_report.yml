@@ -1,5 +1,5 @@
 name: Bug report
-description: Report a reproducible problem in Scratchpad.
+description: Report a reproducible problem in Sodilaud.
 title: "[Bug]: "
 labels: [bug]
 body:
@@ -9,7 +9,7 @@ body:
   - type: input
     id: version
     attributes:
-      label: Scratchpad version
+      label: Sodilaud version
       placeholder: 0.1.1
     validations:
       required: true

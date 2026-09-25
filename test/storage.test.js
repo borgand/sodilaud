@@ -41,7 +41,7 @@ test("local persistence serializes the complete note collection", () => {
   const result = persistNotesLocally(storage, notes);
 
   assert.equal(result.ok, true);
-  assert.deepEqual(JSON.parse(writes.get("scratchpad_notes")), notes);
+  assert.deepEqual(JSON.parse(writes.get("sodilaud_notes")), notes);
 });
 
 test("local persistence reports quota failures without throwing", () => {

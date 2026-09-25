@@ -18,8 +18,8 @@ const versions = new Map([
   ["package-lock.json root package", packageLock.packages?.[""]?.version],
   ["src-tauri/tauri.conf.json", tauriConfig.version],
   ["src-tauri/Cargo.toml", cargoVersion],
-  ["src-tauri/Cargo.lock", cargoLock.match(/\[\[package\]\]\nname = "scratchpad"\nversion = "([^"]+)"/)?.[1]],
-  ["RELEASE_NOTES.md", releaseNotes.match(/^# Scratchpad(?: Beta)? v(\S+)/)?.[1]],
+  ["src-tauri/Cargo.lock", cargoLock.match(/\[\[package\]\]\nname = "sodilaud"\nversion = "([^"]+)"/)?.[1]],
+  ["RELEASE_NOTES.md", releaseNotes.match(/^# Sodilaud(?: Beta)? v(\S+)/)?.[1]],
   ["src/index.html About dialog", aboutVersion]
 ]);
 

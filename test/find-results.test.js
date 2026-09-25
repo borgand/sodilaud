@@ -32,7 +32,7 @@ const NOTES = [
 test("Find All lists live matches and jumps to the selected result", async () => {
   let nativeResizeHandler = null;
   const app = await bootApp({
-    storage: { scratchpad_notes: NOTES },
+    storage: { sodilaud_notes: NOTES },
     handlers: { load_workspace_preference: () => null },
     windowApi: {
       getCurrentWindow: () => ({

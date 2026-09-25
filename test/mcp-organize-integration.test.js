@@ -10,8 +10,8 @@ for (const database of [false, true]) {
     let disk = { notes: [seed], folders: seedFolders };
     let hold = null;
     let fail = false;
-    const app = await bootApp({ instance: database ? 2 : 1, storage: { scratchpad_notes: [seed], scratchpad_folders: seedFolders }, handlers: {
-      start_mcp_server: () => ({ command: "/scratchpad", args: ["--mcp-stdio"] }),
+    const app = await bootApp({ instance: database ? 2 : 1, storage: { sodilaud_notes: [seed], sodilaud_folders: seedFolders }, handlers: {
+      start_mcp_server: () => ({ command: "/sodilaud", args: ["--mcp-stdio"] }),
       select_db_file: () => "/tmp/mcp-organize.db",
       load_db_notes: () => structuredClone(disk.notes),
       load_db_folders: () => structuredClone(disk.folders),
@@ -26,7 +26,7 @@ for (const database of [false, true]) {
         disk.notes = disk.notes.map(n => n.id === note.id ? structuredClone(note) : n);
       }
     } });
-    const stored = () => database ? disk : { notes: app.read("scratchpad_notes"), folders: app.read("scratchpad_folders") };
+    const stored = () => database ? disk : { notes: app.read("sodilaud_notes"), folders: app.read("sodilaud_folders") };
     if (database) { app.click("db-connect-btn"); await settle(100); }
     app.click("agent-access-toggle-btn");
     await settle();

@@ -10,7 +10,7 @@ const LOCAL_NOTES = [
 const LOCAL_FOLDERS = [{ id: "local-folder", name: "Local Folder" }];
 
 const app = await bootApp({
-  storage: { scratchpad_notes: LOCAL_NOTES, scratchpad_folders: LOCAL_FOLDERS },
+  storage: { sodilaud_notes: LOCAL_NOTES, sodilaud_folders: LOCAL_FOLDERS },
   handlers: {
     load_workspace_preference: () => "/tmp/malformed-folders.db",
     load_db_notes: () => [
@@ -27,6 +27,6 @@ test("a malformed workspace folder response falls back without rewriting either 
     ["Local Folder"]
   );
   assert.equal(app.invocations.some(({ command }) => command.startsWith("save_")), false);
-  assert.deepEqual(app.read("scratchpad_notes"), LOCAL_NOTES);
-  assert.deepEqual(app.read("scratchpad_folders"), LOCAL_FOLDERS);
+  assert.deepEqual(app.read("sodilaud_notes"), LOCAL_NOTES);
+  assert.deepEqual(app.read("sodilaud_folders"), LOCAL_FOLDERS);
 });

@@ -1,12 +1,12 @@
 # Third-party notices
 
-Scratchpad's optional update checker uses [reqwest](https://github.com/seanmonstar/reqwest)
+Sodilaud's optional update checker uses [reqwest](https://github.com/seanmonstar/reqwest)
 and [semver](https://github.com/dtolnay/semver), each available under the MIT or
 Apache License 2.0. HTTPS is provided by rustls and its platform certificate verifier.
 The release manifest generator uses [node-semver](https://github.com/npm/node-semver)
 under the ISC License; it is a build dependency and is not bundled in the app.
 
-Scratchpad includes [Marked](https://github.com/markedjs/marked), a Markdown parser.
+Sodilaud includes [Marked](https://github.com/markedjs/marked), a Markdown parser.
 
 Copyright (c) 2018+, MarkedJS
 Copyright (c) 2011-2018, Christopher Jeffrey
@@ -62,7 +62,7 @@ software, even if advised of the possibility of such damage.
 
 ## Highlight.js
 
-Scratchpad includes [Highlight.js](https://github.com/highlightjs/highlight.js),
+Sodilaud includes [Highlight.js](https://github.com/highlightjs/highlight.js),
 a syntax highlighter, under the BSD 3-Clause License:
 
 Copyright (c) 2006, Ivan Sagalaev. All rights reserved.
@@ -92,14 +92,14 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ## Rust SDK for the Model Context Protocol
 
-Scratchpad's optional agent access uses
+Sodilaud's optional agent access uses
 [rmcp](https://github.com/modelcontextprotocol/rust-sdk), the official Rust SDK
 for the Model Context Protocol, under the Apache License 2.0. The license text
 is available at <https://www.apache.org/licenses/LICENSE-2.0>.
 
 ## jsdiff
 
-Scratchpad includes [jsdiff](https://github.com/kpdecker/jsdiff), a text
+Sodilaud includes [jsdiff](https://github.com/kpdecker/jsdiff), a text
 comparison library, under the BSD 3-Clause License:
 
 Copyright (c) 2009-2015, Kevin Decker
