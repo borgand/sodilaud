@@ -5,8 +5,8 @@
 
 // The pure core is tested on every platform but only wired into the app on macOS.
 #![cfg_attr(not(target_os = "macos"), allow(dead_code))]
-#![allow(dead_code)] // Removed in Task 5 once the runtime uses the module.
 
+pub mod commands;
 pub mod detect;
 pub mod hygiene;
 pub mod service;
@@ -14,5 +14,7 @@ pub mod store;
 
 #[cfg(target_os = "macos")]
 pub mod pasteboard;
+#[cfg(target_os = "macos")]
+pub mod runtime;
 #[cfg(target_os = "macos")]
 pub mod watcher;

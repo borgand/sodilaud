@@ -35,6 +35,7 @@ impl<V: AsRef<str>> History<V> {
         self.entries.len()
     }
 
+    #[allow(dead_code)] // clippy::len_without_is_empty requires this alongside len().
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }

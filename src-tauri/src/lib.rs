@@ -825,7 +825,8 @@ pub fn run(context: tauri::Context<tauri::Wry>) {
     #[cfg(target_os = "macos")]
     let builder = builder
         .menu(macos_menu)
-        .on_menu_event(handle_macos_menu_event);
+        .on_menu_event(handle_macos_menu_event)
+        .manage(clipboard::runtime::ClipboardRuntime::default());
 
     builder
         // Only confirm_and_open_url uses the opener, from Rust; the webview has
@@ -858,7 +859,12 @@ pub fn run(context: tauri::Context<tauri::Wry>) {
             mcp::start_mcp_server,
             mcp::set_mcp_permissions,
             mcp::complete_mcp_write,
-            mcp::stop_mcp_server
+            mcp::stop_mcp_server,
+            clipboard::commands::clip_list,
+            clipboard::commands::clip_reveal,
+            clipboard::commands::clip_select,
+            clipboard::commands::clip_delete,
+            clipboard::commands::clip_set_config
         ])
         .run(context)
         .expect("error while running tauri application");

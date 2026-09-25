@@ -87,11 +87,15 @@ pub struct ClipListing {
 /// Payload-free so an error can never carry a clipboard value to the webview.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum ClipError {
+    #[allow(dead_code)] // Constructed only by clipboard commands built for non-macOS targets.
     Unsupported,
     Disabled,
     WrongWindow,
+    #[allow(dead_code)] // Used from Task 6.
     HotkeyInvalid,
+    #[allow(dead_code)] // Used from Task 6.
     HotkeyUnavailable,
+    #[allow(dead_code)] // Used from Task 7.
     Internal,
 }
 

@@ -1,0 +1,14 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "clipboard",
+  "description": "Clipboard history popup. The only window that can read entries. core:window:allow-destroy lets Esc and the close button dismiss it.",
+  "windows": ["clipboard"],
+  "platforms": ["macOS"],
+  "permissions": [
+    "allow-clip-list",
+    "allow-clip-reveal",
+    "allow-clip-select",
+    "allow-clip-delete",
+    "core:window:allow-destroy"
+  ]
+}

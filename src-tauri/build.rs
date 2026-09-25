@@ -27,6 +27,11 @@ fn main() {
             "set_mcp_permissions",
             "complete_mcp_write",
             "stop_mcp_server",
+            "clip_list",
+            "clip_reveal",
+            "clip_select",
+            "clip_delete",
+            "clip_set_config",
         ]),
     ))
     .expect("failed to run tauri-build");
