@@ -8,4 +8,5 @@
 #![allow(dead_code)] // Removed in Task 5 once the runtime uses the module.
 
 pub mod detect;
+pub mod service;
 pub mod store;
