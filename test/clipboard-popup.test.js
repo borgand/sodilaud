@@ -132,3 +132,41 @@ test("the focused row is scrolled into view", async () => {
   assert.equal(last.row.querySelector(".clip-slot").textContent, "2");
   assert.deepEqual(last.options, { block: "nearest" });
 });
+
+test("a refresh with the same entries patches rows in place", async () => {
+  const listing = structuredClone(LISTING);
+  const { doc, popup } = await setup(listing);
+  const before = [...doc.querySelectorAll(".clip-row")];
+  listing.items[0].secondsLeft = 30;
+  listing.items[1].secondsLeft = 44;
+  await popup.refresh();
+  const after = [...doc.querySelectorAll(".clip-row")];
+  assert.equal(after.length, before.length);
+  after.forEach((row, index) => assert.equal(row, before[index], `row ${index} is the same node`));
+  assert.equal(after[0].querySelector(".clip-time").textContent, "30s");
+  assert.ok(after[0].classList.contains("clip-expiring"));
+  assert.equal(after[1].querySelector(".clip-time").textContent, "44s");
+});
+
+test("a refresh with a new entry rebuilds the rows", async () => {
+  const listing = structuredClone(LISTING);
+  const { doc, popup } = await setup(listing);
+  const before = doc.querySelector(".clip-row");
+  listing.items.unshift({ id: 30, text: "fresh", masked: false, secondsLeft: 600, extraLines: 0 });
+  await popup.refresh();
+  const rows = [...doc.querySelectorAll(".clip-row")];
+  assert.equal(rows.length, 4);
+  assert.notEqual(rows[0], before);
+  assert.equal(rows[0].querySelector(".clip-text").textContent, "fresh");
+});
+
+test("a refresh never scrolls", async () => {
+  const listing = structuredClone(LISTING);
+  const { dom, popup } = await setup(listing);
+  const scrolled = [];
+  dom.window.HTMLElement.prototype.scrollIntoView = function () { scrolled.push(this); };
+  await popup.refresh();
+  listing.items.unshift({ id: 31, text: "fresh", masked: false, secondsLeft: 600, extraLines: 0 });
+  await popup.refresh();
+  assert.equal(scrolled.length, 0);
+});

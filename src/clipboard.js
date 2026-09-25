@@ -23,6 +23,7 @@ export function createPopup({ document, invoke }) {
   let focused = 0;
   let focusedId;
   const revealed = new Map();
+  let shownLayout;
 
   function focus(index) {
     focused = index;
@@ -66,7 +67,27 @@ export function createPopup({ document, invoke }) {
     });
     list.replaceChildren(...rows);
     empty.hidden = items.length > 0;
-    rows[focused]?.scrollIntoView?.({ block: "nearest" });
+    shownLayout = layout();
+  }
+
+  function layout() {
+    return items.map((item) => `${item.id}${revealed.has(item.id) ? "r" : ""}`).join(",");
+  }
+
+  // Rebuilding every second would reset scrolling and could drop a click, so an
+  // unchanged list only has its countdowns updated.
+  function patch() {
+    [...list.children].forEach((row, index) => {
+      const item = items[index];
+      row.classList.toggle("clip-expiring", item.secondsLeft < EXPIRING_SECONDS);
+      row.querySelector(".clip-time").textContent = formatRemaining(item.secondsLeft);
+    });
+  }
+
+  function moveFocus(index) {
+    focus(index);
+    render();
+    list.children[focused]?.scrollIntoView?.({ block: "nearest" });
   }
 
   async function refresh() {
@@ -83,7 +104,8 @@ export function createPopup({ document, invoke }) {
     }
     const kept = items.findIndex((item) => item.id === focusedId);
     focus(kept >= 0 ? kept : Math.min(focused, Math.max(items.length - 1, 0)));
-    render();
+    if (layout() === shownLayout) patch();
+    else render();
   }
 
   async function pick(index) {
@@ -124,8 +146,8 @@ export function createPopup({ document, invoke }) {
     const slot = event.key === "0" ? 9 : Number.parseInt(event.key, 10) - 1;
     if (/^[0-9]$/.test(event.key)) return pick(slot);
     switch (event.key) {
-      case "ArrowDown": focus(Math.min(focused + 1, Math.max(items.length - 1, 0))); render(); break;
-      case "ArrowUp": focus(Math.max(focused - 1, 0)); render(); break;
+      case "ArrowDown": moveFocus(Math.min(focused + 1, Math.max(items.length - 1, 0))); break;
+      case "ArrowUp": moveFocus(Math.max(focused - 1, 0)); break;
       case "Enter": return pick(focused);
       case " ": event.preventDefault?.(); return toggleReveal(focused);
       case "Backspace": case "Delete": return remove(focused);
