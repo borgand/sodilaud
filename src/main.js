@@ -1540,17 +1540,29 @@ async function registerQuitHandler() {
   const listen = window.__TAURI__?.event?.listen;
   if (typeof listen !== "function") return;
 
+  let quitting = false;
   try {
     await listen("sodilaud-quit-requested", async () => {
-      await dbSaveQueue;
-      const saved = await flushPendingSaves();
-      if (!saved) {
-        setSaveFailedState();
-        showNotification("Could not save the latest changes; quit cancelled");
-        return;
+      if (quitting) return;
+      quitting = true;
+      try {
+        await dbSaveQueue;
+        const saved = await flushPendingSaves();
+        if (!saved) {
+          setSaveFailedState();
+          showNotification("Could not save the latest changes; quit cancelled");
+          return;
+        }
+        await invoke("quit_app");
+      } catch (error) {
+        console.error("Failed to quit Sodilaud", error);
+        showNotification("Could not quit Sodilaud");
+      } finally {
+        quitting = false;
       }
-      await invoke("quit_app");
     });
+    // Until this runs, Rust quits without asking this window to flush first.
+    await invoke("quit_handler_ready");
   } catch (error) {
     console.error("Failed to register the quit handler", error);
   }

@@ -900,6 +900,7 @@ pub fn run(context: tauri::Context<tauri::Wry>) {
             clipboard::commands::clip_set_config,
             clipboard::commands::hide_main_window,
             clipboard::commands::quit_app,
+            clipboard::commands::quit_handler_ready,
             clipboard::commands::open_accessibility_settings
         ])
         .setup(|_app| {

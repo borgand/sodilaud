@@ -99,7 +99,16 @@ pub fn hide_main(app: &AppHandle) {
     let _ = app.set_activation_policy(ActivationPolicy::Accessory);
 }
 
+/// Wipes first: the history must not outlive a quit request, whatever the note
+/// flush does. Without a registered JS quit listener there is nothing to flush
+/// through, so quit directly as a plain Cmd+Q would.
 pub fn request_quit(app: &AppHandle) {
+    let runtime = app.state::<ClipboardRuntime>();
+    runtime.shutdown();
+    if !runtime.quit_handler_ready() {
+        app.exit(0);
+        return;
+    }
     show_main(app);
     let _ = app.emit_to("main", QUIT_REQUESTED_EVENT, ());
 }

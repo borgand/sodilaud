@@ -31,6 +31,7 @@
     "allow-clip-set-config",
     "allow-hide-main-window",
     "allow-quit-app",
+    "allow-quit-handler-ready",
     "allow-open-accessibility-settings"
   ]
 }

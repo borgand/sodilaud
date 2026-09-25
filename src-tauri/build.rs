@@ -34,6 +34,7 @@ fn main() {
             "clip_set_config",
             "hide_main_window",
             "quit_app",
+            "quit_handler_ready",
             "open_accessibility_settings",
         ]),
     ))

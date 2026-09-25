@@ -36,6 +36,7 @@ pub struct ClipboardRuntime {
     registered: Mutex<Option<String>>,
     frontmost_pid: Mutex<Option<i32>>,
     paste_on_close: AtomicBool,
+    quit_handler_ready: AtomicBool,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -182,6 +183,14 @@ impl ClipboardRuntime {
 
     pub fn take_paste_on_close(&self) -> bool {
         self.paste_on_close.swap(false, Ordering::SeqCst)
+    }
+
+    pub fn mark_quit_handler_ready(&self) {
+        self.quit_handler_ready.store(true, Ordering::SeqCst);
+    }
+
+    pub fn quit_handler_ready(&self) -> bool {
+        self.quit_handler_ready.load(Ordering::SeqCst)
     }
 
     /// Called on quit: stop polling, wipe, clear the pasteboard if it holds an entry.

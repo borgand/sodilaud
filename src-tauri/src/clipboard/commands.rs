@@ -130,6 +130,14 @@ pub fn quit_app(app: AppHandle) {
 }
 
 #[tauri::command]
+pub fn quit_handler_ready(app: AppHandle) {
+    #[cfg(target_os = "macos")]
+    app.state::<ClipboardRuntime>().mark_quit_handler_ready();
+    #[cfg(not(target_os = "macos"))]
+    let _ = app;
+}
+
+#[tauri::command]
 pub fn open_accessibility_settings(app: AppHandle) -> Result<(), ClipError> {
     #[cfg(target_os = "macos")]
     {
