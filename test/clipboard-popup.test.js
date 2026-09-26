@@ -160,6 +160,24 @@ test("a refresh with a new entry rebuilds the rows", async () => {
   assert.equal(rows[0].querySelector(".clip-text").textContent, "fresh");
 });
 
+function cssRule(css, selector) {
+  const start = css.indexOf(`${selector} {`);
+  assert.ok(start >= 0, `selector ${selector} not found`);
+  const end = css.indexOf("}", start);
+  return css.slice(start, end);
+}
+
+test("the focused row's accent border has a non-zero width and a solid style", async () => {
+  const css = await readFile("src/clipboard.css", "utf8");
+  const base = cssRule(css, ".clip-row");
+  const focused = cssRule(css, ".clip-row.clip-focused");
+  // The width/style live on the base rule (shared by every row) so the border
+  // reserves its space whether or not a row is focused; only the colour flips.
+  assert.match(base, /border-left:\s*[1-9]\d*px\s+solid\s+/, "the base row must reserve a non-zero, solid border-left");
+  assert.match(focused, /border-left-color:\s*var\(--clip-accent\)/, "the focused row must recolour that border to the accent");
+  assert.doesNotMatch(focused, /padding-left/, "the focused row must not shift its padding relative to other rows");
+});
+
 test("a listing with a theme sets the popup CSS variables and ignores a non-hex value", async () => {
   const listing = structuredClone(LISTING);
   listing.theme = {

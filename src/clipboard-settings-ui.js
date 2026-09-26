@@ -23,9 +23,18 @@ function hotkeyMessage(status) {
 
 // The six main-window variables that best match what the popup needs (see
 // src/styles.css :root and PopupTheme in src-tauri/src/clipboard/service.rs).
+//
+// `surface` reads --bg-note-hover rather than --bg-input: a custom theme
+// (applyTheme in main.js) never sets --bg-input inline, only the built-in
+// light/dark class rules define it, so the popup would always fall back to
+// the generic default under a custom theme. --bg-note-hover is the surface
+// tone the main window itself derives and sets inline for every measurable
+// custom theme (deriveThemeSurfaceColors in theme-colors.js), and in the
+// built-in themes it is the same tone as --bg-input, so this changes nothing
+// about what the main window displays.
 const POPUP_THEME_VARS = {
   background: "--bg-app",
-  surface: "--bg-input",
+  surface: "--bg-note-hover",
   text: "--text-primary",
   muted: "--text-muted",
   accent: "--accent-color",

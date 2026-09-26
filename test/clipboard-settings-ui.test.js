@@ -2,6 +2,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { bootApp, settle } from "./helpers/app-harness.js";
+import { PRESET_THEMES } from "../src/preset-themes.js";
+import { deriveThemeSurfaceColors } from "../src/theme-colors.js";
+
+const githubDark = PRESET_THEMES.find(theme => theme.id === "github-dark");
 
 // Mirrors Rust: `hotkey` is the registered hotkey, empty while the feature is off.
 const ok = (config) => ({ enabled: config.enabled, hotkey: config.enabled ? config.hotkey : "", hotkeyError: null, accessibilityTrusted: false });
@@ -92,6 +96,12 @@ test("macOS sends the active theme's colours to the popup at setup and on every 
   assert.equal(theme.text, "#c9d1d9");
   assert.equal(theme.accent, "#58a6ff");
   assert.equal(theme.border, "#30363d");
+  // The surface must follow the custom theme too, not just the built-in
+  // default: it has to equal the same hover tone the main window itself
+  // shows for GitHub Dark (--bg-note-hover), not a variable the theme never
+  // sets inline (--bg-input, which only the built-in light/dark rules define).
+  const expectedSurface = deriveThemeSurfaceColors(githubDark)["--bg-note-hover"];
+  assert.equal(theme.surface, expectedSurface);
 });
 
 test("other platforms never call clip_set_theme even with a saved theme", async () => {

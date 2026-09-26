@@ -12,8 +12,8 @@ html, body { margin: 0; height: 100%; background: var(--clip-bg); color: var(--c
 .clip-header h1 { flex: 1; margin: 0; font-size: 13px; font-weight: 600; }
 .clip-ttl, .clip-footer, .clip-time { color: var(--clip-muted); }
 .clip-list { flex: 1; margin: 0; padding: 0; list-style: none; overflow-y: auto; }
-.clip-row { display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 4px 12px; cursor: pointer; }
-.clip-row.clip-focused { background: var(--clip-surface); border-left-color: var(--clip-accent); padding-left: 9px; }
+.clip-row { display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 4px 12px; border-left: 3px solid transparent; cursor: pointer; }
+.clip-row.clip-focused { background: var(--clip-surface); border-left-color: var(--clip-accent); }
 .clip-row.clip-expiring { opacity: 0.55; }
 .clip-slot { width: 1.2em; color: var(--clip-muted); font-variant-numeric: tabular-nums; }
 .clip-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, Menlo, monospace; }
