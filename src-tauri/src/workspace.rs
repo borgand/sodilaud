@@ -19,7 +19,10 @@ impl Workspaces {
         if self.paths()?.contains(Path::new(db_path)) {
             Ok(())
         } else {
-            Err("This workspace was not chosen in Sodilaud. Open it again from the Sodilaud menu.".to_string())
+            Err(
+                "This workspace was not chosen in Sodilaud. Open it again from the Sodilaud menu."
+                    .to_string(),
+            )
         }
     }
 

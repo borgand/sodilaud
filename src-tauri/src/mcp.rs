@@ -1358,9 +1358,10 @@ impl SodilaudServer {
     }
 
     fn with_snapshot<T>(&self, operation: impl FnOnce(&Snapshot) -> T) -> Result<T, McpError> {
-        let snapshot = self.snapshot.read().map_err(|_| {
-            McpError::internal_error("The Sodilaud snapshot is unavailable", None)
-        })?;
+        let snapshot = self
+            .snapshot
+            .read()
+            .map_err(|_| McpError::internal_error("The Sodilaud snapshot is unavailable", None))?;
         Ok(operation(&snapshot))
     }
 }
@@ -2092,10 +2093,7 @@ mod tests {
         )
         .await;
         let initialized = receive_json(&mut client).await;
-        assert_eq!(
-            initialized["result"]["serverInfo"]["name"],
-            "sodilaud-mcp"
-        );
+        assert_eq!(initialized["result"]["serverInfo"]["name"], "sodilaud-mcp");
         send_json(
             &mut client,
             serde_json::json!({
@@ -2296,17 +2294,21 @@ mod tests {
         let (address, _, cancellation, server) = start_test_server().await;
         let stream = connect_to_editor(address, &"a".repeat(64)).await.unwrap();
         let mut client = BufReader::new(stream);
-        send_json(&mut client, serde_json::json!({
-            "jsonrpc":"2.0", "id":"listen-test", "method":"subscriptions/listen",
-            "params":{
-                "_meta":{
-                    "io.modelcontextprotocol/protocolVersion":"2026-07-28",
-                    "io.modelcontextprotocol/clientInfo":{"name":"sodilaud-test","version":"1"},
-                    "io.modelcontextprotocol/clientCapabilities":{}
-                },
-                "notifications":{"toolsListChanged":true}
-            }
-        })).await;
+        send_json(
+            &mut client,
+            serde_json::json!({
+                "jsonrpc":"2.0", "id":"listen-test", "method":"subscriptions/listen",
+                "params":{
+                    "_meta":{
+                        "io.modelcontextprotocol/protocolVersion":"2026-07-28",
+                        "io.modelcontextprotocol/clientInfo":{"name":"sodilaud-test","version":"1"},
+                        "io.modelcontextprotocol/clientCapabilities":{}
+                    },
+                    "notifications":{"toolsListChanged":true}
+                }
+            }),
+        )
+        .await;
         let acknowledgment = receive_json(&mut client).await;
         assert_eq!(
             acknowledgment["method"],
