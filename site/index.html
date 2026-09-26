@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Sodilaud is a lightweight, open-source, local-first Markdown scratchpad for macOS, Windows, and Linux.">
+  <meta name="description" content="Sodilaud is a lightweight, open-source, local-first Markdown scratchpad for macOS, Windows, and Linux, with a private clipboard history on macOS.">
   <meta name="theme-color" content="#090d16">
   <meta property="og:title" content="Sodilaud — thoughts at the speed of typing">
   <meta property="og:description" content="A lightweight, open-source, local-first Markdown scratchpad for the desktop.">
@@ -25,6 +25,7 @@
       <span>Sodilaud</span>
     </a>
     <nav aria-label="Primary navigation">
+      <a href="#clipboard">Clipboard</a>
       <a href="#features">Features</a>
       <a href="#downloads">Downloads</a>
       <a href="https://github.com/borgand/sodilaud">GitHub</a>
@@ -55,6 +56,26 @@
       <div class="hero-visual" aria-label="Sodilaud application preview">
         <div class="preview-glow"></div>
         <img src="./assets/preview.png" alt="Sodilaud displaying a Markdown note in its dark theme" width="1233" height="950">
+      </div>
+    </section>
+
+    <section class="spotlight" id="clipboard" aria-labelledby="clipboard-title">
+      <div class="spotlight-copy">
+        <span class="section-kicker">New in v0.8 · macOS</span>
+        <h2 id="clipboard-title">Your last copies, one hotkey away.</h2>
+        <p>Press <kbd>⌘⇧V</kbd> in any app to open your recent text copies. Pick one with a number key, the arrows, or the mouse, and it goes back on the clipboard. Sodilaud can also paste it for you.</p>
+        <ul class="spotlight-points">
+          <li><strong>Memory only.</strong> Nothing is written to disk, logged, or sent to agents or the network. It is wiped when you quit.</li>
+          <li><strong>Secrets masked.</strong> API tokens, passwords in URLs, and <code>KEY=value</code> lines stay hidden until you reveal them.</li>
+          <li><strong>Expires on its own.</strong> You choose how many entries to keep and for how long, from 1 to 120 minutes.</li>
+          <li><strong>Stays out of the way.</strong> The popup opens over full-screen apps without bringing Sodilaud to the front.</li>
+        </ul>
+        <p class="spotlight-note">Off by default. Turn it on in <strong>Sodilaud menu → Clipboard history</strong>.</p>
+      </div>
+
+      <div class="spotlight-visual">
+        <div class="preview-glow"></div>
+        <img src="./assets/clipboard.png" alt="The Sodilaud clipboard history popup listing ten recent copies, with an API key and a database password masked and a GitHub token revealed" width="972" height="912" loading="lazy">
       </div>
     </section>
 

@@ -24,6 +24,21 @@ Packages are not yet production-signed. macOS and Windows may show a security wa
 
 See [release notes](RELEASE_NOTES.md) for highlights and compatibility details.
 
+## Clipboard history (macOS)
+
+New in v0.8: press `⌘⇧V` in any app to open your recent text copies, newest first. Pick one with `1`-`9`/`0`, the arrow keys, `j`/`k`, or the mouse to put it back on the clipboard. Turn on auto-paste if you want Sodilaud to paste it for you.
+
+<p align="center">
+  <img src="images/clipboard.png" alt="The Sodilaud clipboard history popup listing ten recent copies, with an API key and a database password masked and a GitHub token revealed" width="560">
+</p>
+
+- **Memory only.** Entries are never written to disk, local storage, workspace files, or logs, never sent to MCP agents, and never sent over the network. Quitting wipes them.
+- **Secrets masked.** API tokens, JWTs, private keys, passwords in URLs, and `KEY=value` lines stay hidden until you reveal them with `Space`, `h`, or the eye icon.
+- **Expires on its own.** Keep 1 to 50 entries for 1 to 120 minutes. When an entry goes, Sodilaud also clears the system clipboard if it still holds that value.
+- **Stays out of the way.** The popup opens over full-screen apps without bringing Sodilaud to the front or changing your `⌘Tab` order.
+
+Clipboard history is off by default. Turn it on in **Sodilaud menu → Clipboard history**. See [clipboard history](docs/clipboard-history.md) for every setting and the full privacy boundary.
+
 ## Features
 
 - Clipboard history on macOS: press `⌘⇧V` in any app to pick from your recent copies, with secrets masked, entries kept in memory only, and automatic expiry
