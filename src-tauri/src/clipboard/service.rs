@@ -256,7 +256,10 @@ impl<P: Pasteboard> Service<P> {
                 let mask = classify(value);
                 let (text, extra_lines) = match (hint(value, &mask), &mask) {
                     (Some(shown), Mask::Partial { .. }) => preview(&shown, PREVIEW_CHARS),
-                    (Some(shown), _) => (preview(&shown, PREVIEW_CHARS).0, 0),
+                    (Some(shown), _) => (
+                        preview(&shown, PREVIEW_CHARS).0,
+                        value.trim().lines().count().saturating_sub(1),
+                    ),
                     (None, _) => preview(value, PREVIEW_CHARS),
                 };
                 ListItem {
@@ -556,6 +559,18 @@ mod tests {
         service.poll(0);
         let item = &service.list(0)[0];
         assert_eq!(item.text, "DB_PASSWORD=••••");
+        assert!(item.masked);
+        assert_eq!(item.extra_lines, 2);
+    }
+
+    #[test]
+    fn note_with_a_later_secret_lists_its_first_line_and_extra_lines() {
+        let fake = Fake::default();
+        let mut service = service_with(&fake, 10);
+        fake.copy("## Start writing\n- Create a note.\nAPI_TOKEN=fas32faw03lasdk3j5");
+        service.poll(0);
+        let item = &service.list(0)[0];
+        assert_eq!(item.text, "## Start writing ••••k3j5 (62)");
         assert!(item.masked);
         assert_eq!(item.extra_lines, 2);
     }

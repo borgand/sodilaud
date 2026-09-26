@@ -3,7 +3,9 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Mutex, PoisonError};
 
+use objc2::rc::Retained;
 use objc2_app_kit::{NSApplicationActivationOptions, NSRunningApplication, NSWorkspace};
+use objc2_foundation::{NSDictionary, NSNumber, NSString};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
@@ -252,9 +254,14 @@ impl ClipboardRuntime {
         Some(pid)
     }
 
-    pub fn request_paste_on_close(&self) {
-        let wanted = self.config().auto_paste && accessibility_trusted();
-        self.paste_on_close.store(wanted, Ordering::SeqCst);
+    /// `paste` asks for a paste even when auto-paste is off (Cmd-Enter). Without
+    /// Accessibility the pick stays copy-only, and macOS is asked to show its grant
+    /// dialog, unless the paste would target Sodilaud itself and never happen anyway.
+    pub fn request_paste_on_close(&self, paste: bool) {
+        let wanted = paste || self.config().auto_paste;
+        let elsewhere = lock(&self.frontmost_pid).is_some_and(|pid| pid != own_pid());
+        let allowed = wanted && elsewhere && prompt_for_accessibility();
+        self.paste_on_close.store(allowed, Ordering::SeqCst);
     }
 
     pub fn take_paste_on_close(&self) -> bool {
@@ -331,11 +338,23 @@ fn unregister_hotkey(app: &AppHandle, hotkey: &str) {
 #[link(name = "ApplicationServices", kind = "framework")]
 extern "C" {
     fn AXIsProcessTrusted() -> bool;
+    fn AXIsProcessTrustedWithOptions(options: *const std::ffi::c_void) -> bool;
 }
 
 pub fn accessibility_trusted() -> bool {
     // SAFETY: AXIsProcessTrusted takes no arguments and only reads process state.
     unsafe { AXIsProcessTrusted() }
+}
+
+/// Like `accessibility_trusted`, but when untrusted macOS shows its dialog and adds
+/// this exact binary to the Accessibility list, so a rebuilt app can be granted.
+fn prompt_for_accessibility() -> bool {
+    let key = NSString::from_str("AXTrustedCheckOptionPrompt");
+    let yes = NSNumber::new_bool(true);
+    let options = NSDictionary::from_slices(&[&*key], &[&*yes]);
+    // SAFETY: NSDictionary is toll-free bridged to the CFDictionary the call reads,
+    // and `options` outlives the call.
+    unsafe { AXIsProcessTrustedWithOptions(Retained::as_ptr(&options).cast()) }
 }
 
 #[cfg(test)]

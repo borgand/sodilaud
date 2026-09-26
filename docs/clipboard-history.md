@@ -13,18 +13,26 @@ returns `Unsupported`.
 When enabled, every text copy from any app is captured automatically, including copies
 from password managers. Press the hotkey (`⌘⇧V` by default) to open a small popup listing
 your recent copies, newest first. Pick one with `1`-`9`/`0`, or `↑`/`↓` (or `j`/`k`) and
-`Enter`, to put it back on the system clipboard; press `⌘V` yourself to paste it, or turn on
-auto-paste in settings to have Sodilaud post `⌘V` for you. `Space` or `h` reveals a masked
-entry at the focused row. The popup is a floating panel that takes
+`Enter`, to put it back on the system clipboard; press `⌘V` yourself to paste it, or press
+`⌘↵` instead of `Enter` to have Sodilaud post `⌘V` for you. Turn on auto-paste in settings to
+make every pick paste. `Space` or `h` reveals a masked entry at the focused row. The popup is a floating panel that takes
 keyboard input without activating Sodilaud, so the app you were using stays frontmost,
 the popup also appears over full-screen apps, and the `⌘⇥` order does not change. Drag the
 popup by its header to look behind it; it opens at its usual spot again next time.
-Auto-paste only fires if the app that was frontmost when you pressed the hotkey is still
+Auto-paste and `⌘↵` need Accessibility permission. Without it a pick only copies, and macOS
+shows its dialog for granting the permission; restart Sodilaud after granting it. A paste only fires if the app that was frontmost when you pressed the hotkey is still
 frontmost about 120 ms after the popup closes, and it never pastes into Sodilaud itself;
 if either check fails, the value stays on the clipboard for a manual paste. Entries expire a
 fixed time after they were copied, values that look like secrets are masked in the popup,
 and the history lives only in memory: nothing is written to disk, to the workspace
 database, or sent anywhere.
+
+A masked row never shows more than the last 4 characters of a secret, plus a known token
+prefix such as `ghp_`. When an entry holds ordinary text before its first secret, such as a
+note that ends with `API_TOKEN=…` or a `curl` command with a bearer token, the row shows
+that text from the first line, then the dots, the last 4 characters, and the total length:
+`## Start writing ••••k3j5 (62)`. A bare secret shows only the dots and its last 4
+characters.
 
 ## Settings
 
@@ -130,6 +138,10 @@ implementation:
   at the top third of the focused screen. Repeat on a second monitor.
 - [ ] Press `1`-`3` and `Enter` to pick, then paste with `⌘V`. Focus returns to the previous
   app.
+- [ ] With auto-paste off and Accessibility granted, press `⌘↵` on a row. It pastes into the
+  previous app. Without Accessibility, `⌘↵` only copies.
+- [ ] Copy a few lines of text ending in `API_TOKEN=<random>`. The row shows the first line,
+  the dots, the token's last 4 characters, and a `+N` line count.
 - [ ] Re-copy an existing value. It moves to the top, and its time left is unchanged.
 - [ ] Set the TTL to 1 min, copy a value, and wait. The row disappears, and `pbpaste` prints
   nothing.
