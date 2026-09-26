@@ -41,16 +41,37 @@ pub fn make_floating_panel(window: &WebviewWindow) -> Result<(), PanelRefusal> {
     convert(&*ns_window(window)?)
 }
 
-/// Orders the panel in front and makes it key without activating the app.
-pub fn show_panel(window: &WebviewWindow) {
-    let Some(panel) = ns_window(window)
-        .ok()
-        .and_then(|w| w.downcast::<NSPanel>().ok())
-    else {
-        return;
+/// Orders the window in front but fully transparent, click-through, and not key,
+/// so WebKit treats the page as visible and paints it while nothing shows on
+/// screen yet and nothing under it is blocked if the page never answers.
+pub fn order_front_transparent(window: &WebviewWindow) {
+    if let Ok(ns_window) = ns_window(window) {
+        ns_window.setAlphaValue(0.0);
+        ns_window.setIgnoresMouseEvents(true);
+        ns_window.orderFrontRegardless();
+    }
+}
+
+/// Makes the window opaque and, if it is a panel, key without activating the app.
+/// Returns false when it is not a panel, so the caller can focus it the ordinary
+/// (activating) way.
+pub fn present(window: &WebviewWindow) -> bool {
+    let Ok(ns_window) = ns_window(window) else {
+        return false;
     };
-    panel.orderFrontRegardless();
-    panel.makeKeyWindow();
+    ns_window.setIgnoresMouseEvents(false);
+    ns_window.setAlphaValue(1.0);
+    let is_panel = ns_window.downcast_ref::<NSPanel>().is_some();
+    if is_panel {
+        ns_window.makeKeyWindow();
+    }
+    is_panel
+}
+
+pub fn order_out(window: &WebviewWindow) {
+    if let Ok(ns_window) = ns_window(window) {
+        ns_window.orderOut(None);
+    }
 }
 
 /// Swaps the window back to the class it had before `make_floating_panel`, so the

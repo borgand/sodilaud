@@ -13,7 +13,8 @@ your recent copies, newest first. Pick one with `1`-`9`/`0`, or `↑`/`↓` (or 
 auto-paste in settings to have Sodilaud post `⌘V` for you. `Space` or `h` reveals a masked
 entry at the focused row. The popup is a floating panel that takes
 keyboard input without activating Sodilaud, so the app you were using stays frontmost,
-the popup also appears over full-screen apps, and the `⌘⇥` order does not change.
+the popup also appears over full-screen apps, and the `⌘⇥` order does not change. Drag the
+popup by its header to look behind it; it opens at its usual spot again next time.
 Auto-paste only fires if the app that was frontmost when you pressed the hotkey is still
 frontmost about 120 ms after the popup closes, and it never pastes into Sodilaud itself;
 if either check fails, the value stays on the clipboard for a manual paste. Entries expire a
@@ -65,8 +66,14 @@ button.
   third-party clipboard managers that respect those markers.
 - The main Sodilaud window can only configure the feature (`clip_set_config`); it cannot
   list, reveal, select, or delete entries. Only the popup window holds the `clip_list`,
-  `clip_reveal`, `clip_select`, `clip_delete`, and `clip_close` permissions, and it has no
-  general window permissions: `clip_close` closes only the popup itself.
+  `clip_reveal`, `clip_select`, `clip_delete`, `clip_close`, `clip_shown`, and
+  `clip_start_drag` permissions, and it has no general window permissions: `clip_close`
+  hides only the popup itself, and `clip_start_drag` moves only the popup itself.
+- The popup window is created once, when you enable the feature, and reused. Every time it
+  hides (Esc, a pick, a click elsewhere, the hotkey, the close button, or disabling), its
+  page forgets the list and every revealed value and stops refreshing before the window is
+  ordered out, so each open starts fully masked. The window is destroyed when you disable
+  the feature or quit.
 - The popup window is content-protected, so screen sharing and screenshots should show it
   blank. This is best effort: some capture paths may ignore it.
 - Clipboard history is never reachable from MCP. The MCP snapshot sent to agents never
@@ -81,9 +88,10 @@ Some copies cannot be wiped because they are held by frameworks Sodilaud does no
   writes a picked entry to the pasteboard or compares the pasteboard's contents before
   clearing it.
 - Tauri IPC buffers for `clip_list` and `clip_reveal` responses.
-- The heap of the popup webview's WebContent process. Freed memory there is not zeroed, so
-  list previews and revealed values can outlive the popup window until the memory is
-  reused.
+- The heap of the popup webview's WebContent process. The page drops its references on
+  every hide, but freed memory there is not zeroed, so list previews and revealed values
+  can stay in that process's memory, which lives from enable to disable or quit, until the
+  memory is reused.
 - Any app you have granted Accessibility permission can read the popup's visible text
   through the macOS Accessibility (AX) API while the popup is open.
 
@@ -151,3 +159,15 @@ checked before release, in addition to the items above:
   app; Sodilaud has not moved to the front of the list.
 - [ ] With the popup open, click another app's window. The popup closes and the app you
   clicked stays in front.
+- [ ] Open the popup several times, including the first time after enabling and after
+  launching with the feature on. It never shows a white rectangle, an empty list, or the
+  previous open's rows before the current list appears.
+- [ ] With the main Sodilaud window open on another app's Space, open the popup there. The
+  main window does not come forward with the popup and does not hide with it.
+- [ ] Open and close the popup a few times, then press `⌘⇥`. The order is the same as before
+  the popup opened; Sodilaud has not moved to the front.
+- [ ] Reveal a masked entry, close the popup with each of Esc, a click elsewhere, the hotkey,
+  and the close button, and reopen it. The entry is masked again each time.
+- [ ] Drag the popup by its header ("Clipboard" or the TTL). It moves and keeps keyboard
+  focus. Dragging from the close button does not move it, and the header text is not
+  selectable. Close and reopen: the popup is back at its fixed spot.

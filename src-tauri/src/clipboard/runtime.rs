@@ -11,6 +11,7 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use super::hygiene::{disable_core_dumps, now_ms, silence_clipboard_panics};
 use super::pasteboard::MacPasteboard;
 use super::popup;
+use super::popup_state::{needs_hide, PopupState};
 use super::service::{
     plan_hotkey, ClipConfig, ClipError, ClipListing, HotkeyPlan, PopupTheme, Secret, Service,
 };
@@ -36,6 +37,7 @@ pub struct ClipboardRuntime {
     registered: Mutex<Option<String>>,
     frontmost_pid: Mutex<Option<i32>>,
     paste_on_close: AtomicBool,
+    popup: Mutex<PopupState>,
     quit_handler_ready: AtomicBool,
     /// The main window's colours for the popup, memory only. Never persisted.
     theme: Mutex<PopupTheme>,
@@ -109,18 +111,23 @@ impl ClipboardRuntime {
                     config.ttl_ms(),
                 ));
                 drop(service);
-                let app = app.clone();
+                let emitter = app.clone();
                 let on_panic = move || {
-                    let _ = app.emit_to("main", STOPPED_EVENT, ());
+                    let _ = emitter.emit_to("main", STOPPED_EVENT, ());
                 };
                 *lock(&self.watcher) = Some(watcher::spawn(on_panic, self.service.clone()));
+                let handle = app.clone();
+                let _ = app.run_on_main_thread(move || {
+                    popup::ensure_created(&handle);
+                });
             }
         }
     }
 
     fn stop(&self, app: &AppHandle) {
         self.halt();
-        popup::close(app);
+        let handle = app.clone();
+        let _ = app.run_on_main_thread(move || popup::destroy(&handle));
     }
 
     fn halt(&self) {
@@ -177,6 +184,24 @@ impl ClipboardRuntime {
 
     pub fn remember_frontmost(&self) {
         *lock(&self.frontmost_pid) = frontmost_pid();
+    }
+
+    pub fn forget_frontmost(&self) {
+        lock(&self.frontmost_pid).take();
+    }
+
+    pub fn popup_state(&self) -> PopupState {
+        *lock(&self.popup)
+    }
+
+    /// Returns the previous state.
+    pub fn set_popup_state(&self, state: PopupState) -> PopupState {
+        std::mem::replace(&mut *lock(&self.popup), state)
+    }
+
+    /// Showing or shown: the page may be asked for entries.
+    pub fn popup_open(&self) -> bool {
+        needs_hide(self.popup_state())
     }
 
     /// Returns the pid a paste may target: the remembered app, if it is another

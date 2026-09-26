@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { JSDOM } from "jsdom";
-import { createPopup, formatRemaining, slotKey } from "../src/clipboard.js";
+import { attach, createPopup, formatRemaining, slotKey } from "../src/clipboard.js";
 
 const LISTING = {
   ttlMinutes: 10,
@@ -281,4 +281,174 @@ test("a refresh never scrolls", async () => {
   listing.items.unshift({ id: 31, text: "fresh", masked: false, secondsLeft: 600, extraLines: 0 });
   await popup.refresh();
   assert.equal(scrolled.length, 0);
+});
+
+function fakeTimers() {
+  const live = new Map();
+  let next = 1;
+  return {
+    live,
+    setInterval(fn, ms) { const id = next++; live.set(id, { fn, ms }); return id; },
+    clearInterval(id) { live.delete(id); }
+  };
+}
+
+async function setupHidden(listing = LISTING) {
+  const html = await readFile("src/clipboard.html", "utf8");
+  const dom = new JSDOM(html);
+  const doc = dom.window.document;
+  const calls = [];
+  const pending = [];
+  const timers = fakeTimers();
+  const invoke = async (command, args) => {
+    calls.push({ command, args, rows: doc.querySelectorAll(".clip-row").length });
+    if (command === "clip_list") return structuredClone(listing);
+    if (command === "clip_reveal") {
+      if (pending.hold) return new Promise((resolve) => pending.push(resolve));
+      return "ghp_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8";
+    }
+    return true;
+  };
+  const popup = createPopup({ document: doc, invoke, timers, afterPaint: async () => {} });
+  const key = (k) => popup.onKey(new dom.window.KeyboardEvent("keydown", { key: k }));
+  return { dom, doc, calls, pending, timers, popup, key };
+}
+
+test("show fetches and renders the list, starts the refresh timer, then signals readiness", async () => {
+  const { doc, calls, timers, popup } = await setupHidden();
+  await popup.show();
+  const shown = calls.find((c) => c.command === "clip_shown");
+  assert.ok(shown, "show must invoke clip_shown");
+  assert.equal(calls[0].command, "clip_list", "the list is fetched first");
+  assert.equal(shown.rows, 3, "rows are rendered before readiness is signalled");
+  assert.equal(doc.querySelectorAll(".clip-row").length, 3);
+  assert.equal(timers.live.size, 1, "one refresh timer runs while shown");
+  assert.equal([...timers.live.values()][0].ms, 1000);
+});
+
+test("hide forgets revealed values, items, and rows, and stops the refresh timer", async () => {
+  const { doc, timers, popup, key } = await setupHidden();
+  await popup.show();
+  await key("ArrowDown");
+  await key(" ");
+  assert.equal(popup.state().revealed.size, 1);
+  popup.hide();
+  assert.equal(popup.state().revealed.size, 0);
+  assert.deepEqual(popup.state().items, []);
+  assert.equal(doc.getElementById("clip-list").children.length, 0);
+  assert.equal(doc.body.textContent.includes("ghp_"), false, "no value text may remain in the page");
+  assert.equal(timers.live.size, 0, "the refresh timer must stop");
+});
+
+test("a show again after hide starts exactly one timer and re-masks revealed rows", async () => {
+  const { doc, timers, popup, key } = await setupHidden();
+  await popup.show();
+  await key("ArrowDown");
+  await key(" ");
+  popup.hide();
+  await popup.show();
+  assert.equal(timers.live.size, 1);
+  assert.equal(doc.querySelectorAll(".clip-row")[1].querySelector(".clip-text").textContent, "ghp_••••Q7r8 (40)");
+});
+
+test("a show cut short by hide neither renders nor signals readiness", async () => {
+  const { doc, calls, timers, popup } = await setupHidden();
+  const showing = popup.show();
+  popup.hide();
+  await showing;
+  assert.equal(calls.some((c) => c.command === "clip_shown"), false);
+  assert.equal(doc.querySelectorAll(".clip-row").length, 0);
+  assert.equal(timers.live.size, 0);
+});
+
+test("a reveal that answers after hide is dropped", async () => {
+  const { doc, pending, popup, key } = await setupHidden();
+  await popup.show();
+  pending.hold = true;
+  await key("ArrowDown");
+  const revealing = key(" ");
+  popup.hide();
+  pending.forEach((resolve) => resolve("ghp_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8"));
+  await revealing;
+  assert.equal(popup.state().revealed.size, 0);
+  assert.equal(doc.body.textContent.includes("ghp_A1b2"), false);
+});
+
+test("a refresh that answers after hide leaves the page empty", async () => {
+  const { doc, popup } = await setupHidden();
+  await popup.show();
+  const refreshing = popup.refresh();
+  popup.hide();
+  await refreshing;
+  assert.equal(doc.querySelectorAll(".clip-row").length, 0);
+  assert.deepEqual(popup.state().items, []);
+});
+
+test("mousedown on the header starts a window drag, but not on the close button or with another button", async () => {
+  const { dom, doc, calls } = await setupHidden();
+  const header = doc.querySelector(".clip-header");
+  const title = doc.getElementById("clip-title");
+  const close = doc.getElementById("clip-close");
+  const down = (target, button = 0) =>
+    target.dispatchEvent(new dom.window.MouseEvent("mousedown", { button, bubbles: true }));
+  down(title);
+  assert.deepEqual(calls.map((c) => c.command), ["clip_start_drag"]);
+  down(header);
+  assert.equal(calls.length, 2);
+  down(close);
+  down(header, 2);
+  assert.equal(calls.length, 2, "close button and non-primary buttons must not drag");
+});
+
+test("the header text cannot be selected", async () => {
+  const css = await readFile("src/clipboard.css", "utf8");
+  const header = cssRule(css, ".clip-header");
+  assert.match(header, /-webkit-user-select:\s*none/);
+  assert.match(header, /(?<!-)user-select:\s*none/);
+});
+
+test("attach exposes the show/hide hooks and honours a show requested before the page loaded", async () => {
+  const shown = [];
+  const popup = { show: () => shown.push("show"), hide: () => shown.push("hide") };
+  const win = { __sodilaudClipPending: true };
+  attach(win, popup);
+  assert.deepEqual(shown, ["show"]);
+  assert.equal(win.__sodilaudClipPending, false);
+  win.__sodilaudClip.hide();
+  assert.deepEqual(shown, ["show", "hide"]);
+  attach({}, { show: () => shown.push("again") });
+  assert.deepEqual(shown, ["show", "hide"], "no pending flag, no show");
+});
+
+async function rustScript(name) {
+  const source = await readFile("src-tauri/src/clipboard/popup.rs", "utf8");
+  const match = source.match(new RegExp(`const ${name}: &str =\\s*"((?:[^"\\\\]|\\\\.)*)";`));
+  assert.ok(match, `${name} not found in popup.rs`);
+  return match[1].replaceAll('\\"', '"');
+}
+
+test("the Rust eval scripts call the hooks, or leave a flag before the page has loaded", async () => {
+  const show = new Function("window", await rustScript("SHOW_SCRIPT"));
+  const hide = new Function("window", await rustScript("HIDE_SCRIPT"));
+  const early = {};
+  show(early);
+  assert.equal(early.__sodilaudClipPending, true);
+  hide(early);
+  assert.equal(early.__sodilaudClipPending, false);
+  const seen = [];
+  const loaded = { __sodilaudClip: { show: () => seen.push("show"), hide: () => seen.push("hide") } };
+  show(loaded);
+  hide(loaded);
+  assert.deepEqual(seen, ["show", "hide"]);
+});
+
+test("a delete that answers after hide does not refill the page", async () => {
+  const { doc, calls, popup, key } = await setupHidden();
+  await popup.show();
+  const deleting = key("Backspace");
+  popup.hide();
+  await deleting;
+  assert.ok(calls.some((c) => c.command === "clip_delete"));
+  assert.equal(doc.querySelectorAll(".clip-row").length, 0);
+  assert.deepEqual(popup.state().items, []);
 });

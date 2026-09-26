@@ -32,6 +32,8 @@ fn main() {
             "clip_select",
             "clip_delete",
             "clip_close",
+            "clip_shown",
+            "clip_start_drag",
             "clip_set_config",
             "clip_set_theme",
             "hide_main_window",

@@ -10,6 +10,7 @@ pub mod commands;
 pub mod detect;
 pub mod hygiene;
 pub mod layout;
+pub mod popup_state;
 pub mod service;
 pub mod store;
 

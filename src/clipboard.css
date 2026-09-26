@@ -8,7 +8,7 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--clip-bg); color: var(--clip-fg); font: 13px -apple-system, BlinkMacSystemFont, sans-serif; overflow: hidden; user-select: none; }
 .clip-popup { display: flex; flex-direction: column; height: 100%; }
-.clip-header { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px; border-bottom: 1px solid var(--clip-line); }
+.clip-header { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px; border-bottom: 1px solid var(--clip-line); cursor: default; -webkit-user-select: none; user-select: none; }
 .clip-header h1 { flex: 1; margin: 0; font-size: 13px; font-weight: 600; }
 .clip-ttl, .clip-footer, .clip-time { color: var(--clip-muted); }
 .clip-list { flex: 1; margin: 0; padding: 0; list-style: none; overflow-y: auto; }

@@ -822,12 +822,12 @@ fn macos_menu(app: &AppHandle<Wry>) -> tauri::Result<Menu<Wry>> {
 #[cfg(target_os = "macos")]
 fn handle_macos_menu_event(app: &AppHandle<Wry>, event: tauri::menu::MenuEvent) {
     if event.id() == NATIVE_QUIT_MENU_ID {
-        // Cmd+Q in the popup closes only the popup.
+        // Cmd+Q in the popup hides only the popup.
         if app
-            .get_webview_window(clipboard::commands::POPUP_LABEL)
-            .is_some()
+            .state::<clipboard::runtime::ClipboardRuntime>()
+            .popup_open()
         {
-            clipboard::popup::close(app);
+            clipboard::popup::hide(app);
         } else {
             clipboard::tray::request_quit(app);
         }
@@ -898,6 +898,8 @@ pub fn run(context: tauri::Context<tauri::Wry>) {
             clipboard::commands::clip_select,
             clipboard::commands::clip_delete,
             clipboard::commands::clip_close,
+            clipboard::commands::clip_shown,
+            clipboard::commands::clip_start_drag,
             clipboard::commands::clip_set_config,
             clipboard::commands::clip_set_theme,
             clipboard::commands::hide_main_window,
@@ -933,7 +935,7 @@ pub fn run(context: tauri::Context<tauri::Wry>) {
                 tauri::RunEvent::Exit => {
                     _app.state::<clipboard::runtime::ClipboardRuntime>()
                         .shutdown();
-                    clipboard::popup::close(_app);
+                    clipboard::popup::destroy(_app);
                 }
                 tauri::RunEvent::Reopen { .. } => clipboard::tray::show_main(_app),
                 _ => {}

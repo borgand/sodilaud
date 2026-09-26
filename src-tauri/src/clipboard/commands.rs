@@ -49,10 +49,12 @@ pub fn clip_reveal(window: Window, id: u64) -> Result<Secret, ClipError> {
     require_popup(&window)?;
     #[cfg(target_os = "macos")]
     {
-        window
-            .state::<ClipboardRuntime>()
-            .reveal(id)
-            .ok_or(ClipError::Disabled)
+        let runtime = window.state::<ClipboardRuntime>();
+        // A reveal still in flight when the popup hides must not reach the page.
+        if !runtime.popup_open() {
+            return Err(ClipError::Disabled);
+        }
+        runtime.reveal(id).ok_or(ClipError::Disabled)
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -70,7 +72,7 @@ pub fn clip_select(window: Window, id: u64) -> Result<bool, ClipError> {
         let picked = runtime.select(id);
         if picked {
             runtime.request_paste_on_close();
-            super::popup::close(window.app_handle());
+            on_main(&window, super::popup::hide);
         }
         Ok(picked)
     }
@@ -100,13 +102,50 @@ pub fn clip_close(window: Window) -> Result<(), ClipError> {
     require_popup(&window)?;
     #[cfg(target_os = "macos")]
     {
-        super::popup::close(window.app_handle());
+        on_main(&window, super::popup::hide);
         Ok(())
     }
     #[cfg(not(target_os = "macos"))]
     {
         Err(ClipError::Unsupported)
     }
+}
+
+/// The popup page has rendered and painted the list Rust asked it to show.
+#[tauri::command]
+pub fn clip_shown(window: Window) -> Result<(), ClipError> {
+    require_popup(&window)?;
+    #[cfg(target_os = "macos")]
+    {
+        on_main(&window, super::popup::present);
+        Ok(())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Err(ClipError::Unsupported)
+    }
+}
+
+/// Lets the header drag the popup without granting it any window permission.
+#[tauri::command]
+pub fn clip_start_drag(window: Window) -> Result<(), ClipError> {
+    require_popup(&window)?;
+    #[cfg(target_os = "macos")]
+    {
+        window.start_dragging().map_err(|_| ClipError::Internal)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Err(ClipError::Unsupported)
+    }
+}
+
+/// Panel calls need AppKit's main thread; this runs `action` inline when the
+/// command is already there.
+#[cfg(target_os = "macos")]
+fn on_main(window: &Window, action: fn(&AppHandle)) {
+    let app = window.app_handle().clone();
+    let _ = window.run_on_main_thread(move || action(&app));
 }
 
 #[tauri::command]
@@ -155,7 +194,7 @@ pub fn quit_app(app: AppHandle) {
     #[cfg(target_os = "macos")]
     {
         app.state::<ClipboardRuntime>().shutdown();
-        super::popup::close(&app);
+        super::popup::destroy(&app);
     }
     app.exit(0);
 }

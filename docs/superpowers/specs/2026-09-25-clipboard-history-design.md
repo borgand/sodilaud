@@ -62,24 +62,39 @@ widen or prolong exposure.
   - `clip_list() -> Vec<ListItem { id, preview: Option<String>, hint: Option<String>, masked, seconds_left, extra_lines }>`
     (plaintext preview only for unmasked entries; masked entries carry only `hint`)
   - `clip_reveal(id) -> String`
-  - `clip_select(id)` - Rust writes to the pasteboard, closes the popup, restores focus,
+  - `clip_select(id)` - Rust writes to the pasteboard, hides the popup, restores focus,
     optionally auto-pastes
+  - `clip_close()` - hides the popup (Esc, close button)
+  - `clip_shown()` - the page has rendered and painted the list for a pending show; only
+    then does Rust make the panel visible and key
+  - `clip_start_drag()` - starts a native window drag of the calling popup window, so the
+    header can move it without any `core:window` permission
   - `clip_delete(id)`
   - `clip_set_config(ClipConfig { enabled, capacity, ttl_minutes, hotkey, auto_paste }) -> ConfigStatus`
     (returns hotkey/Accessibility status, never entry data)
   - Errors are payload-free enum variants.
-- `popup.rs` - registers the global shortcut (`tauri-plugin-global-shortcut`), records the
-  frontmost app (`NSWorkspace.frontmostApplication`), creates the frameless, always-on-top
-  `clipboard` window at the fixed position, destroys it on blur, Esc, or pick, and reactivates
-  the recorded app. Auto-paste posts Cmd+V with `CGEvent` after reactivation, only if
-  `AXIsProcessTrusted()`.
+- `popup.rs` - creates the frameless, always-on-top `clipboard` window once, hidden and
+  converted to a non-activating panel, when the feature is enabled (including at launch
+  with the feature on). wry activates the app whenever it creates a webview, so the hotkey
+  never creates one: it only shows and hides the panel (creating it lazily only if the
+  creation at enable time failed). On show it records the frontmost app
+  (`NSWorkspace.frontmostApplication`), moves the panel to the fixed position and resizes
+  it for the current row count, orders it in fully transparent and click-through, and asks
+  the page to render; the panel becomes opaque and key only when the page calls
+  `clip_shown`. It hides the panel on blur, Esc, pick, the hotkey, `clip_close`, and
+  disable, reactivates the recorded app only if Sodilaud became frontmost, and destroys the
+  window only on disable and quit. Auto-paste posts Cmd+V with `CGEvent` after the hide,
+  only if `AXIsProcessTrusted()`.
 - `tray.rs` - tray icon (Tauri `tray-icon` feature), menu, hide/show, activation policy.
 
 ### Frontend
 
 - `src/clipboard.html`, `src/clipboard.js`: standalone page. No imports. No use of
-  `localStorage`, `sessionStorage`, `indexedDB`, `console`, or `fetch`. Talks only to the four
-  `clip_*` commands. Follows `prefers-color-scheme`.
+  `localStorage`, `sessionStorage`, `indexedDB`, `console`, or `fetch`. Talks only to the popup
+  `clip_*` commands. Follows `prefers-color-scheme`. Rust drives it with two hooks through
+  `eval`: `show()` fetches and renders the list, starts the 1 s refresh, and calls
+  `clip_shown` after the next paint; `hide()` forgets the revealed values, the list, and
+  the rows, and stops the refresh. An answer that arrives after a hide is dropped.
 - `src/main.js`: a "Clipboard history" settings section (macOS only) persisted under
   `clipboardHistory.*` in localStorage (settings only), pushed to Rust via `clip_set_config`
   at startup and on change. The close handler becomes flush-then-hide on macOS.
@@ -87,7 +102,8 @@ widen or prolong exposure.
 ### Capabilities
 
 - `src-tauri/capabilities/clipboard.json`: window `clipboard`, permissions `allow-clip-list`,
-  `allow-clip-reveal`, `allow-clip-select`, `allow-clip-delete`. No `core:*` permissions
+  `allow-clip-reveal`, `allow-clip-select`, `allow-clip-delete`, `allow-clip-close`,
+  `allow-clip-shown`, `allow-clip-start-drag`. No `core:*` permissions
   unless the popup cannot work without one; any added core permission is named in the guard
   test and justified in the PR body.
 - `src-tauri/capabilities/default.json` (window `main`): gains only `allow-clip-set-config`.
@@ -97,8 +113,9 @@ widen or prolong exposure.
 1. Hotkey: Rust records the frontmost app and opens the popup.
 2. Popup calls `clip_list`, renders rows.
 3. User presses `2`: popup calls `clip_select(id)`.
-4. Rust writes the value to the pasteboard with markers, destroys the popup, reactivates the
-   previous app, and posts Cmd+V if auto-paste is on and trusted.
+4. Rust writes the value to the pasteboard with markers, empties the page and hides the
+   popup, reactivates the previous app if needed, and posts Cmd+V if auto-paste is on and
+   trusted.
 
 Plaintext reaches JS only for unmasked previews and via `clip_reveal`.
 
@@ -129,7 +146,10 @@ Plaintext reaches JS only for unmasked previews and via `clip_reveal`.
 - Keys: `1`-`9`/`0` pick; `↑`/`↓` + `Enter` pick focused; `Space` reveal/re-mask focused
   (wraps to 4 lines, then scrolls); `⌫`/`Delete` trash focused; `Esc` or blur closes;
   hotkey while open closes; Cmd+Q in the popup closes the popup only.
-- Every open starts fully masked (window is destroyed on close).
+- The header ("Clipboard" and the TTL) drags the popup. The position is not kept: every
+  open returns to the fixed spot.
+- Every open starts fully masked: the window is reused, and every hide empties the page
+  (revealed values, list, rows, refresh timer) before the panel is ordered out.
 - Empty state: "Nothing copied yet. Entries expire after N min."
 - Trash is immediate, no confirmation: wipes the value and clears the system clipboard if it
   still holds it.
@@ -220,7 +240,10 @@ Hints (built in Rust):
 - `RLIMIT_CORE = 0` while the feature is enabled.
 - No logging macros (`println!`, `eprintln!`, `log`, `dbg!`) in the clipboard module.
 - Known, documented residue that cannot be wiped: the `NSString` returned by AppKit, Tauri IPC
-  buffers for `clip_list`/`clip_reveal`, and the popup JS heap until the window is destroyed.
+  buffers for `clip_list`/`clip_reveal`, and freed memory in the popup's WebContent process.
+  The popup window lives from enable to disable or quit; its page drops every reference to
+  entries on each hide, but freed JS heap memory is not zeroed and may hold previews or
+  revealed values until it is reused.
 
 ## Testing
 

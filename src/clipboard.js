@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // Standalone popup page: no imports and no storage. Values arrive masked from
-// Rust; plaintext is fetched only on reveal and dies with this window.
+// Rust; plaintext is fetched only on reveal. The window is reused: Rust calls
+// hide() on every close, which forgets everything the page was shown.
 
 const REFRESH_MS = 1000;
 const EXPIRING_SECONDS = 60;
@@ -52,7 +53,16 @@ export function slotKey(index) {
   return index === 9 ? "0" : "";
 }
 
-export function createPopup({ document, invoke }) {
+// Waits until the rendered list has been painted, so Rust makes the panel visible
+// only over fresh content. The timeout covers a page WebKit does not paint.
+function afterNextPaint() {
+  return new Promise((resolve) => {
+    setTimeout(resolve, 100);
+    requestAnimationFrame(() => requestAnimationFrame(resolve));
+  });
+}
+
+export function createPopup({ document, invoke, timers = globalThis, afterPaint = afterNextPaint }) {
   const list = document.getElementById("clip-list");
   const empty = document.getElementById("clip-empty");
   const ttl = document.getElementById("clip-ttl");
@@ -61,6 +71,10 @@ export function createPopup({ document, invoke }) {
   let focusedId;
   const revealed = new Map();
   let shownLayout;
+  // Bumped by every show and hide, so an answer that arrives afterwards is dropped.
+  let session = 0;
+  let hidden = false;
+  let timer;
 
   function focus(index) {
     focused = index;
@@ -162,13 +176,16 @@ export function createPopup({ document, invoke }) {
   }
 
   async function refresh() {
-    try {
-      const listing = await invoke("clip_list");
+    if (hidden) return;
+    const asked = session;
+    const listing = await invoke("clip_list").catch(() => undefined);
+    if (asked !== session) return;
+    if (listing) {
       items = listing.items;
       ttl.textContent = `${listing.ttlMinutes} min TTL`;
       empty.textContent = `Nothing copied yet. Entries expire after ${listing.ttlMinutes} min.`;
       applyTheme(listing.theme);
-    } catch {
+    } else {
       items = [];
     }
     for (const id of [...revealed.keys()]) {
@@ -191,10 +208,13 @@ export function createPopup({ document, invoke }) {
     if (revealed.has(item.id)) {
       revealed.delete(item.id);
     } else {
+      const asked = session;
       try {
-        revealed.set(item.id, await invoke("clip_reveal", { id: item.id }));
+        const plain = await invoke("clip_reveal", { id: item.id });
+        if (asked !== session) return;
+        revealed.set(item.id, plain);
       } catch {
-        await refresh();
+        if (asked === session) await refresh();
         return;
       }
     }
@@ -211,6 +231,36 @@ export function createPopup({ document, invoke }) {
 
   function close() {
     return invoke("clip_close").catch(() => {});
+  }
+
+  function hide() {
+    session += 1;
+    hidden = true;
+    if (timer !== undefined) timers.clearInterval(timer);
+    timer = undefined;
+    revealed.clear();
+    items = [];
+    focus(0);
+    list.replaceChildren();
+    empty.hidden = true;
+    shownLayout = undefined;
+  }
+
+  async function show() {
+    hide();
+    hidden = false;
+    const shown = session;
+    await refresh();
+    if (shown !== session) return;
+    timer = timers.setInterval(refresh, REFRESH_MS);
+    await afterPaint();
+    if (shown !== session) return;
+    await invoke("clip_shown").catch(() => {});
+  }
+
+  function startDrag(event) {
+    if (event.button !== 0 || event.target.closest?.("#clip-close")) return;
+    invoke("clip_start_drag").catch(() => {});
   }
 
   async function onKey(event) {
@@ -230,12 +280,21 @@ export function createPopup({ document, invoke }) {
 
   document.addEventListener("keydown", onKey);
   document.getElementById("clip-close")?.addEventListener("click", () => close());
-  return { refresh, onKey, state: () => ({ items, focused, revealed }) };
+  document.querySelector(".clip-header")?.addEventListener("mousedown", startDrag);
+  return { refresh, onKey, show, hide, state: () => ({ items, focused, revealed }) };
+}
+
+// Rust drives the page through these hooks (see SHOW_SCRIPT and HIDE_SCRIPT in
+// src-tauri/src/clipboard/popup.rs). A show that arrived before this module ran
+// left a flag behind instead.
+export function attach(win, popup) {
+  win.__sodilaudClip = { show: popup.show, hide: popup.hide };
+  if (win.__sodilaudClipPending) {
+    win.__sodilaudClipPending = false;
+    popup.show();
+  }
 }
 
 if (globalThis.window?.__TAURI__) {
-  const tauri = window.__TAURI__;
-  const popup = createPopup({ document, invoke: tauri.core.invoke });
-  popup.refresh();
-  setInterval(popup.refresh, REFRESH_MS);
+  attach(window, createPopup({ document, invoke: window.__TAURI__.core.invoke }));
 }

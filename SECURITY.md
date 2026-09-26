@@ -44,8 +44,10 @@ clipboard history.
 
 Trust boundary: only the clipboard popup window can list, reveal, select, or delete
 entries. The main Sodilaud window can only turn the feature on or off and change its
-settings; it has no permission to read entry contents. The popup can close only itself and
-has no other window permissions. The popup is content-protected so screen sharing and
+settings; it has no permission to read entry contents. The popup can hide and drag only
+itself and has no other window permissions. The popup window is created once when the
+feature is enabled and reused; every hide empties its page (list, revealed values, refresh
+timer) before the window is ordered out, and the window is destroyed on disable and quit. The popup is content-protected so screen sharing and
 screenshots should not capture it; this is best effort, and some capture paths may ignore
 it. Clipboard history is never exposed
 to MCP: the clipboard module is not referenced by the MCP server, so no entry can reach an
@@ -54,7 +56,8 @@ agent or its model provider.
 Known residue that cannot be wiped: the `NSString` objects AppKit creates when Sodilaud
 reads the pasteboard and when it writes or compares the pasteboard's contents, Tauri's IPC
 buffers for the popup's list and reveal responses, and the heap of the popup webview's
-WebContent process, which can outlive the popup window because freed memory is not zeroed.
+WebContent process, which lives from enable to disable or quit and can keep list previews
+and revealed values after a hide because freed memory is not zeroed.
 Any app with Accessibility permission can read the popup's text through the macOS
 Accessibility (AX) API while it is open. If your macOS version keeps its own clipboard
 history (Spotlight), a value Sodilaud writes back when you pick an entry may appear there;
