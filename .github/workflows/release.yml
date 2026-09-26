@@ -1,4 +1,4 @@
-name: Beta Release
+name: Release
 
 on:
   workflow_dispatch:
@@ -7,7 +7,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: beta-release-${{ github.ref }}
+  group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -21,7 +21,7 @@ jobs:
       - name: Require main
         if: github.ref != 'refs/heads/main'
         run: |
-          echo "::error::Beta releases must be built from main."
+          echo "::error::Releases must be built from main."
           exit 1
 
       - name: Check out repository
@@ -73,17 +73,17 @@ jobs:
       - name: Ensure release version is new
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: sodilaud-beta-v${{ steps.version.outputs.version }}
+          RELEASE_TAG: v${{ steps.version.outputs.version }}
         run: |
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "::error::Release $RELEASE_TAG already exists. Bump the application version before starting another beta release."
+            echo "::error::Release $RELEASE_TAG already exists. Bump the application version before starting another release."
             exit 1
           fi
 
   # Building runs third-party code (npm packages, every crate's build.rs), so
   # this job only gets a read-only token. Publishing happens in a separate job.
   build:
-    name: Build beta (${{ matrix.platform }})
+    name: Build (${{ matrix.platform }})
     needs: validate
     permissions:
       contents: read
@@ -93,16 +93,16 @@ jobs:
         include:
           - platform: macos-latest
             args: >-
-              --config src-tauri/tauri.beta.conf.json
+              --config src-tauri/tauri.release.conf.json
               --target universal-apple-darwin
               --bundles app,dmg
           - platform: ubuntu-22.04
             args: >-
-              --config src-tauri/tauri.beta.conf.json
+              --config src-tauri/tauri.release.conf.json
               --bundles appimage,deb
           - platform: windows-latest
             args: >-
-              --config src-tauri/tauri.beta.conf.json
+              --config src-tauri/tauri.release.conf.json
               --bundles nsis,msi
 
     runs-on: ${{ matrix.platform }}
@@ -139,7 +139,7 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Build beta
+      - name: Build
         uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1
         with:
           args: ${{ matrix.args }}
@@ -157,7 +157,7 @@ jobs:
             src-tauri/target/**/release/bundle/msi/*.msi
 
   publish:
-    name: Draft beta release
+    name: Draft release
     needs: [validate, build]
     permissions:
       contents: write
@@ -182,11 +182,10 @@ jobs:
           VERSION: ${{ needs.validate.outputs.version }}
         run: |
           mapfile -t installers < <(find artifacts -type f)
-          gh release create "sodilaud-beta-v$VERSION" "${installers[@]}" \
+          gh release create "v$VERSION" "${installers[@]}" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "Sodilaud Beta v$VERSION" \
+            --title "Sodilaud v$VERSION" \
             --notes-file RELEASE_NOTES.md \
             --generate-notes \
-            --draft \
-            --prerelease
+            --draft

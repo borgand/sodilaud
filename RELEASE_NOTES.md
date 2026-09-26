@@ -1,4 +1,4 @@
-# Sodilaud Beta v0.8.0
+# Sodilaud v0.8.0
 
 This release adds clipboard history on macOS and completes the rename from Scratchpad to Sodilaud.
 
@@ -6,7 +6,7 @@ This release adds clipboard history on macOS and completes the rename from Scrat
 
 - **Clipboard history (macOS).** Press `⌘⇧V` in any app to open a small popup with your recent text copies, then pick one with a number key, the arrow keys, `j`/`k`, or the mouse. The history lives in memory only and entries expire on their own.
 - **Always in the menu bar on macOS.** Sodilaud keeps a menu-bar icon while it runs. Closing the main window now hides it instead of quitting; quit from the menu-bar icon or with `⌘Q`.
-- **Renamed to Sodilaud.** The app, window, package, MCP server, and release names now all say Sodilaud.
+- **Renamed to Sodilaud, no longer labelled beta.** The app, window, package, MCP server, and release names now all say Sodilaud. Releases are tagged `vX.Y.Z` and published as regular releases.
 
 ## Clipboard history
 
@@ -36,4 +36,5 @@ This release adds clipboard history on macOS and completes the rename from Scrat
 - **Workspace and MCP.** The remembered workspace and the MCP token file were renamed as well: reopen your workspace file once from **Sodilaud menu → Open workspace**, and reconfigure MCP clients from **Sodilaud menu → Agent access**.
 - **Closing the window on macOS.** Closing the main window now keeps Sodilaud running in the menu bar. On Windows and Linux, closing the window still quits.
 - Clipboard history is macOS only; the setting does not appear on Windows or Linux.
+- **New app name and data location.** The app is now installed as `Sodilaud` (not `Sodilaud Beta`) with the identifier `io.github.borgand.sodilaud`, so it keeps its data apart from earlier beta builds. Delete the old `Sodilaud Beta` app after upgrading; workspace files are unaffected.
 - Builds are not production-signed; macOS and Windows may display a security warning.

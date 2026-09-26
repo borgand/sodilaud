@@ -14,15 +14,15 @@ Sodilaud is a lightweight, open-source, local-first desktop editor for notes, sn
 
 ## Install
 
-Sodilaud is in beta. Download the newest prerelease from the [Sodilaud website](https://borgand.github.io/sodilaud/) or [GitHub Releases](https://github.com/borgand/sodilaud/releases):
+Download the newest release from the [Sodilaud website](https://borgand.github.io/sodilaud/) or [GitHub Releases](https://github.com/borgand/sodilaud/releases):
 
-- **macOS:** open the `.dmg` and drag Sodilaud Beta to Applications.
+- **macOS:** open the `.dmg` and drag Sodilaud to Applications.
 - **Windows:** run the `.msi` or `.exe` installer.
 - **Linux:** install the `.deb`, or make the `.AppImage` executable and run it.
 
-Beta packages are not yet production-signed. macOS and Windows may show a security warning, so only install artifacts downloaded from this repository. Back up important workspace files before testing.
+Packages are not yet production-signed. macOS and Windows may show a security warning, so only install artifacts downloaded from this repository. Back up important workspace files before testing.
 
-See [release notes](RELEASE_NOTES.md) for highlights, compatibility details, and beta caveats.
+See [release notes](RELEASE_NOTES.md) for highlights and compatibility details.
 
 ## Features
 
@@ -48,7 +48,7 @@ See [release notes](RELEASE_NOTES.md) for highlights, compatibility details, and
 
 ## Storage and privacy
 
-Sodilaud keeps its state under the app identifier `io.github.borgand.sodilaud`. Workspace files and preferences are kept owner-only (`0600`), and deleted note bodies are overwritten in workspace files.
+Sodilaud keeps its state under the app identifier `io.github.borgand.sodilaud`. Development builds (`npm run tauri dev`) use `io.github.borgand.sodilaud.dev` and appear as "Sodilaud Dev", so they never touch the data of an installed release. Workspace files and preferences are kept owner-only (`0600`), and deleted note bodies are overwritten in workspace files.
 
 By default, notes, folders, and trash stay in the desktop webview's local storage. Sodilaud also supports optional portable workspace files for a durable collection of notes, folders, trash, pinned state, and sidebar order. Workspace files use SQLite internally and may have a `.db` or `.sqlite` extension. Notes without a folder remain at the top level of the sidebar; deleting a folder from the sidebar returns its notes there rather than deleting them. Agent folder deletion requires an empty folder.
 
@@ -195,16 +195,18 @@ cargo test --manifest-path src-tauri/Cargo.toml
 ### Build locally
 
 ```bash
-npm run tauri -- build
+npm run tauri -- build --config src-tauri/tauri.release.conf.json
 ```
+
+Without `--config`, the build uses the development identity (`Sodilaud Dev`).
 
 Bundles and installers are written beneath `src-tauri/target/release/bundle/`.
 
 ## Releases
 
-The **CI** workflow validates every push to `main` and every pull request. The manually triggered **Beta Release** workflow validates the project, builds macOS, Windows, and Linux packages, and attaches them to a draft prerelease.
+The **CI** workflow validates every push to `main` and every pull request. The manually triggered **Release** workflow validates the project, builds macOS, Windows, and Linux packages with `src-tauri/tauri.release.conf.json`, and attaches them to a draft release tagged `vX.Y.Z`.
 
-Before triggering a beta release, update the version in `package.json`, `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json`, both lockfiles, and the About panel in `src/index.html`. Update `RELEASE_NOTES.md`, the README, MCP reference, welcome note, and in-app Help for the final feature set. The validation command checks version consistency, and the workflow refuses to overwrite an existing release tag. Review the generated draft and its assets before publishing it. The website's download manifest is generated from published GitHub releases; do not point it at unbuilt packages.
+Before triggering a release, update the version in `package.json`, `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json`, both lockfiles, and the About panel in `src/index.html`. Update `RELEASE_NOTES.md`, the README, MCP reference, welcome note, and in-app Help for the final feature set. The validation command checks version consistency, and the workflow refuses to overwrite an existing release tag. Review the generated draft and its assets before publishing it. The website's download manifest is generated from published GitHub releases; do not point it at unbuilt packages.
 
 Production distribution will also require platform signing and, on macOS, notarization credentials configured as repository secrets.
 
