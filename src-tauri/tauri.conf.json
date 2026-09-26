@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Sodilaud",
-  "version": "0.7.9",
-  "identifier": "io.github.borgand.sodilaud",
+  "productName": "Sodilaud Dev",
+  "version": "0.8.0",
+  "identifier": "io.github.borgand.sodilaud.dev",
   "build": {
     "beforeBuildCommand": "npm run vendor:marked",
     "beforeDevCommand": "npm run vendor:marked",

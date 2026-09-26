@@ -1,54 +1,40 @@
-# Sodilaud Beta v0.7.9
+# Sodilaud v0.8.0
 
-This is the first security-hardened release of the sodilaud fork. It removes every outbound network path and tightens what the app window is allowed to do.
-
-## Unreleased: Clipboard history (macOS)
-
-- An optional, off-by-default clipboard history: press `⌘⇧V` to open a popup listing your
-  recent copies and pick one back onto the clipboard, or paste it automatically.
-- Entries live only in memory, expire after a configurable time, and are wiped on quit; the
-  history and its settings never touch disk, the workspace database, or the network.
-- Secret-shaped values, such as tokens, JWTs, and credentials in URLs, are masked in the
-  popup until you reveal them.
-- Sodilaud stays in the menu bar with a tray icon and menu (Show, Clipboard History…, Clear,
-  Quit) while the app is open; closing the window hides the Dock icon instead of quitting.
-- Clipboard history is macOS only and is never part of the MCP snapshot sent to agents. See
-  [clipboard history](docs/clipboard-history.md) for the full write-up.
+This release adds clipboard history on macOS and completes the rename from Scratchpad to Sodilaud.
 
 ## Highlights
 
-- No network access: the update check and its HTTP client are gone, and CI fails if network capability comes back.
-- Links you click in the preview open only after a native dialog shows their real destination.
-- Workspace files and preferences are readable by your user account only, and deleted note bodies are overwritten in workspace files.
-- The fork has its own app identity, so it no longer shares a data directory or MCP token with an upstream Scratchpad install.
+- **Clipboard history (macOS).** Press `⌘⇧V` in any app to open a small popup with your recent text copies, then pick one with a number key, the arrow keys, `j`/`k`, or the mouse. The history lives in memory only and entries expire on their own.
+- **Always in the menu bar on macOS.** Sodilaud keeps a menu-bar icon while it runs. Closing the main window now hides it instead of quitting; quit from the menu-bar icon or with `⌘Q`.
+- **Renamed to Sodilaud, no longer labelled beta.** The app, window, package, MCP server, and release names now all say Sodilaud. Releases are tagged `vX.Y.Z` and published as regular releases.
 
-## No outbound requests
+## Clipboard history
 
-- The About panel no longer checks for updates, and the app links no HTTP client. New versions are published as releases in this repository.
-- `npm run check:egress` scans shipped source for network APIs and remote URLs and runs in CI.
+- Off by default. Turn it on in **Sodilaud menu → Clipboard history**, where you can also set how many entries to keep (1 to 50, default 10), how long they live (1 to 120 minutes, default 10), and the hotkey.
+- Every text copy from any app is captured. Re-copying a value moves it to the top without extending its lifetime.
+- Values that look like secrets, such as API tokens, JWTs, private keys, passwords in URLs, and `KEY=value` lines, are masked until you reveal them with `Space`, `h`, or the eye icon.
+- Picking an entry puts it back on the clipboard. Optionally, Sodilaud pastes it into the app you came from; that needs the macOS Accessibility permission and is off by default.
+- The popup opens over any app, including full-screen apps, without taking Sodilaud to the front or changing your `⌘Tab` order. Drag its header to move it. It follows your Sodilaud theme.
+- Delete an entry with the trash icon, `⌫`, or `Delete`. Clear everything from the menu-bar icon.
 
-## A tighter app window
+### Privacy
 
-- The window can only show the bundled app. A script cannot navigate it to a website.
-- External links go through a Rust command that accepts only `https`, `http` and `mailto` and asks before opening your browser. The window no longer has direct access to the system opener.
-- Workspace commands only open database files you chose in the native dialog or that the app restored from its own preferences.
-- Every application command now needs an explicit capability grant.
-- The content security policy adds `base-uri`, `form-action`, `object-src` and `frame-src` limits and drops unused sources.
-- Imported themes can no longer use `var()`, `url()` or other CSS functions as colors, and a theme with a non-text name no longer breaks rendering.
+- Entries exist only in the app's memory. They are never written to disk, local storage, or workspace files, never logged, never sent to agents over MCP, and never sent over the network.
+- When an entry expires, is deleted, or history is turned off, and on quit, Sodilaud also clears the system clipboard if it still holds that value.
+- Values Sodilaud puts back on the clipboard are marked as local to this Mac (no Universal Clipboard) and as concealed, so well-behaved clipboard managers skip them.
+- The popup is excluded from screen sharing and screenshots where macOS allows it.
+- See [clipboard history](docs/clipboard-history.md) and [SECURITY.md](SECURITY.md) for the full privacy boundary and the copies that the operating system keeps outside Sodilaud's control.
 
-## Data at rest
+## Other changes
 
-- Workspace files and native preferences are set to mode `0600`.
-- SQLite `secure_delete` is on for workspace files, and connecting or leaving a workspace compacts it once to remove older free pages.
-- A workspace file the app cannot restrict (for example on a read-only disk, or owned by another user) no longer opens.
-
-## Release pipeline
-
-- Builds run with a read-only token; a separate job with no third-party code drafts the release.
-- Beta releases can only be built from `main`, Cargo runs with `--locked`, CI installs npm packages without scripts, and Dependabot waits seven days before proposing new versions.
+- Quitting from the menu-bar icon or with `⌘Q` saves pending note changes first; if saving fails, the quit is cancelled and you see an error.
+- The About panel describes clipboard history.
 
 ## Compatibility
 
-- The app identifier is now `io.github.borgand.sodilaud`, so the first launch starts with an empty local collection. Upstream data is not copied or deleted. Reopen a workspace file to restore it.
-- The app is renamed to Sodilaud. The executable is now `Sodilaud.app/Contents/MacOS/sodilaud`, the MCP server is named `sodilaud`, and the app creates a new MCP token, so reconfigure MCP clients from **Sodilaud menu → Agent access**. Preferences start from defaults.
+- **Local notes after the rename.** Local notes, folders, trash, and view preferences are stored under new `sodilaud_` keys, and nothing is migrated from the old `scratchpad_` keys. If you used local notes in v0.7.9, export the ones you need to keep before upgrading, or keep them in a workspace file, which is unaffected.
+- **Workspace and MCP.** The remembered workspace and the MCP token file were renamed as well: reopen your workspace file once from **Sodilaud menu → Open workspace**, and reconfigure MCP clients from **Sodilaud menu → Agent access**.
+- **Closing the window on macOS.** Closing the main window now keeps Sodilaud running in the menu bar. On Windows and Linux, closing the window still quits.
+- Clipboard history is macOS only; the setting does not appear on Windows or Linux.
+- **New app name and data location.** The app is now installed as `Sodilaud` (not `Sodilaud Beta`) with the identifier `io.github.borgand.sodilaud`, so it keeps its data apart from earlier beta builds. Delete the old `Sodilaud Beta` app after upgrading; workspace files are unaffected.
 - Builds are not production-signed; macOS and Windows may display a security warning.

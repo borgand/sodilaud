@@ -3459,7 +3459,7 @@ dependencies = [
 
 [[package]]
 name = "sodilaud"
-version = "0.7.9"
+version = "0.8.0"
 dependencies = [
  "core-graphics",
  "dirs 7.0.0",

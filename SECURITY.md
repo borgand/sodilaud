@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Sodilaud is currently in beta. Security fixes are made against the latest published prerelease and the `main` branch.
+Security fixes are made against the latest published release and the `main` branch.
 
 ## Agent access and recovery data
 
