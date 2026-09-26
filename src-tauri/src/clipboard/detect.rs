@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-pub const PREVIEW_CHARS: usize = 50;
+pub const PREVIEW_CHARS: usize = 80;
 const DOTS: &str = "••••";
 const SHORT_SECRET_CHARS: usize = 12;
 const SECRET_NAMES: &[&str] = &["KEY", "TOKEN", "SECRET", "PASS", "PWD", "AUTH"];

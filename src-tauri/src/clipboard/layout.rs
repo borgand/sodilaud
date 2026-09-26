@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-pub const WIDTH: f64 = 440.0;
+pub const WIDTH: f64 = 660.0;
 const HEADER: f64 = 40.0;
 const FOOTER: f64 = 30.0;
 const ROW: f64 = 34.0;
@@ -80,7 +80,7 @@ mod tests {
             width: 1440.0,
             height: 900.0,
         };
-        assert_eq!(popup_origin(screen, 900.0, WIDTH), (500.0, 300.0));
+        assert_eq!(popup_origin(screen, 900.0, WIDTH), (390.0, 300.0));
     }
 
     #[test]
@@ -94,7 +94,7 @@ mod tests {
         };
         assert_eq!(
             popup_origin(screen, 900.0, WIDTH),
-            (1440.0 + 740.0, -180.0 + 360.0)
+            (1440.0 + 630.0, -180.0 + 360.0)
         );
     }
 
