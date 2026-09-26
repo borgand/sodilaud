@@ -8,9 +8,10 @@ returns `Unsupported`.
 
 When enabled, every text copy from any app is captured automatically, including copies
 from password managers. Press the hotkey (`⌘⇧V` by default) to open a small popup listing
-your recent copies, newest first. Pick one with `1`-`9`/`0`, or `↑`/`↓` and `Enter`, to put
-it back on the system clipboard; press `⌘V` yourself to paste it, or turn on auto-paste in
-settings to have Sodilaud post `⌘V` for you. The popup is a floating panel that takes
+your recent copies, newest first. Pick one with `1`-`9`/`0`, or `↑`/`↓` (or `j`/`k`) and
+`Enter`, to put it back on the system clipboard; press `⌘V` yourself to paste it, or turn on
+auto-paste in settings to have Sodilaud post `⌘V` for you. `Space` or `h` reveals a masked
+entry at the focused row. The popup is a floating panel that takes
 keyboard input without activating Sodilaud, so the app you were using stays frontmost,
 the popup also appears over full-screen apps, and the `⌘⇥` order does not change.
 Auto-paste only fires if the app that was frontmost when you pressed the hotkey is still
