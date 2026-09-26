@@ -4,7 +4,7 @@
 [![Latest release](https://img.shields.io/github/v/release/borgand/sodilaud?include_prereleases)](https://github.com/borgand/sodilaud/releases)
 [![License: GPL v3 or later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 
-Sodilaud is a lightweight, open-source, local-first desktop editor for notes, snippets, and Markdown. It runs on macOS, Windows, and Linux with no account, cloud service, or telemetry.
+Sodilaud is a lightweight, open-source, local-first desktop editor for notes, snippets, and Markdown. It runs on macOS, Windows, and Linux with no account, cloud service, or telemetry. On macOS it also keeps an in-memory clipboard history one hotkey away.
 
 [Visit the Sodilaud website](https://borgand.github.io/sodilaud/) for an OS-aware download and SHA-256 checksums.
 
@@ -26,8 +26,8 @@ See [release notes](RELEASE_NOTES.md) for highlights, compatibility details, and
 
 ## Features
 
+- Clipboard history on macOS: press `⌘⇧V` in any app to pick from your recent copies, with secrets masked, entries kept in memory only, and automatic expiry
 - Optional local MCP agent access with five read tools, eight individually enabled write tools, and a live listening indicator
-
 - Multiple scratchpads with automatic saving, titles derived from the first line, and quick creation by double-clicking empty sidebar space
 - Edit, synchronized edit/preview, and full Markdown preview layouts
 - Optional Markdown editor coloring and language-aware fenced-code highlighting in previews
@@ -45,7 +45,6 @@ See [release notes](RELEASE_NOTES.md) for highlights, compatibility details, and
 - Built-in and importable color themes with contrast-aware sidebar and active-note tones
 - Persistent editor zoom and adjustable editor line spacing
 - A sectioned Sodilaud menu, About panel, keyboard shortcut reference, and Markdown cheatsheet
-- Optional macOS clipboard history: in-memory only, expiring entries, secret masking, and a hotkey popup
 
 ## Storage and privacy
 
