@@ -7,29 +7,9 @@
 const REFRESH_MS = 1000;
 const EXPIRING_SECONDS = 60;
 
-// XML namespace identifier, never fetched or dereferenced. Explicitly allowed
-// in scripts/check-no-egress.mjs; see docs/security/2026-09-26-egress-allowances.md.
-const SVG_NS = "http://www.w3.org/2000/svg";
-
-// Outline icon paths, drawn node by node with document.createElementNS.
-// viewBox is 0 0 24 24; stroke=currentColor picks up the button's colour
-// (muted, or the normal text colour on hover/focus).
-const ICON_PATHS = {
-  eye: [
-    "M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z",
-    "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"
-  ],
-  eyeOff: [
-    "M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z",
-    "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z",
-    "M3 3l18 18"
-  ],
-  trash: [
-    "M4 7h16",
-    "M9 7V4h6v3",
-    "M6 7l1 13h10l1-13"
-  ]
-};
+// Icon markup lives in <template> elements in clipboard.html, drawn once by the
+// HTML parser (which puts <svg> in the SVG namespace on its own) and cloned here.
+const ICON_TEMPLATES = { eye: "icon-eye", eyeOff: "icon-eye-slash", trash: "icon-trash" };
 
 // Strict #rgb / #rrggbb / #rrggbbaa. Rust already validates the theme it
 // sends, but the popup checks again rather than trust a value at face value.
@@ -89,22 +69,7 @@ export function createPopup({ document, invoke, timers = globalThis, afterPaint 
   }
 
   function svgIcon(name) {
-    const svg = document.createElementNS(SVG_NS, "svg");
-    svg.setAttribute("viewBox", "0 0 24 24");
-    svg.setAttribute("width", "14");
-    svg.setAttribute("height", "14");
-    svg.setAttribute("fill", "none");
-    svg.setAttribute("stroke", "currentColor");
-    svg.setAttribute("stroke-width", "2");
-    svg.setAttribute("stroke-linecap", "round");
-    svg.setAttribute("stroke-linejoin", "round");
-    svg.setAttribute("aria-hidden", "true");
-    for (const d of ICON_PATHS[name]) {
-      const path = document.createElementNS(SVG_NS, "path");
-      path.setAttribute("d", d);
-      svg.append(path);
-    }
-    return svg;
+    return document.getElementById(ICON_TEMPLATES[name]).content.firstElementChild.cloneNode(true);
   }
 
   function iconButton(className, iconName, label, onClick) {
