@@ -44,7 +44,7 @@ test("the Sodilaud menu opens Help and About dialogs and returns focus", async (
   assert.equal(document.querySelectorAll(".about-description").length, 2);
   assert.match(aboutBackdrop.textContent, /open-source, local-first Markdown editor/);
   assert.match(aboutBackdrop.textContent, /without an account, cloud service, analytics, or telemetry/);
-  assert.equal(document.getElementById("about-version").textContent, "0.8.0");
+  assert.equal(document.getElementById("about-version").textContent, "0.8.1");
 
   document.querySelector('.about-links a[href="https://github.com/borgand/sodilaud"]').click();
   await app.settle(20);
