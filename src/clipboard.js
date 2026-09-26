@@ -6,6 +6,19 @@
 const REFRESH_MS = 1000;
 const EXPIRING_SECONDS = 60;
 
+// Strict #rgb / #rrggbb / #rrggbbaa. Rust already validates the theme it
+// sends, but the popup checks again rather than trust a value at face value.
+const HEX_COLOR = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
+
+const THEME_VARS = {
+  background: "--clip-bg",
+  surface: "--clip-surface",
+  text: "--clip-fg",
+  muted: "--clip-muted",
+  accent: "--clip-accent",
+  border: "--clip-line"
+};
+
 export function formatRemaining(seconds) {
   return seconds >= 60 ? `${Math.floor(seconds / 60)}m` : `${seconds}s`;
 }
@@ -84,6 +97,15 @@ export function createPopup({ document, invoke }) {
     });
   }
 
+  function applyTheme(theme) {
+    for (const [key, cssVar] of Object.entries(THEME_VARS)) {
+      const value = theme?.[key];
+      if (typeof value === "string" && HEX_COLOR.test(value)) {
+        document.documentElement.style.setProperty(cssVar, value);
+      }
+    }
+  }
+
   function moveFocus(index) {
     focus(index);
     render();
@@ -96,6 +118,7 @@ export function createPopup({ document, invoke }) {
       items = listing.items;
       ttl.textContent = `${listing.ttlMinutes} min TTL`;
       empty.textContent = `Nothing copied yet. Entries expire after ${listing.ttlMinutes} min.`;
+      applyTheme(listing.theme);
     } catch {
       items = [];
     }

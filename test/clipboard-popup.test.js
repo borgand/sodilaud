@@ -160,6 +160,31 @@ test("a refresh with a new entry rebuilds the rows", async () => {
   assert.equal(rows[0].querySelector(".clip-text").textContent, "fresh");
 });
 
+test("a listing with a theme sets the popup CSS variables and ignores a non-hex value", async () => {
+  const listing = structuredClone(LISTING);
+  listing.theme = {
+    background: "#101010",
+    surface: "#202020",
+    text: "#e0e0e0",
+    muted: "#808080",
+    accent: "#3b82f6",
+    border: "javascript:alert(1)"
+  };
+  const { doc } = await setup(listing);
+  const root = doc.documentElement;
+  assert.equal(root.style.getPropertyValue("--clip-bg"), "#101010");
+  assert.equal(root.style.getPropertyValue("--clip-surface"), "#202020");
+  assert.equal(root.style.getPropertyValue("--clip-fg"), "#e0e0e0");
+  assert.equal(root.style.getPropertyValue("--clip-muted"), "#808080");
+  assert.equal(root.style.getPropertyValue("--clip-accent"), "#3b82f6");
+  assert.equal(root.style.getPropertyValue("--clip-line"), "", "a non-hex value must not be applied");
+});
+
+test("a listing without a theme leaves the popup's default CSS variables alone", async () => {
+  const { doc } = await setup();
+  assert.equal(doc.documentElement.style.getPropertyValue("--clip-bg"), "");
+});
+
 test("a refresh never scrolls", async () => {
   const listing = structuredClone(LISTING);
   const { dom, popup } = await setup(listing);

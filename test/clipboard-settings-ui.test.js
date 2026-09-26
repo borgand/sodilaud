@@ -75,6 +75,32 @@ test("other platforms hide the section and never call clipboard commands", async
   const app = await bootApp({ instance: 5, platform: "Linux x86_64" });
   assert.equal(app.dom.window.document.getElementById("clipboard-history-menu-section").hidden, true);
   assert.ok(!app.invocations.some(i => i.command === "clip_set_config"));
+  assert.ok(!app.invocations.some(i => i.command === "clip_set_theme"));
+});
+
+test("macOS sends the active theme's colours to the popup at setup and on every theme change", async () => {
+  const app = await bootApp({
+    instance: 13,
+    platform: "MacIntel",
+    storage: { sodilaud_active_theme: "github-dark" },
+    handlers: { clip_set_config: ({ config }) => ok(config) }
+  });
+  const themeCalls = app.invocations.filter(i => i.command === "clip_set_theme");
+  assert.ok(themeCalls.length >= 2, "expected a call at setup and one after the theme applied");
+  const theme = themeCalls.at(-1).args.theme;
+  assert.equal(theme.background, "#0d1117");
+  assert.equal(theme.text, "#c9d1d9");
+  assert.equal(theme.accent, "#58a6ff");
+  assert.equal(theme.border, "#30363d");
+});
+
+test("other platforms never call clip_set_theme even with a saved theme", async () => {
+  const app = await bootApp({
+    instance: 14,
+    platform: "Linux x86_64",
+    storage: { sodilaud_active_theme: "github-dark" }
+  });
+  assert.ok(!app.invocations.some(i => i.command === "clip_set_theme"));
 });
 
 test("Escape closes the settings modal", async () => {

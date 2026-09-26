@@ -12,7 +12,7 @@ use super::hygiene::{disable_core_dumps, now_ms, silence_clipboard_panics};
 use super::pasteboard::MacPasteboard;
 use super::popup;
 use super::service::{
-    plan_hotkey, ClipConfig, ClipError, ClipListing, HotkeyPlan, Secret, Service,
+    plan_hotkey, ClipConfig, ClipError, ClipListing, HotkeyPlan, PopupTheme, Secret, Service,
 };
 use super::watcher::{self, SharedService, Watcher};
 
@@ -37,6 +37,8 @@ pub struct ClipboardRuntime {
     frontmost_pid: Mutex<Option<i32>>,
     paste_on_close: AtomicBool,
     quit_handler_ready: AtomicBool,
+    /// The main window's colours for the popup, memory only. Never persisted.
+    theme: Mutex<PopupTheme>,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -132,7 +134,19 @@ impl ClipboardRuntime {
             .as_mut()
             .map(|service| service.list(now_ms()))
             .unwrap_or_default();
-        ClipListing { ttl_minutes, items }
+        ClipListing {
+            ttl_minutes,
+            items,
+            theme: self.theme(),
+        }
+    }
+
+    pub fn theme(&self) -> PopupTheme {
+        lock(&self.theme).clone()
+    }
+
+    pub fn set_theme(&self, theme: PopupTheme) {
+        *lock(&self.theme) = theme.validated();
     }
 
     pub fn reveal(&self, id: u64) -> Option<Secret> {

@@ -150,6 +150,48 @@ pub struct ListItem {
 pub struct ClipListing {
     pub ttl_minutes: u64,
     pub items: Vec<ListItem>,
+    pub theme: PopupTheme,
+}
+
+/// Colours the main window hands the popup so it can match the active Sodilaud
+/// theme. Each field is `None` unless it held a strict CSS hex colour; the
+/// popup applies only what is set and keeps its own defaults otherwise.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PopupTheme {
+    pub background: Option<String>,
+    pub surface: Option<String>,
+    pub text: Option<String>,
+    pub muted: Option<String>,
+    pub accent: Option<String>,
+    pub border: Option<String>,
+}
+
+impl PopupTheme {
+    /// Drops any field that is not a strict CSS hex colour, so only `#rgb`,
+    /// `#rrggbb`, or `#rrggbbaa` ever reaches the popup's stylesheet.
+    pub fn validated(self) -> Self {
+        let keep = |value: Option<String>| value.filter(|v| is_css_hex_color(v));
+        Self {
+            background: keep(self.background),
+            surface: keep(self.surface),
+            text: keep(self.text),
+            muted: keep(self.muted),
+            accent: keep(self.accent),
+            border: keep(self.border),
+        }
+    }
+}
+
+/// Strict `#rgb`, `#rrggbb`, or `#rrggbbaa`: a leading `#` followed by 3, 6, or
+/// 8 ASCII hex digits and nothing else. Rejects `var()`, `url()`, `rgb()`,
+/// named colours, and anything non-ASCII, so nothing but a literal colour can
+/// reach the popup's CSS.
+pub fn is_css_hex_color(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    matches!(bytes.len(), 4 | 7 | 9)
+        && bytes[0] == b'#'
+        && bytes[1..].iter().all(u8::is_ascii_hexdigit)
 }
 
 /// Payload-free so an error can never carry a clipboard value to the webview.
@@ -681,5 +723,63 @@ mod tests {
             serde_json::to_string(&ClipError::HotkeyUnavailable).unwrap(),
             "\"HotkeyUnavailable\""
         );
+    }
+
+    #[test]
+    fn hex_color_accepts_the_three_strict_forms() {
+        for valid in ["#fff", "#123abc", "#123abcff", "#ABCDEF", "#ABC"] {
+            assert!(is_css_hex_color(valid), "{valid}");
+        }
+    }
+
+    #[test]
+    fn hex_color_rejects_missing_hash() {
+        assert!(!is_css_hex_color("fff"));
+        assert!(!is_css_hex_color("123abc"));
+    }
+
+    #[test]
+    fn hex_color_rejects_css_functions_and_keywords() {
+        for invalid in ["var(--x)", "url(evil.svg)", "rgb(0,0,0)", "red", "transparent"] {
+            assert!(!is_css_hex_color(invalid), "{invalid}");
+        }
+    }
+
+    #[test]
+    fn hex_color_rejects_wrong_length() {
+        for invalid in ["#12345", "#1234567890", "#12", ""] {
+            assert!(!is_css_hex_color(invalid), "{invalid}");
+        }
+    }
+
+    #[test]
+    fn hex_color_rejects_non_ascii() {
+        assert!(!is_css_hex_color("#12345é"));
+    }
+
+    #[test]
+    fn popup_theme_validated_drops_everything_but_strict_hex() {
+        let theme = PopupTheme {
+            background: Some("#000000".to_string()),
+            surface: Some("var(--bg-input)".to_string()),
+            text: Some("#FFF".to_string()),
+            muted: None,
+            accent: Some("rgb(0, 0, 0)".to_string()),
+            border: Some("#12345".to_string()),
+        }
+        .validated();
+        assert_eq!(theme.background, Some("#000000".to_string()));
+        assert_eq!(theme.surface, None);
+        assert_eq!(theme.text, Some("#FFF".to_string()));
+        assert_eq!(theme.muted, None);
+        assert_eq!(theme.accent, None);
+        assert_eq!(theme.border, None);
+    }
+
+    #[test]
+    fn popup_theme_deserializes_camel_case_and_missing_fields() {
+        let theme: PopupTheme = serde_json::from_str(r##"{"background":"#111111"}"##).unwrap();
+        assert_eq!(theme.background, Some("#111111".to_string()));
+        assert_eq!(theme.surface, None);
     }
 }

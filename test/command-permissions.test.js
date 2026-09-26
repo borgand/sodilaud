@@ -45,4 +45,5 @@ test("popup commands are granted only to the clipboard window", async () => {
     ["allow-clip-close", "allow-clip-delete", "allow-clip-list", "allow-clip-reveal", "allow-clip-select"]
   );
   assert.ok(main.permissions.includes("allow-clip-set-config"));
+  assert.ok(main.permissions.includes("allow-clip-set-theme"));
 });

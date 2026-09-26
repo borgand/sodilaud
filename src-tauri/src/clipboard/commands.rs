@@ -8,7 +8,7 @@ use tauri::{AppHandle, Window};
 #[cfg(target_os = "macos")]
 use tauri::Manager;
 
-use super::service::{ClipConfig, ClipError, ClipListing, Secret};
+use super::service::{ClipConfig, ClipError, ClipListing, PopupTheme, Secret};
 
 pub const POPUP_LABEL: &str = "clipboard";
 
@@ -118,6 +118,20 @@ pub fn clip_set_config(app: AppHandle, config: ClipConfig) -> Result<ConfigStatu
     #[cfg(not(target_os = "macos"))]
     {
         let _ = (app, config);
+        Err(ClipError::Unsupported)
+    }
+}
+
+#[tauri::command]
+pub fn clip_set_theme(app: AppHandle, theme: PopupTheme) -> Result<(), ClipError> {
+    #[cfg(target_os = "macos")]
+    {
+        app.state::<ClipboardRuntime>().set_theme(theme);
+        Ok(())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (app, theme);
         Err(ClipError::Unsupported)
     }
 }

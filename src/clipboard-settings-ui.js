@@ -4,6 +4,8 @@ import {
   DEFAULT_CLIPBOARD_SETTINGS, acceleratorFromKeyEvent, formatAccelerator,
   loadClipboardSettings, normalizeClipboardSettings, saveClipboardSettings
 } from "./clipboard-settings.js";
+import { createCssColorResolver } from "./css-color.js";
+import { toHex } from "./theme-colors.js";
 
 const STOPPED_EVENT = "clipboard-history-stopped";
 const HOTKEY_MESSAGES = {
@@ -17,6 +19,52 @@ function hotkeyMessage(status) {
   if (!status?.hotkeyError) return "";
   if (!status.hotkey) return NO_HOTKEY_MESSAGE;
   return HOTKEY_MESSAGES[status.hotkeyError] ?? HOTKEY_MESSAGES.HotkeyInvalid;
+}
+
+// The six main-window variables that best match what the popup needs (see
+// src/styles.css :root and PopupTheme in src-tauri/src/clipboard/service.rs).
+const POPUP_THEME_VARS = {
+  background: "--bg-app",
+  surface: "--bg-input",
+  text: "--text-primary",
+  muted: "--text-muted",
+  accent: "--accent-color",
+  border: "--border-color"
+};
+
+function colorVarToHex(raw, resolveCssColor) {
+  if (typeof raw !== "string" || !raw.trim()) return undefined;
+  const resolved = resolveCssColor(raw.trim());
+  if (!resolved) return undefined;
+  const hex = toHex(resolved.rgb);
+  if (resolved.alpha >= 1) return hex;
+  return hex + Math.round(resolved.alpha * 255).toString(16).padStart(2, "0");
+}
+
+function readPopupTheme(document) {
+  const view = document?.defaultView;
+  if (!view?.getComputedStyle) return {};
+  const computed = view.getComputedStyle(document.documentElement);
+  const resolveCssColor = createCssColorResolver(document);
+  const theme = {};
+  for (const [key, cssVar] of Object.entries(POPUP_THEME_VARS)) {
+    const hex = colorVarToHex(computed.getPropertyValue(cssVar), resolveCssColor);
+    if (hex) theme[key] = hex;
+  }
+  return theme;
+}
+
+// Called at clipboard setup and again whenever the main window's theme
+// changes (see applyTheme in main.js). `isMac` is the same gate setup uses --
+// on any other platform, or before setup ran, this is a silent no-op. Never
+// throws: a failure here must not break theme switching.
+export async function syncClipboardPopupTheme({ document, invoke, isMac } = {}) {
+  if (!isMac || !document || typeof invoke !== "function") return;
+  try {
+    await invoke("clip_set_theme", { theme: readPopupTheme(document) });
+  } catch {
+    // Swallowed: the popup keeps its own default colours.
+  }
 }
 
 export async function setupClipboardHistory({ document, invoke, listen, storage, notify, isMac }) {
@@ -132,4 +180,5 @@ export async function setupClipboardHistory({ document, invoke, listen, storage,
   }
 
   await apply(settings);
+  await syncClipboardPopupTheme({ document, invoke, isMac });
 }

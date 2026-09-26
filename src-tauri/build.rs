@@ -33,6 +33,7 @@ fn main() {
             "clip_delete",
             "clip_close",
             "clip_set_config",
+            "clip_set_theme",
             "hide_main_window",
             "quit_app",
             "quit_handler_ready",

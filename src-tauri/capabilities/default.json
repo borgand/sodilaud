@@ -29,6 +29,7 @@
     "allow-complete-mcp-write",
     "allow-stop-mcp-server",
     "allow-clip-set-config",
+    "allow-clip-set-theme",
     "allow-hide-main-window",
     "allow-quit-app",
     "allow-quit-handler-ready",

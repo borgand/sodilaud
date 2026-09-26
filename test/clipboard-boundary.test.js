@@ -26,8 +26,9 @@ test("only the popup page calls popup commands", async () => {
   for (const file of files) {
     const source = await readFile(`src/${file}`, "utf8");
     const calls = source.match(/["'`]clip_[a-z_]+["'`]/g) ?? [];
+    const allowed = ["clip_set_config", "clip_set_theme"];
     for (const call of calls) {
-      assert.equal(call.slice(1, -1), "clip_set_config", `${file} must not call ${call}`);
+      assert.ok(allowed.includes(call.slice(1, -1)), `${file} must not call ${call}`);
     }
   }
 });
