@@ -9,8 +9,8 @@ const workspaceWrites = [];
 
 const app = await bootApp({
   storage: {
-    scratchpad_notes: [],
-    scratchpad_folders: LOCAL_FOLDERS
+    sodilaud_notes: [],
+    sodilaud_folders: LOCAL_FOLDERS
   },
   handlers: {
     load_workspace_preference: () => "/tmp/empty-folder-seed.db",
@@ -28,9 +28,9 @@ test("folders-only local state seeds an empty remembered workspace", () => {
   assert.deepEqual(workspaceWrites[0].folders, LOCAL_FOLDERS);
   assert.deepEqual(
     workspaceWrites[0].notes.map(({ title }) => title),
-    ["Welcome to Scratchpad!"]
+    ["Welcome to Sodilaud!"]
   );
-  assert.deepEqual(app.sidebarTitles(), ["Welcome to Scratchpad!"]);
+  assert.deepEqual(app.sidebarTitles(), ["Welcome to Sodilaud!"]);
   assert.deepEqual(
     [...document.querySelectorAll(".note-folder-name")].map((element) => element.textContent),
     ["Local Folder"]
@@ -39,6 +39,6 @@ test("folders-only local state seeds an empty remembered workspace", () => {
 });
 
 test("successful seeding leaves the local-only collection untouched", () => {
-  assert.deepEqual(app.read("scratchpad_notes"), []);
-  assert.deepEqual(app.read("scratchpad_folders"), LOCAL_FOLDERS);
+  assert.deepEqual(app.read("sodilaud_notes"), []);
+  assert.deepEqual(app.read("sodilaud_folders"), LOCAL_FOLDERS);
 });

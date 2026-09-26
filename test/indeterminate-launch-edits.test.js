@@ -12,7 +12,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { bootApp } from "./helpers/app-harness.js";
 
-const WORKSPACE_PATH = "/tmp/scratchpad-two-launch-workspace.db";
+const WORKSPACE_PATH = "/tmp/sodilaud-two-launch-workspace.db";
 
 const LOCAL_NOTES = [
   { id: "local-1", title: "Local one", content: "local one body", updatedAt: 1, isTitleLocked: true }
@@ -26,7 +26,7 @@ const EDIT = "edited while the workspace preference was unreadable";
 
 // --- Launch 1: the preference cannot be read ---
 const first = await bootApp({
-  storage: { scratchpad_notes: LOCAL_NOTES },
+  storage: { sodilaud_notes: LOCAL_NOTES },
   handlers: {
     load_workspace_preference: () => {
       throw new Error("could not parse native preferences");
@@ -39,7 +39,7 @@ const afterFirstLaunch = first.dumpStorage();
 
 test("the indeterminate launch edits the local-only collection", () => {
   assert.deepEqual(first.sidebarTitles(), ["Local one"], "the local note, not a workspace note");
-  assert.equal(JSON.parse(afterFirstLaunch.scratchpad_notes)[0].content, EDIT);
+  assert.equal(JSON.parse(afterFirstLaunch.sodilaud_notes)[0].content, EDIT);
 });
 
 test("the indeterminate launch never touches a workspace", () => {
@@ -71,7 +71,7 @@ test("the edits made while the preference was unreadable survive", async () => {
   await second.type("edited inside the workspace");
 
   assert.equal(
-    second.read("scratchpad_notes")[0].content,
+    second.read("sodilaud_notes")[0].content,
     EDIT,
     "a workspace session must not write over the local-only collection"
   );
@@ -82,5 +82,5 @@ test("disconnecting hands those edits back", async () => {
   await second.settle();
 
   assert.deepEqual(second.sidebarTitles(), ["Local one"]);
-  assert.equal(second.read("scratchpad_notes")[0].content, EDIT);
+  assert.equal(second.read("sodilaud_notes")[0].content, EDIT);
 });

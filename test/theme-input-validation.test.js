@@ -34,7 +34,7 @@ test("an imported theme with a non-string name falls back to the file name", asy
   app.click("theme-import-btn");
   await app.settle();
 
-  const saved = app.read("scratchpad_custom_themes");
+  const saved = app.read("sodilaud_custom_themes");
   assert.equal(saved.at(-1).name, "numbered theme");
 });
 

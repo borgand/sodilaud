@@ -18,8 +18,8 @@ const NOTES = [
 
 const app = await bootApp({
   storage: {
-    scratchpad_notes: NOTES,
-    scratchpad_folders: FOLDERS
+    sodilaud_notes: NOTES,
+    sodilaud_folders: FOLDERS
   }
 });
 
@@ -60,7 +60,7 @@ test("creating from a pinned note creates at the top level", () => {
   document.querySelector('.note-item[data-id="pinned"]').click();
   document.getElementById("new-note-btn").click();
 
-  const createdNote = app.read("scratchpad_notes").find(({ id }) => id.startsWith("note_"));
+  const createdNote = app.read("sodilaud_notes").find(({ id }) => id.startsWith("note_"));
   assert.equal(createdNote.folderId, null);
   assert.ok(topLevelNote(createdNote.id));
 });
@@ -106,7 +106,7 @@ test("the note context menu moves notes between folders", () => {
   document.getElementById("ctx-move-folder").click();
   document.querySelector('#ctx-move-folder-menu [data-folder-id="personal"]').click();
 
-  const saved = app.read("scratchpad_notes");
+  const saved = app.read("sodilaud_notes");
   assert.equal(saved.find(({ id }) => id === "work-note").folderId, "personal");
   assert.ok(section("personal").querySelector('.note-item[data-id="work-note"]'));
 });
@@ -117,12 +117,12 @@ test("folders can be created, renamed, used for new notes, and safely deleted", 
   input.value = "Projects";
   input.dispatchEvent(new app.dom.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
 
-  const project = app.read("scratchpad_folders").find(({ name }) => name === "Projects");
+  const project = app.read("sodilaud_folders").find(({ name }) => name === "Projects");
   assert.ok(project);
 
   contextMenu(section(project.id).querySelector(".note-folder-header"));
   document.getElementById("ctx-folder-new-note").click();
-  let createdNote = app.read("scratchpad_notes").find(({ id }) => id.startsWith("note_"));
+  let createdNote = app.read("sodilaud_notes").find(({ id }) => id.startsWith("note_"));
   assert.equal(createdNote.folderId, project.id);
 
   contextMenu(section(project.id).querySelector(".note-folder-header"));
@@ -130,7 +130,7 @@ test("folders can be created, renamed, used for new notes, and safely deleted", 
   input = document.querySelector(".note-folder-input");
   input.value = "Projects Archive";
   input.dispatchEvent(new app.dom.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-  assert.equal(app.read("scratchpad_folders").find(({ id }) => id === project.id).name, "Projects Archive");
+  assert.equal(app.read("sodilaud_folders").find(({ id }) => id === project.id).name, "Projects Archive");
 
   document.getElementById("split-note-btn").click();
   assert.ok([...document.querySelectorAll("#secondary-note-select optgroup")]
@@ -139,8 +139,8 @@ test("folders can be created, renamed, used for new notes, and safely deleted", 
 
   contextMenu(section(project.id).querySelector(".note-folder-header"));
   document.getElementById("ctx-folder-delete").click();
-  assert.equal(app.read("scratchpad_folders").some(({ id }) => id === project.id), false);
-  createdNote = app.read("scratchpad_notes").find(({ id }) => id === createdNote.id);
+  assert.equal(app.read("sodilaud_folders").some(({ id }) => id === project.id), false);
+  createdNote = app.read("sodilaud_notes").find(({ id }) => id === createdNote.id);
   assert.equal(createdNote.folderId, null);
   assert.ok(topLevelNote(createdNote.id));
 });

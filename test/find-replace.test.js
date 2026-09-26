@@ -9,7 +9,7 @@ const ORIGINAL_CONTENT = "İstanbul trip. Book a hotel, then book a flight.";
 test("Replace and Replace All preserve offsets and use one native edit transaction", async () => {
   const app = await bootApp({
     storage: {
-      scratchpad_notes: [{
+      sodilaud_notes: [{
         id: "note-one",
         title: "Travel",
         content: ORIGINAL_CONTENT,
@@ -81,7 +81,7 @@ test("Replace and Replace All preserve offsets and use one native edit transacti
 
   await app.settle(600);
   assert.equal(
-    app.read("scratchpad_notes")[0].content,
+    app.read("sodilaud_notes")[0].content,
     "İstanbul trip. reserve a hotel, then reserve a flight."
   );
 });

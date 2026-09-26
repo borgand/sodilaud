@@ -32,7 +32,7 @@ test("templates select their first useful placeholder", () => {
 test("the editor context menu inserts a table through the normal input path", async () => {
   const app = await bootApp({
     storage: {
-      scratchpad_notes: [{
+      sodilaud_notes: [{
         id: "insert-note",
         title: "Insert note",
         content: "Intro",

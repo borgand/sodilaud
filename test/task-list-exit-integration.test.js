@@ -18,7 +18,7 @@ function pressEnter(dom, editor) {
 test("an inserted task list continues once and exits from its empty task", async () => {
   const { dom } = await bootApp({
     storage: {
-      scratchpad_notes: [{
+      sodilaud_notes: [{
         id: "task-note",
         title: "Tasks",
         content: "",

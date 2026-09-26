@@ -10,7 +10,7 @@ test("the native About menu opens the existing in-app About panel", async () => 
   const backdrop = document.getElementById("about-modal-backdrop");
   editor.focus();
 
-  await app.emit("scratchpad-open-about");
+  await app.emit("sodilaud-open-about");
 
   assert.equal(backdrop.style.display, "flex");
   assert.match(backdrop.textContent, /open-source, local-first Markdown editor/);
@@ -18,7 +18,7 @@ test("the native About menu opens the existing in-app About panel", async () => 
 
   // Re-selecting About while it is already open must not replace the element
   // that receives focus when the panel closes.
-  await app.emit("scratchpad-open-about");
+  await app.emit("sodilaud-open-about");
   document.getElementById("close-about-btn").click();
   assert.equal(backdrop.style.display, "none");
   assert.equal(document.activeElement, editor);

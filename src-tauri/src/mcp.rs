@@ -28,7 +28,7 @@ use uuid::Uuid;
 use crate::{Folder, Note};
 
 const MCP_PORT: u16 = 39_393;
-const MCP_TOKEN_FILE_NAME: &str = "scratchpad-mcp-token";
+const MCP_TOKEN_FILE_NAME: &str = "sodilaud-mcp-token";
 const CONNECTION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 const INITIAL_ACCEPT_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(25);
 const MAX_ACCEPT_RETRY_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
@@ -253,7 +253,7 @@ pub(crate) fn update_mcp_note(
 #[tauri::command]
 pub(crate) fn get_mcp_connection_info() -> Result<McpConnectionInfo, String> {
     let executable = std::env::current_exe()
-        .map_err(|error| format!("Could not locate the Scratchpad executable: {error}"))?;
+        .map_err(|error| format!("Could not locate the Sodilaud executable: {error}"))?;
     // An AppImage's inner binary lives in a temporary mount. Its outer path
     // remains launchable after the editor exits and the mount is removed.
     #[cfg(target_os = "linux")]
@@ -264,7 +264,7 @@ pub(crate) fn get_mcp_connection_info() -> Result<McpConnectionInfo, String> {
     let command = executable
         .into_os_string()
         .into_string()
-        .map_err(|_| "The Scratchpad executable path is not valid Unicode".to_string())?;
+        .map_err(|_| "The Sodilaud executable path is not valid Unicode".to_string())?;
     Ok(McpConnectionInfo {
         command,
         args: vec!["--mcp-stdio".into()],
@@ -367,7 +367,7 @@ async fn serve_local_connections(
                         stream
                     }
                     Err(error) => {
-                        eprintln!("Scratchpad MCP listener could not accept a connection: {error}");
+                        eprintln!("Sodilaud MCP listener could not accept a connection: {error}");
                         if !should_retry_accept(&error) {
                             break;
                         }
@@ -457,7 +457,7 @@ async fn serve_mcp_connection(stream: TcpStream, snapshot: SharedSnapshot, ct: C
         inner: transport,
         require_metadata: !legacy,
     };
-    let server = ScratchpadServer::new(snapshot);
+    let server = SodilaudServer::new(snapshot);
     let service = if legacy {
         let Ok(service) = server.serve_with_ct(transport, ct).await else {
             return;
@@ -580,7 +580,7 @@ impl<R: AsyncRead + Unpin> AsyncRead for BoundedMessageReader<R> {
 pub fn run_mcp_stdio(identifier: &str) -> Result<(), String> {
     let token_path = mcp_token_path(identifier)?;
     let token = fs::read_to_string(token_path)
-        .map_err(|_| "Open Scratchpad and enable agent access before connecting".to_string())?;
+        .map_err(|_| "Open Sodilaud and enable agent access before connecting".to_string())?;
     let token = validate_token(token.trim())?;
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -623,10 +623,10 @@ async fn connect_to_editor(
     })
     .await
     .map_err(|_| {
-        "Scratchpad did not respond; open the app, enable agent access, and reconnect".to_string()
+        "Sodilaud did not respond; open the app, enable agent access, and reconnect".to_string()
     })?
     .map_err(|_| {
-        "Cannot connect to Scratchpad; open the app, enable agent access, and reconnect".to_string()
+        "Cannot connect to Sodilaud; open the app, enable agent access, and reconnect".to_string()
     })
 }
 
@@ -1200,13 +1200,13 @@ fn tool_error(message: String) -> CallToolResult {
 }
 
 #[derive(Clone)]
-struct ScratchpadServer {
+struct SodilaudServer {
     snapshot: SharedSnapshot,
     #[allow(dead_code)]
     tool_router: ToolRouter<Self>,
 }
 
-impl ScratchpadServer {
+impl SodilaudServer {
     fn new(snapshot: SharedSnapshot) -> Self {
         Self {
             snapshot,
@@ -1358,15 +1358,16 @@ impl ScratchpadServer {
     }
 
     fn with_snapshot<T>(&self, operation: impl FnOnce(&Snapshot) -> T) -> Result<T, McpError> {
-        let snapshot = self.snapshot.read().map_err(|_| {
-            McpError::internal_error("The Scratchpad snapshot is unavailable", None)
-        })?;
+        let snapshot = self
+            .snapshot
+            .read()
+            .map_err(|_| McpError::internal_error("The Sodilaud snapshot is unavailable", None))?;
         Ok(operation(&snapshot))
     }
 }
 
 #[tool_router]
-impl ScratchpadServer {
+impl SodilaudServer {
     /// Append exact text to an existing note. Requires separate editing permission and a current get_note revision. On a save failure the append remains unsaved in the editor; retry identical arguments to save without appending twice.
     #[tool(annotations(
         title = "Append to note",
@@ -1676,12 +1677,12 @@ impl ScratchpadServer {
 }
 
 #[tool_handler]
-impl ServerHandler for ScratchpadServer {
+impl ServerHandler for SodilaudServer {
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
-            .with_server_info(Implementation::new("scratchpad-mcp", env!("CARGO_PKG_VERSION")))
+            .with_server_info(Implementation::new("sodilaud-mcp", env!("CARGO_PKG_VERSION")))
             .with_instructions(
-                "Access to the collection currently open in Scratchpad, including unsaved edits. Each function requires its permission enabled in MCP Configuration. All read functions start enabled; all write functions start disabled. delete_note moves a note to persistent trash and requires expectedRevision from get_note. delete_folder requires expectedRevision from list_folders and rejects nonempty folders. list_trash lists recovery metadata; only the user can restore or empty trash through the UI. rename_note and move_note require expectedRevision from get_note. rename_folder requires expectedRevision from list_folders. All edits preserve content except append_to_note, which requires the expectedRevision from get_note, appends exact text, and never adds separators. A revision conflict requires rereading; a save failure requires retrying identical arguments because the change may already be in the editor. Get collectionId from a read result and supply a unique requestId for each write; reuse identical arguments on retries. Retry keys last for this collection session; a switch or app restart invalidates collectionId. Results are paginated; follow nextOffset until it is null. get_note offsets count Unicode characters, not bytes.",
+                "Access to the collection currently open in Sodilaud, including unsaved edits. Each function requires its permission enabled in MCP Configuration. All read functions start enabled; all write functions start disabled. delete_note moves a note to persistent trash and requires expectedRevision from get_note. delete_folder requires expectedRevision from list_folders and rejects nonempty folders. list_trash lists recovery metadata; only the user can restore or empty trash through the UI. rename_note and move_note require expectedRevision from get_note. rename_folder requires expectedRevision from list_folders. All edits preserve content except append_to_note, which requires the expectedRevision from get_note, appends exact text, and never adds separators. A revision conflict requires rereading; a save failure requires retrying identical arguments because the change may already be in the editor. Get collectionId from a read result and supply a unique requestId for each write; reuse identical arguments on retries. Retry keys last for this collection session; a switch or app restart invalidates collectionId. Results are paginated; follow nextOffset until it is null. get_note offsets count Unicode characters, not bytes.",
             )
     }
 
@@ -1692,7 +1693,7 @@ impl ServerHandler for ScratchpadServer {
         // Some clients establish a modern notification stream even when the
         // server advertises no list-change capabilities. Acknowledge the
         // supported intersection (currently empty) so tool discovery remains
-        // usable without claiming that Scratchpad emits change notifications.
+        // usable without claiming that Sodilaud emits change notifications.
         Some(requested.supported_by(&self.get_info().capabilities))
     }
 }
@@ -1741,7 +1742,7 @@ mod tests {
     #[tokio::test]
     async fn function_permissions_are_independent_and_reads_can_be_revoked() {
         let snapshot = Arc::new(RwLock::new(snapshot()));
-        let server = ScratchpadServer::new(snapshot.clone());
+        let server = SodilaudServer::new(snapshot.clone());
         assert!(server.is_allowed("get_note").unwrap());
         assert!(!server.is_allowed("create_note").unwrap());
         assert!(permission_set(vec!["unknown".into()]).is_err());
@@ -1806,7 +1807,7 @@ mod tests {
             })
             .collect();
         let shared = Arc::new(RwLock::new(data));
-        let server = ScratchpadServer::new(shared.clone());
+        let server = SodilaudServer::new(shared.clone());
         let first = server
             .list_trash(Parameters(ListFoldersArgs {
                 limit: Some(2),
@@ -1891,7 +1892,7 @@ mod tests {
     #[tokio::test]
     async fn organization_tools_enforce_independent_permissions_and_validate_inputs() {
         let snapshot = Arc::new(RwLock::new(snapshot()));
-        let server = ScratchpadServer::new(snapshot.clone());
+        let server = SodilaudServer::new(snapshot.clone());
         for (operation, args) in [
             (
                 "rename_note",
@@ -2092,10 +2093,7 @@ mod tests {
         )
         .await;
         let initialized = receive_json(&mut client).await;
-        assert_eq!(
-            initialized["result"]["serverInfo"]["name"],
-            "scratchpad-mcp"
-        );
+        assert_eq!(initialized["result"]["serverInfo"]["name"], "sodilaud-mcp");
         send_json(
             &mut client,
             serde_json::json!({
@@ -2296,17 +2294,21 @@ mod tests {
         let (address, _, cancellation, server) = start_test_server().await;
         let stream = connect_to_editor(address, &"a".repeat(64)).await.unwrap();
         let mut client = BufReader::new(stream);
-        send_json(&mut client, serde_json::json!({
-            "jsonrpc":"2.0", "id":"listen-test", "method":"subscriptions/listen",
-            "params":{
-                "_meta":{
-                    "io.modelcontextprotocol/protocolVersion":"2026-07-28",
-                    "io.modelcontextprotocol/clientInfo":{"name":"scratchpad-test","version":"1"},
-                    "io.modelcontextprotocol/clientCapabilities":{}
-                },
-                "notifications":{"toolsListChanged":true}
-            }
-        })).await;
+        send_json(
+            &mut client,
+            serde_json::json!({
+                "jsonrpc":"2.0", "id":"listen-test", "method":"subscriptions/listen",
+                "params":{
+                    "_meta":{
+                        "io.modelcontextprotocol/protocolVersion":"2026-07-28",
+                        "io.modelcontextprotocol/clientInfo":{"name":"sodilaud-test","version":"1"},
+                        "io.modelcontextprotocol/clientCapabilities":{}
+                    },
+                    "notifications":{"toolsListChanged":true}
+                }
+            }),
+        )
+        .await;
         let acknowledgment = receive_json(&mut client).await;
         assert_eq!(
             acknowledgment["method"],
@@ -2396,7 +2398,7 @@ mod tests {
             .expect("clock should be after Unix epoch")
             .as_nanos();
         let directory = std::env::temp_dir().join(format!(
-            "scratchpad-mcp-token-{}-{unique}",
+            "sodilaud-mcp-token-{}-{unique}",
             std::process::id()
         ));
         let path = directory.join("token");

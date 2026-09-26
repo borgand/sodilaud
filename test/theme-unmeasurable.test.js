@@ -29,8 +29,8 @@ test("a theme we cannot measure keeps its own foreground on the active row", asy
     // colour before any of this ran.
     globals: { CSS: { supports: () => true } },
     storage: {
-      scratchpad_active_theme: unmeasurable.id,
-      scratchpad_custom_themes: [unmeasurable]
+      sodilaud_active_theme: unmeasurable.id,
+      sodilaud_custom_themes: [unmeasurable]
     }
   });
 

@@ -13,9 +13,9 @@ const LOCAL_NOTES = [
 ];
 
 const app = await bootApp({
-  storage: { scratchpad_notes: LOCAL_NOTES },
+  storage: { sodilaud_notes: LOCAL_NOTES },
   handlers: {
-    load_workspace_preference: () => "/tmp/scratchpad-missing-workspace.db",
+    load_workspace_preference: () => "/tmp/sodilaud-missing-workspace.db",
     load_db_notes: () => {
       throw new Error("unable to open database file");
     }
@@ -24,7 +24,7 @@ const app = await bootApp({
 
 test("an unavailable workspace falls back to the local collection", () => {
   assert.deepEqual(app.sidebarTitles(), ["Local one"]);
-  assert.deepEqual(app.read("scratchpad_notes"), LOCAL_NOTES);
+  assert.deepEqual(app.read("sodilaud_notes"), LOCAL_NOTES);
 });
 
 test("the workspace is not left active after the failure", () => {

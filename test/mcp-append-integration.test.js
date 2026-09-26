@@ -9,9 +9,9 @@ test("appending uses live revisions, preserves selection, and retries failed sav
   let hold = null;
   let fail = false;
   const app = await bootApp({
-    storage: { scratchpad_notes: [seed] },
+    storage: { sodilaud_notes: [seed] },
     handlers: {
-      start_mcp_server: () => ({ command: "/scratchpad", args: ["--mcp-stdio"] }),
+      start_mcp_server: () => ({ command: "/sodilaud", args: ["--mcp-stdio"] }),
       select_db_file: () => "/tmp/mcp-append.db",
       load_db_notes: () => structuredClone(disk.notes),
       load_db_folders: () => [],
@@ -55,7 +55,7 @@ test("appending uses live revisions, preserves selection, and retries failed sav
   assert.equal(editor.selectionStart, 2);
   assert.equal(editor.selectionEnd, 5);
   assert.equal(document.getElementById("note-title").value, "Original");
-  assert.equal(app.read("scratchpad_notes")[0].content, editor.value);
+  assert.equal(app.read("sodilaud_notes")[0].content, editor.value);
   assert.equal(snapshot().noteRevisions.n, result.revision);
   assert.equal((await send(args)).revision, result.revision);
   assert.equal(editor.value.match(/Appended/g).length, 1);

@@ -44,7 +44,7 @@ test("help and reference documents current Markdown editing behavior", () => {
   assert.match(shortcuts, /Continue List, Quote, Fence, or Table/);
   assert.match(shortcuts, /Pasting a URL over selected text makes a link/);
   assert.match(markdown, /A language label enables Preview highlighting/);
-  assert.match(markdown, /Scratchpad menu → Appearance/);
+  assert.match(markdown, /Sodilaud menu → Appearance/);
   assert.match(markdown, /Right-click in the editor/);
   assert.match(markdown, /empty generated row to exit the table/);
   assert.match(markdown, /Blockquotes/);

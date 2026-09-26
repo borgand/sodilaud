@@ -15,8 +15,8 @@ let workspaceFolders = [{ id: "work-folder", name: "Workspace Folder" }];
 
 const app = await bootApp({
   storage: {
-    scratchpad_notes: LOCAL_NOTES,
-    scratchpad_folders: LOCAL_FOLDERS
+    sodilaud_notes: LOCAL_NOTES,
+    sodilaud_folders: LOCAL_FOLDERS
   },
   handlers: {
     select_db_file: () => "/tmp/folder-workspace.db",
@@ -38,7 +38,7 @@ test("workspace folders remain separate from local folders", async () => {
   app.click("db-connect-btn");
   await app.settle();
   assert.deepEqual(visibleFolders(), ["Workspace Folder"]);
-  assert.deepEqual(app.read("scratchpad_folders"), LOCAL_FOLDERS);
+  assert.deepEqual(app.read("sodilaud_folders"), LOCAL_FOLDERS);
 
   app.click("new-folder-btn");
   const input = document.querySelector(".note-folder-input");
@@ -46,10 +46,10 @@ test("workspace folders remain separate from local folders", async () => {
   input.dispatchEvent(new app.dom.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
   await app.settle();
   assert.equal(workspaceFolders.some(({ name }) => name === "Workspace Empty Folder"), true);
-  assert.deepEqual(app.read("scratchpad_folders"), LOCAL_FOLDERS);
+  assert.deepEqual(app.read("sodilaud_folders"), LOCAL_FOLDERS);
 
   app.click("db-disconnect-btn");
   await app.settle();
   assert.deepEqual(visibleFolders(), ["Local Folder"]);
-  assert.deepEqual(app.read("scratchpad_folders"), LOCAL_FOLDERS);
+  assert.deepEqual(app.read("sodilaud_folders"), LOCAL_FOLDERS);
 });

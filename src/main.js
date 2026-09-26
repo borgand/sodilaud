@@ -73,7 +73,7 @@ import {
 } from "./view-preferences.js";
 
 // ----------------------------------------------------
-// Scratchpad - Core Application Logic
+// Sodilaud - Core Application Logic
 // Handles state, events, markdown compiling, and theme
 // ----------------------------------------------------
 
@@ -247,7 +247,7 @@ const LEGACY_THEME_IDS = {
   "macintosh-system-7": "mac-os-9-platinum"
 };
 
-const COLLAPSED_FOLDERS_KEY = "scratchpad_collapsed_folders";
+const COLLAPSED_FOLDERS_KEY = "sodilaud_collapsed_folders";
 
 // State
 let notes = [];
@@ -583,12 +583,12 @@ function applyPlatformShortcutLabels() {
 // from the path alone, and only the first is safe to act on: a preference that
 // failed to read may still name a workspace that opens on a later launch.
 async function loadRememberedWorkspacePath() {
-  const legacyPath = localStorage.getItem("scratchpad_active_db");
+  const legacyPath = localStorage.getItem("sodilaud_active_db");
   if (!window.__TAURI__) return { known: true, path: legacyPath };
 
   try {
     const savedPath = await invoke("load_workspace_preference", { legacyPath });
-    localStorage.removeItem("scratchpad_active_db");
+    localStorage.removeItem("sodilaud_active_db");
     return { known: true, path: savedPath };
   } catch (err) {
     console.error("Failed to load native workspace preference", err);
@@ -613,7 +613,7 @@ async function init() {
   // 2. Load the saved theme (Default Dark on first launch) and layout mode
   loadSavedThemes();
   loadViewPreferences();
-  const savedLayoutMode = localStorage.getItem("scratchpad_layout_mode");
+  const savedLayoutMode = localStorage.getItem("sodilaud_layout_mode");
   if (savedLayoutMode) {
     setLayoutMode(savedLayoutMode);
   }
@@ -1450,7 +1450,7 @@ function scheduleNoteSave(noteId, afterSave) {
 
 function setSaveFailedState() {
   saveStatus.textContent = "Save failed";
-  saveStatus.title = "Scratchpad could not persist the latest changes";
+  saveStatus.title = "Sodilaud could not persist the latest changes";
   saveStatus.classList.add("unsaved");
 }
 
@@ -1503,8 +1503,8 @@ async function registerCloseHandler() {
       } catch (error) {
         isClosing = false;
         isClosePending = false;
-        console.error("Failed to close Scratchpad after saving", error);
-        showNotification("Could not close Scratchpad");
+        console.error("Failed to close Sodilaud after saving", error);
+        showNotification("Could not close Sodilaud");
       }
     });
   } catch (error) {
@@ -1533,7 +1533,7 @@ async function registerNativeAboutHandler() {
   if (typeof listen !== "function") return;
 
   try {
-    nativeAboutUnlisten = await listen("scratchpad-open-about", openAboutModal);
+    nativeAboutUnlisten = await listen("sodilaud-open-about", openAboutModal);
   } catch (error) {
     console.error("Failed to register the native About menu handler", error);
   }
@@ -1609,7 +1609,7 @@ function handleTitleInput() {
 
 function triggerSavingState() {
   saveStatus.textContent = "Saving...";
-  saveStatus.title = "Scratchpad is saving the latest changes";
+  saveStatus.title = "Sodilaud is saving the latest changes";
   saveStatus.classList.add("unsaved");
 }
 
@@ -1690,7 +1690,7 @@ function updateMarkdownPreview() {
 // ----------------------------------------------------
 function setLayoutMode(mode) {
   currentLayoutMode = mode;
-  localStorage.setItem("scratchpad_layout_mode", mode);
+  localStorage.setItem("sodilaud_layout_mode", mode);
 
   // Manage UI classes
   appContainer.classList.remove("mode-split", "mode-preview");
@@ -1724,7 +1724,7 @@ function applyEditorZoom(value, { persist = true } = {}) {
   zoomInBtn.disabled = currentEditorZoom >= MAX_EDITOR_ZOOM;
 
   if (persist) {
-    localStorage.setItem("scratchpad_editor_zoom", String(currentEditorZoom));
+    localStorage.setItem("sodilaud_editor_zoom", String(currentEditorZoom));
   }
   scheduleFindHighlightRedraw(80);
 }
@@ -1737,7 +1737,7 @@ function applyEditorLineSpacing(value, { persist = true } = {}) {
   lineSpacingIncreaseBtn.disabled = editorLineSpacing >= MAX_EDITOR_LINE_SPACING;
 
   if (persist) {
-    localStorage.setItem("scratchpad_editor_line_spacing", String(editorLineSpacing));
+    localStorage.setItem("sodilaud_editor_line_spacing", String(editorLineSpacing));
   }
   scheduleFindHighlightRedraw(80);
 }
@@ -1750,7 +1750,7 @@ function applyNotePreviewLines(value, { persist = true, render = true } = {}) {
   previewLinesIncreaseBtn.disabled = notePreviewLines >= MAX_NOTE_PREVIEW_LINES;
 
   if (persist) {
-    localStorage.setItem("scratchpad_note_preview_lines", String(notePreviewLines));
+    localStorage.setItem("sodilaud_note_preview_lines", String(notePreviewLines));
   }
   if (render) {
     renderNoteList(searchInput.value);
@@ -1803,7 +1803,7 @@ function applyEditorLineNumbers(value, { persist = true, render = true } = {}) {
   lineNumbersToggle.setAttribute("aria-pressed", String(editorLineNumbersEnabled));
 
   if (persist) {
-    localStorage.setItem("scratchpad_editor_line_numbers", String(editorLineNumbersEnabled));
+    localStorage.setItem("sodilaud_editor_line_numbers", String(editorLineNumbersEnabled));
   }
   if (render) {
     const comparison = visibleNoteComparison();
@@ -1833,7 +1833,7 @@ function applySyntaxHighlighting(value, { persist = true, render = true } = {}) 
   syntaxHighlightingToggle.setAttribute("aria-pressed", String(syntaxHighlightingEnabled));
 
   if (persist) {
-    localStorage.setItem("scratchpad_syntax_highlighting", String(syntaxHighlightingEnabled));
+    localStorage.setItem("sodilaud_syntax_highlighting", String(syntaxHighlightingEnabled));
   }
   if (render) {
     updateHighlights();
@@ -1844,23 +1844,23 @@ function applySyntaxHighlighting(value, { persist = true, render = true } = {}) 
 }
 
 function loadViewPreferences() {
-  applyEditorZoom(localStorage.getItem("scratchpad_editor_zoom") ?? DEFAULT_EDITOR_ZOOM, {
+  applyEditorZoom(localStorage.getItem("sodilaud_editor_zoom") ?? DEFAULT_EDITOR_ZOOM, {
     persist: false
   });
   applyEditorLineSpacing(
-    localStorage.getItem("scratchpad_editor_line_spacing") ?? DEFAULT_EDITOR_LINE_SPACING,
+    localStorage.getItem("sodilaud_editor_line_spacing") ?? DEFAULT_EDITOR_LINE_SPACING,
     { persist: false }
   );
   applyNotePreviewLines(
-    localStorage.getItem("scratchpad_note_preview_lines") ?? DEFAULT_NOTE_PREVIEW_LINES,
+    localStorage.getItem("sodilaud_note_preview_lines") ?? DEFAULT_NOTE_PREVIEW_LINES,
     { persist: false, render: false }
   );
   applySyntaxHighlighting(
-    localStorage.getItem("scratchpad_syntax_highlighting") ?? DEFAULT_SYNTAX_HIGHLIGHTING,
+    localStorage.getItem("sodilaud_syntax_highlighting") ?? DEFAULT_SYNTAX_HIGHLIGHTING,
     { persist: false, render: false }
   );
   applyEditorLineNumbers(
-    localStorage.getItem("scratchpad_editor_line_numbers") ?? DEFAULT_EDITOR_LINE_NUMBERS,
+    localStorage.getItem("sodilaud_editor_line_numbers") ?? DEFAULT_EDITOR_LINE_NUMBERS,
     { persist: false }
   );
 }
@@ -1887,7 +1887,7 @@ function toggleFocusMode() {
 }
 
 // ----------------------------------------------------
-// Scratchpad menu actions
+// Sodilaud menu actions
 // ----------------------------------------------------
 function toggleActionsDropdown(show) {
   if (show === undefined) {
@@ -1902,7 +1902,7 @@ function toggleActionsDropdown(show) {
 
 function currentMcpCollectionName() {
   if (!activeDbPath) return "Local notes";
-  return activeDbPath.split(/[/\\]/).pop() || "Scratchpad workspace";
+  return activeDbPath.split(/[/\\]/).pop() || "Sodilaud workspace";
 }
 
 function mcpSnapshotArguments() {
@@ -2051,7 +2051,7 @@ async function toggleMcpAccess() {
     await invoke("update_mcp_snapshot", mcpSnapshotArguments());
     const connection = await invoke("start_mcp_server");
     if (!connection?.command || !Array.isArray(connection?.args) || !connection.args.length) {
-      throw new Error("Scratchpad returned incomplete MCP connection details");
+      throw new Error("Sodilaud returned incomplete MCP connection details");
     }
     mcpConnectionInfo = connection;
     mcpPermissions = defaultMcpPermissions();
@@ -2097,7 +2097,7 @@ async function openMcpConfigModal() {
     mcpConfigCommand.value = mcpConnectionInfo.command;
     mcpConfigArgs.value = mcpConnectionInfo.args.join(" ");
     mcpConfigExampleCode.textContent = JSON.stringify({
-      mcpServers: { scratchpad: { command: mcpConnectionInfo.command, args: mcpConnectionInfo.args } }
+      mcpServers: { sodilaud: { command: mcpConnectionInfo.command, args: mcpConnectionInfo.args } }
     }, null, 2);
     copyButtons.forEach(button => { button.disabled = false; });
   } catch (error) {
@@ -3025,7 +3025,7 @@ async function connectDatabaseImpl() {
   let preferenceSaved = true;
   try {
     await invoke("set_last_workspace", { dbPath: path });
-    localStorage.removeItem("scratchpad_active_db");
+    localStorage.removeItem("sodilaud_active_db");
   } catch (err) {
     preferenceSaved = false;
     console.error("Failed to remember workspace", err);
@@ -3056,7 +3056,7 @@ async function disconnectDatabaseImpl() {
 
   if (activeDbPath) await reclaimWorkspaceSpace(activeDbPath);
   activeDbPath = null;
-  localStorage.removeItem("scratchpad_active_db");
+  localStorage.removeItem("sodilaud_active_db");
 
   // The local-only collection was never written over while the workspace was
   // connected, so it is simply still there.
@@ -4480,26 +4480,26 @@ function closeThemeModal() {
 
 function loadSavedThemes() {
   try {
-    const saved = localStorage.getItem("scratchpad_custom_themes");
+    const saved = localStorage.getItem("sodilaud_custom_themes");
     if (saved) {
       const parsedThemes = JSON.parse(saved);
       if (Array.isArray(parsedThemes)) {
         customThemes = parsedThemes
           .map((theme, index) => normalizeCustomTheme(theme, index))
           .filter(Boolean);
-        localStorage.setItem("scratchpad_custom_themes", JSON.stringify(customThemes));
+        localStorage.setItem("sodilaud_custom_themes", JSON.stringify(customThemes));
       }
     }
   } catch (e) {}
 
-  const storedThemeId = localStorage.getItem("scratchpad_active_theme");
+  const storedThemeId = localStorage.getItem("sodilaud_active_theme");
   const savedThemeId = LEGACY_THEME_IDS[storedThemeId] || storedThemeId;
   const themeExists = [...PRESET_THEMES, ...customThemes]
     .some((theme) => theme.id === savedThemeId);
 
   if (savedThemeId && themeExists) {
     if (savedThemeId !== storedThemeId) {
-      localStorage.setItem("scratchpad_active_theme", savedThemeId);
+      localStorage.setItem("sodilaud_active_theme", savedThemeId);
     }
     applyTheme(savedThemeId);
   } else {
@@ -4509,7 +4509,7 @@ function loadSavedThemes() {
 
 function applyTheme(themeId) {
   activeThemeId = themeId;
-  localStorage.setItem("scratchpad_active_theme", themeId);
+  localStorage.setItem("sodilaud_active_theme", themeId);
 
   const root = document.documentElement;
   const themeBtnText = document.getElementById("theme-btn-text");
@@ -4702,7 +4702,7 @@ function renderThemeGrid() {
 
 function deleteCustomTheme(themeId) {
   customThemes = customThemes.filter(t => t.id !== themeId);
-  localStorage.setItem("scratchpad_custom_themes", JSON.stringify(customThemes));
+  localStorage.setItem("sodilaud_custom_themes", JSON.stringify(customThemes));
   if (activeThemeId === themeId) {
     applyTheme("default-dark");
   } else {
@@ -4768,7 +4768,7 @@ async function processImportedTheme(content, fileName) {
     customThemes.push(theme);
   }
 
-  localStorage.setItem("scratchpad_custom_themes", JSON.stringify(customThemes));
+  localStorage.setItem("sodilaud_custom_themes", JSON.stringify(customThemes));
   applyTheme(theme.id);
 }
 
@@ -4896,7 +4896,7 @@ function exportCurrentTheme() {
 // Boot up!
 function startApp() {
   init().catch((error) => {
-    console.error("Scratchpad failed to initialize", error);
+    console.error("Sodilaud failed to initialize", error);
     if (saveStatus) {
       saveStatus.textContent = "Startup error";
       saveStatus.title = String(error);

@@ -10,7 +10,7 @@ test("MCP Configuration controls each function, group selection, failures, and f
   let fail = false;
   let deferred = null;
   const app = await bootApp({ handlers: {
-    start_mcp_server: () => ({ command: "/scratchpad", args: ["--mcp-stdio"] }),
+    start_mcp_server: () => ({ command: "/sodilaud", args: ["--mcp-stdio"] }),
     set_mcp_permissions: async () => {
       if (fail) throw new Error("Permission update failed");
       if (deferred) await new Promise(resolve => { deferred.resolve = resolve; });

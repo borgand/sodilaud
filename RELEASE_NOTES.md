@@ -1,4 +1,4 @@
-# Scratchpad Beta v0.7.9
+# Sodilaud Beta v0.7.9
 
 This is the first security-hardened release of the sodilaud fork. It removes every outbound network path and tightens what the app window is allowed to do.
 
@@ -36,6 +36,6 @@ This is the first security-hardened release of the sodilaud fork. It removes eve
 
 ## Compatibility
 
-- The app identifier is now `io.github.borgand.sodilaud`, so the first launch starts with an empty local collection. Upstream data is not copied or deleted. Reopen a workspace file to restore it; see `docs/MIGRATION.md` for bringing local notes across.
-- Existing MCP client configurations keep working. The app creates a new token under its own identifier.
+- The app identifier is now `io.github.borgand.sodilaud`, so the first launch starts with an empty local collection. Upstream data is not copied or deleted. Reopen a workspace file to restore it.
+- The app is renamed to Sodilaud. The executable is now `Sodilaud.app/Contents/MacOS/sodilaud`, the MCP server is named `sodilaud`, and the app creates a new MCP token, so reconfigure MCP clients from **Sodilaud menu → Agent access**. Preferences start from defaults.
 - Builds are not production-signed; macOS and Windows may display a security warning.

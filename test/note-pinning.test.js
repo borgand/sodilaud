@@ -12,7 +12,7 @@ const NOTES = [
 ];
 
 test("notes can be pinned and unpinned from the sidebar", async () => {
-  const app = await bootApp({ storage: { scratchpad_notes: NOTES } });
+  const app = await bootApp({ storage: { sodilaud_notes: NOTES } });
   const contextPinButton = document.getElementById("ctx-pin-note");
   const noteItem = id => document.querySelector(`.note-item[data-id="${id}"]`);
   const openContextMenu = id => noteItem(id).dispatchEvent(new app.dom.window.MouseEvent(
@@ -37,7 +37,7 @@ test("notes can be pinned and unpinned from the sidebar", async () => {
 
   assert.deepEqual(app.sidebarTitles(), ["Two", "Three", "One"]);
   assert.deepEqual(
-    app.read("scratchpad_notes").map(({ id, isPinned }) => [id, isPinned === true]),
+    app.read("sodilaud_notes").map(({ id, isPinned }) => [id, isPinned === true]),
     [["two", true], ["three", false], ["one", false]]
   );
 });

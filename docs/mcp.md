@@ -1,12 +1,12 @@
 # MCP agent access
 
-Scratchpad includes an MCP stdio mode in the desktop executable. There is
-no separate server executable or runtime to install. Open **Scratchpad menu →
+Sodilaud includes an MCP stdio mode in the desktop executable. There is
+no separate server executable or runtime to install. Open **Sodilaud menu →
 Agent access → On** while the app is running. Choose **MCP Configuration** to
 copy connection values and select function permissions. Configuration is also
 available while access is off; copying it does not start the server.
 
-Access is off each time Scratchpad starts. Disabling it stops access and
+Access is off each time Sodilaud starts. Disabling it stops access and
 disconnects active MCP sessions. Enable it before starting or reconnecting the
 client; clients do not all retry a server that was unavailable at startup.
 The accent-colored **MCP listening** indicator appears beside the save status
@@ -21,7 +21,7 @@ values shown in the configuration dialog as follows:
 | Client field | Value |
 | --- | --- |
 | Transport | stdio (sometimes called local or command) |
-| Command | The displayed absolute path to the Scratchpad executable |
+| Command | The displayed absolute path to the Sodilaud executable |
 | Arguments | `--mcp-stdio`, as a single argument |
 | Environment variables | None required |
 | URL, headers, bearer token | None required |
@@ -33,8 +33,8 @@ shown by your installation and adapt the surrounding keys to your client:
 ```json
 {
   "mcpServers": {
-    "scratchpad": {
-      "command": "/Applications/Scratchpad.app/Contents/MacOS/scratchpad",
+    "sodilaud": {
+      "command": "/Applications/Sodilaud.app/Contents/MacOS/sodilaud",
       "args": ["--mcp-stdio"]
     }
   }
@@ -47,7 +47,7 @@ to it. On macOS, point to the executable inside the installed `.app`, not the
 backslashes to be escaped (the copied example handles this). On Linux, use the
 installed executable. For AppImage installations, the dialog uses the outer
 `.AppImage` path when available, avoiding the temporary mounted executable.
-Moving or reinstalling Scratchpad at a different location requires updating
+Moving or reinstalling Sodilaud at a different location requires updating
 the command.
 
 The client launches a background instance of the same binary. This instance
@@ -55,7 +55,7 @@ does not open a window, load note storage, or automatically enable access. It
 relays MCP messages to the open editor, which owns the current collection.
 Multiple clients can connect independently. Diagnostics go to stderr; stdout
 contains only MCP messages. Closing the client's input or disabling access
-ends the background instance. Reconnect the client after restarting Scratchpad
+ends the background instance. Reconnect the client after restarting Sodilaud
 or re-enabling access.
 
 This replaces the earlier Streamable HTTP configuration: remove the old URL
@@ -284,7 +284,7 @@ to the top level.
 
 A deleted note's trash entry retains its full Markdown, ID, title, pin and title
 lock state, original folder ID/name, and deletion time. If the last active note
-is deleted, Scratchpad creates a blank note at the top level. Sidebar and
+is deleted, Sodilaud creates a blank note at the top level. Sidebar and
 right-click note deletion use the same recovery path as MCP.
 
 Accepted deletions update the editor immediately. SQLite commits active notes,
@@ -328,13 +328,13 @@ notes or empty trash through the UI.
 
 The editor's in-memory collection is authoritative for MCP. A connected agent
 can therefore read local notes or an open portable workspace, and it sees
-keystrokes shortly after they are entered even if Scratchpad's persistence
+keystrokes shortly after they are entered even if Sodilaud's persistence
 debounce has not saved them yet. Switching collections updates what the
 server exposes.
 
 The background instance connects to an internal TCP channel on
 `127.0.0.1:39393`. This is not an HTTP endpoint. Each connection must authenticate
-before MCP messages are accepted. Scratchpad manages the secret in its app
+before MCP messages are accepted. Sodilaud manages the secret in its app
 configuration directory; clients do not need it in their configuration. On
 Unix it is created with owner-only permissions. Authentication is bounded by a
 timeout, and the app limits simultaneous connections and incoming messages
@@ -343,7 +343,7 @@ computer, but processes running as your user can
 still obtain local app data. The menu toggle grants access to local agents as
 a group; there are no separate permissions per client.
 
-Scratchpad itself does not send notes anywhere. The agent or MCP client you
+Sodilaud itself does not send notes anywhere. The agent or MCP client you
 connect can send tool results—including note contents—to its model provider.
 Enable access only when needed and under a client's privacy terms you accept.
 
@@ -351,6 +351,6 @@ Agents can search the full text of every note in the open collection, so do not 
 tokens, passwords or other secrets in a collection you expose to them. Clipboard history,
 when this fork adds it, is kept out of the agent snapshot by design.
 
-Scratchpad has no update checker and makes no outbound request. MCP does not
+Sodilaud has no update checker and makes no outbound request. MCP does not
 expose update-check or installation tools. See [Storage and privacy](../README.md#storage-and-privacy)
 for the network behavior.

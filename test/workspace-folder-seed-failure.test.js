@@ -11,7 +11,7 @@ const LOCAL_FOLDERS = [{ id: "local-folder", name: "Local Folder" }];
 let seededNotes = null;
 
 const app = await bootApp({
-  storage: { scratchpad_notes: LOCAL_NOTES, scratchpad_folders: LOCAL_FOLDERS },
+  storage: { sodilaud_notes: LOCAL_NOTES, sodilaud_folders: LOCAL_FOLDERS },
   handlers: {
     select_db_file: () => "/tmp/folder-seed-failure.db",
     load_db_notes: () => [],
@@ -30,6 +30,6 @@ test("a folder seed failure does not claim the workspace was connected", async (
   assert.equal(seededNotes[0].content, "Local body");
   assert.equal(document.getElementById("workspace-menu-value").textContent, "Local notes");
   assert.equal(document.getElementById("db-disconnect-btn").style.display, "none");
-  assert.deepEqual(app.read("scratchpad_notes"), LOCAL_NOTES);
-  assert.deepEqual(app.read("scratchpad_folders"), LOCAL_FOLDERS);
+  assert.deepEqual(app.read("sodilaud_notes"), LOCAL_NOTES);
+  assert.deepEqual(app.read("sodilaud_folders"), LOCAL_FOLDERS);
 });

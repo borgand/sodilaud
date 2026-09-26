@@ -8,7 +8,7 @@ import { bootApp, settle } from "./helpers/app-harness.js";
 test("agent access shares the live collection and can be turned off", async () => {
   const app = await bootApp({
     storage: {
-      scratchpad_notes: [{
+      sodilaud_notes: [{
         id: "live-note",
         title: "Live note",
         content: "Saved body",
@@ -17,11 +17,11 @@ test("agent access shares the live collection and can be turned off", async () =
         isPinned: false,
         folderId: null
       }],
-      scratchpad_folders: [{ id: "work", name: "Work" }]
+      sodilaud_folders: [{ id: "work", name: "Work" }]
     },
     handlers: {
       start_mcp_server: () => ({
-        command: "/Applications/Scratchpad.app/Contents/MacOS/scratchpad",
+        command: "/Applications/Sodilaud.app/Contents/MacOS/sodilaud",
         args: ["--mcp-stdio"]
       })
     }
@@ -56,8 +56,8 @@ test("agent access shares the live collection and can be turned off", async () =
   const configBackdrop = document.getElementById("mcp-config-modal-backdrop");
   assert.equal(configBackdrop.style.display, "flex");
   assert.equal(configBackdrop.getAttribute("aria-hidden"), "false");
-  const command = "/Applications/Scratchpad.app/Contents/MacOS/scratchpad";
-  const example = { mcpServers: { scratchpad: { command, args: ["--mcp-stdio"] } } };
+  const command = "/Applications/Sodilaud.app/Contents/MacOS/sodilaud";
+  const example = { mcpServers: { sodilaud: { command, args: ["--mcp-stdio"] } } };
   assert.equal(document.getElementById("mcp-config-command").value, command);
   assert.equal(document.getElementById("mcp-config-args").value, "--mcp-stdio");
   assert.deepEqual(JSON.parse(document.getElementById("mcp-config-example-code").textContent), example);
@@ -85,7 +85,7 @@ test("agent access shares the live collection and can be turned off", async () =
 
   const noteUpdate = app.invocations.findLast(({ command }) => command === "update_mcp_note");
   assert.equal(noteUpdate.args.note.content, "Unsaved agent-visible body");
-  assert.equal(JSON.parse(app.storage.getItem("scratchpad_notes"))[0].content, "Saved body");
+  assert.equal(JSON.parse(app.storage.getItem("sodilaud_notes"))[0].content, "Saved body");
 
   app.click("actions-btn");
   app.click("agent-access-toggle-btn");

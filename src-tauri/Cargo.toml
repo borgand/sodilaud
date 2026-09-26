@@ -1,11 +1,11 @@
 [package]
-name = "scratchpad"
+name = "sodilaud"
 version = "0.7.9"
 description = "A lightweight, offline-first Markdown scratchpad for the desktop."
 license = "GPL-3.0-or-later"
-authors = ["crims0n"]
-repository = "https://github.com/crims0n/scratchpad"
-homepage = "https://github.com/crims0n/scratchpad"
+authors = ["Laas Toom", "crims0n"]
+repository = "https://github.com/borgand/sodilaud"
+homepage = "https://github.com/borgand/sodilaud"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -14,7 +14,7 @@ edition = "2021"
 # The `_lib` suffix may seem redundant but it is necessary
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
-name = "scratchpad_lib"
+name = "sodilaud_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

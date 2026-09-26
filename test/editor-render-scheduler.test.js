@@ -43,7 +43,7 @@ test("editor render scheduler coalesces work and supports cancellation", () => {
 test("editor input defers backdrop rendering and uses the latest value", async () => {
   const app = await bootApp({
     storage: {
-      scratchpad_notes: [{
+      sodilaud_notes: [{
         id: "render-note",
         title: "Render note",
         content: "initial",

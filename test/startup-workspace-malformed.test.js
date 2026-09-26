@@ -14,9 +14,9 @@ const LOCAL_NOTES = [
 ];
 
 const app = await bootApp({
-  storage: { scratchpad_notes: LOCAL_NOTES },
+  storage: { sodilaud_notes: LOCAL_NOTES },
   handlers: {
-    load_workspace_preference: () => "/tmp/scratchpad-malformed-workspace.db",
+    load_workspace_preference: () => "/tmp/sodilaud-malformed-workspace.db",
     load_db_notes: () => ({ unexpected: "shape" })
   }
 });
@@ -31,7 +31,7 @@ test("a malformed response is never seeded over", () => {
 
 test("start-up falls back to the local collection", () => {
   assert.deepEqual(app.sidebarTitles(), ["Local one"]);
-  assert.deepEqual(app.read("scratchpad_notes"), LOCAL_NOTES);
+  assert.deepEqual(app.read("sodilaud_notes"), LOCAL_NOTES);
   assert.equal(
     app.dom.window.document.getElementById("db-disconnect-btn").style.display,
     "none"

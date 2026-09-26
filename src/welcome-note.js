@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-export const WELCOME_NOTE_TITLE = "Welcome to Scratchpad!";
+export const WELCOME_NOTE_TITLE = "Welcome to Sodilaud!";
 
-export const WELCOME_NOTE_CONTENT = `# Welcome to Scratchpad!
+export const WELCOME_NOTE_CONTENT = `# Welcome to Sodilaud!
 
-Scratchpad is a fast, local-first place for notes, snippets, and Markdown. Everything is saved automatically as you write.
+Sodilaud is a fast, local-first place for notes, snippets, and Markdown. Everything is saved automatically as you write.
 
 ## Start writing
 - Create a scratchpad with \`Cmd/Ctrl+N\`, or by double-clicking the empty space below the sidebar list, and find your notes from the sidebar.
@@ -35,16 +35,16 @@ Scratchpad is a fast, local-first place for notes, snippets, and Markdown. Every
 - Right-click the trash icon and choose **Empty Trash…** to permanently remove deleted notes after confirmation. Trash survives restarts, has no automatic expiry, and is separate for local notes and each workspace.
 
 ## Connect an agent (optional)
-- Open **Scratchpad menu → Agent access** and turn it **On**. The **MCP listening** status shows when access is enabled.
-- Open **MCP Configuration** to copy the command and argument into a client that supports local stdio MCP servers. Configuration is available even while access is off; keep Scratchpad open when connecting.
+- Open **Sodilaud menu → Agent access** and turn it **On**. The **MCP listening** status shows when access is enabled.
+- Open **MCP Configuration** to copy the command and argument into a client that supports local stdio MCP servers. Configuration is available even while access is off; keep Sodilaud open when connecting.
 - All five read functions start enabled; all eight write functions start disabled. Choose individual **Read** and **Write** permissions or select all in a section. Choices reset when access restarts.
 - With permission, agents can create notes and folders, append text, rename and move notes, rename folders, move notes to trash, and delete empty folders. Agents can list trash metadata; only you can restore notes or empty trash.
 - Agents see the open collection, including unsaved edits, and may send returned content to their model provider. Turn access off when finished.
 
 ## Make it yours
 - Choose a built-in theme from the bottom of the sidebar, or import your own.
-- Open the Scratchpad menu to adjust sidebar previews, editor zoom, line spacing, syntax highlighting, and optional line numbers.
-- The Scratchpad menu also imports and exports files, copies Markdown or rendered HTML, and opens portable workspace files.
+- Open the Sodilaud menu to adjust sidebar previews, editor zoom, line spacing, syntax highlighting, and optional line numbers.
+- The Sodilaud menu also imports and exports files, copies Markdown or rendered HTML, and opens portable workspace files.
 
 ## Need a reference?
 Press \`Cmd/Ctrl+/\` (or \`F1\`) to open keyboard shortcuts, the Markdown cheatsheet, and the MCP function reference. Use \`Tab\` and \`Shift+Tab\` to switch between them.

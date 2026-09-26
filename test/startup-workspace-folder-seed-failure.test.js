@@ -9,8 +9,8 @@ const workspaceWrites = [];
 
 const app = await bootApp({
   storage: {
-    scratchpad_notes: [],
-    scratchpad_folders: LOCAL_FOLDERS
+    sodilaud_notes: [],
+    sodilaud_folders: LOCAL_FOLDERS
   },
   handlers: {
     load_workspace_preference: () => "/tmp/failing-folder-seed.db",
@@ -29,7 +29,7 @@ test("a failed folders-only startup seed falls back to local mode", () => {
   assert.deepEqual(workspaceWrites[0].folders, LOCAL_FOLDERS);
   assert.deepEqual(
     workspaceWrites[0].notes.map(({ title }) => title),
-    ["Welcome to Scratchpad!"]
+    ["Welcome to Sodilaud!"]
   );
   assert.equal(document.getElementById("workspace-menu-value").textContent, "Local notes");
   assert.equal(document.getElementById("db-connect-btn").style.display, "block");
@@ -37,10 +37,10 @@ test("a failed folders-only startup seed falls back to local mode", () => {
 });
 
 test("the fallback keeps local folders and persists its welcome note locally", () => {
-  assert.deepEqual(app.read("scratchpad_folders"), LOCAL_FOLDERS);
+  assert.deepEqual(app.read("sodilaud_folders"), LOCAL_FOLDERS);
   assert.deepEqual(
-    app.read("scratchpad_notes").map(({ title }) => title),
-    ["Welcome to Scratchpad!"]
+    app.read("sodilaud_notes").map(({ title }) => title),
+    ["Welcome to Sodilaud!"]
   );
   assert.deepEqual(
     [...document.querySelectorAll(".note-folder-name")].map((element) => element.textContent),

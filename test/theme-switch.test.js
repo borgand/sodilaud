@@ -29,8 +29,8 @@ const partlyMeasurable = {
 test("switching away from a dark theme leaves none of its tones behind", async () => {
   await bootApp({
     storage: {
-      scratchpad_active_theme: "github-dark",
-      scratchpad_custom_themes: [partlyMeasurable]
+      sodilaud_active_theme: "github-dark",
+      sodilaud_custom_themes: [partlyMeasurable]
     }
   });
 

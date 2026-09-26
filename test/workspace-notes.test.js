@@ -21,9 +21,9 @@ let workspaceNotes = [];
 const workspaceWrites = [];
 
 const app = await bootApp({
-  storage: { scratchpad_notes: LOCAL_NOTES },
+  storage: { sodilaud_notes: LOCAL_NOTES },
   handlers: {
-    select_db_file: () => "/tmp/scratchpad-test-workspace.db",
+    select_db_file: () => "/tmp/sodilaud-test-workspace.db",
     load_db_notes: () => workspaceNotes,
     save_note_db: ({ note }) => {
       workspaceWrites.push(note);
@@ -50,10 +50,10 @@ test("connecting a populated workspace leaves the local collection alone", async
   assert.deepEqual(app.sidebarTitles(), ["Workspace note"], "the workspace takes over the editor");
   assert.equal(
     document.getElementById("workspace-menu-value").textContent,
-    "scratchpad-test-workspace.db"
+    "sodilaud-test-workspace.db"
   );
   assert.equal(document.getElementById("db-disconnect-btn").textContent, "Return to local notes");
-  assert.deepEqual(app.read("scratchpad_notes"), LOCAL_NOTES, "the local collection is untouched");
+  assert.deepEqual(app.read("sodilaud_notes"), LOCAL_NOTES, "the local collection is untouched");
 });
 
 test("editing in a workspace writes to the workspace, never to local storage", async () => {
@@ -61,7 +61,7 @@ test("editing in a workspace writes to the workspace, never to local storage", a
 
   assert.equal(workspaceWrites.at(-1).content, "edited inside the workspace", "the workspace was written");
   assert.deepEqual(
-    app.read("scratchpad_notes"),
+    app.read("sodilaud_notes"),
     LOCAL_NOTES,
     "the local collection still holds the local notes"
   );
@@ -73,7 +73,7 @@ test("disconnecting returns the local collection", async () => {
 
   assert.deepEqual(app.sidebarTitles(), ["Local one", "Local two"]);
   assert.equal(document.getElementById("workspace-menu-value").textContent, "Local notes");
-  assert.deepEqual(app.read("scratchpad_notes"), LOCAL_NOTES);
+  assert.deepEqual(app.read("sodilaud_notes"), LOCAL_NOTES);
 });
 
 test("preview links are opened through the system browser", async () => {

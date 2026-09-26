@@ -53,8 +53,8 @@ const app = await bootApp({
   // colour before the classification under test ever ran.
   globals: { CSS: { supports: () => true } },
   storage: {
-    scratchpad_active_theme: rgbLight.id,
-    scratchpad_custom_themes: [rgbLight, namedDark, srgbLight]
+    sodilaud_active_theme: rgbLight.id,
+    sodilaud_custom_themes: [rgbLight, namedDark, srgbLight]
   }
 });
 
@@ -117,5 +117,5 @@ test("switching back to the light theme reclassifies it", () => {
   selectTheme(rgbLight.name);
   assert.equal(root.classList.contains("theme-light"), true);
   assert.equal(root.classList.contains("theme-dark"), false);
-  assert.equal(app.storage.getItem("scratchpad_active_theme"), rgbLight.id);
+  assert.equal(app.storage.getItem("sodilaud_active_theme"), rgbLight.id);
 });

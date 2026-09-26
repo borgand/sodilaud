@@ -5,7 +5,7 @@ import test from "node:test";
 
 import { bootApp } from "./helpers/app-harness.js";
 
-test("the Scratchpad menu opens Help and About dialogs and returns focus", async () => {
+test("the Sodilaud menu opens Help and About dialogs and returns focus", async () => {
   const app = await bootApp();
   const actionsButton = document.getElementById("actions-btn");
   const actionsDropdown = document.getElementById("actions-dropdown-content");
@@ -46,11 +46,11 @@ test("the Scratchpad menu opens Help and About dialogs and returns focus", async
   assert.match(aboutBackdrop.textContent, /without an account, cloud service, analytics, or telemetry/);
   assert.equal(document.getElementById("about-version").textContent, "0.7.9");
 
-  document.querySelector('.about-links a[href="https://github.com/crims0n/scratchpad"]').click();
+  document.querySelector('.about-links a[href="https://github.com/borgand/sodilaud"]').click();
   await app.settle(20);
   assert.deepEqual(app.invocations.at(-1), {
     command: "confirm_and_open_url",
-    args: { url: "https://github.com/crims0n/scratchpad" }
+    args: { url: "https://github.com/borgand/sodilaud" }
   });
 
   document.getElementById("close-about-btn").click();

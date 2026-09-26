@@ -5,11 +5,11 @@ import { bootApp } from "./helpers/app-harness.js";
 
 test("the note context menu deletes its target and stays separate from folder and text menus", async () => {
   const app = await bootApp({ storage: {
-    scratchpad_notes: [
+    sodilaud_notes: [
       { id: "one", title: "One", content: "First", updatedAt: 2, isTitleLocked: true },
       { id: "two", title: "Two", content: "Second", updatedAt: 1, isTitleLocked: true }
     ],
-    scratchpad_folders: [{ id: "work", name: "Work" }]
+    sodilaud_folders: [{ id: "work", name: "Work" }]
   } });
   const item = id => document.querySelector(`.note-item[data-id="${id}"]`);
   const open = element => element.dispatchEvent(new app.dom.window.MouseEvent("contextmenu", {
@@ -23,7 +23,7 @@ test("the note context menu deletes its target and stays separate from folder an
   assert.equal(divider.style.display, "block");
   button.click();
   await app.settle();
-  assert.deepEqual(app.read("scratchpad_notes").map(note => note.id), ["one"]);
+  assert.deepEqual(app.read("sodilaud_notes").map(note => note.id), ["one"]);
   assert.equal(document.getElementById("note-title").value, "One");
   assert.equal(document.getElementById("custom-context-menu").style.display, "none");
 
@@ -36,7 +36,7 @@ test("the note context menu deletes its target and stays separate from folder an
   open(item("one"));
   button.click();
   await app.settle();
-  const remaining = app.read("scratchpad_notes");
+  const remaining = app.read("sodilaud_notes");
   assert.equal(remaining.length, 1, "deleting the last note retains the existing blank-note fallback");
   assert.notEqual(remaining[0].id, "one");
   assert.equal(remaining[0].content, "");
