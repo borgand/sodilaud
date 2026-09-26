@@ -6,9 +6,9 @@
 const REFRESH_MS = 1000;
 const EXPIRING_SECONDS = 60;
 
-// Split so the egress checker's remote-URL pattern (scripts/check-no-egress.mjs)
-// does not flag this XML namespace URI as a network address.
-const SVG_NS = "http:" + "//www.w3.org/2000/svg";
+// XML namespace identifier, never fetched or dereferenced. Explicitly allowed
+// in scripts/check-no-egress.mjs; see docs/security/2026-09-26-egress-allowances.md.
+const SVG_NS = "http://www.w3.org/2000/svg";
 
 // Outline icon paths, drawn node by node with document.createElementNS.
 // viewBox is 0 0 24 24; stroke=currentColor picks up the button's colour
