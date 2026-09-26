@@ -72,9 +72,10 @@ expiry, deletion, disable, and quit. Quitting from the tray or `⌘Q` wipes the 
 first, then flushes pending note saves the same as closing the main window today; a failed
 flush cancels the quit rather than losing notes.
 
-Turning on auto-paste (paste automatically after picking an entry) requires granting
-Sodilaud Accessibility permission in System Settings. That permission lets Sodilaud send
-synthetic keystrokes to the frontmost app; Sodilaud uses it only to post `⌘V` after a pick,
+Turning on auto-paste (paste automatically after picking an entry), or pasting a single
+pick with `⌘↵`, requires granting Sodilaud Accessibility permission in System Settings. That
+permission lets Sodilaud send synthetic keystrokes to the frontmost app; Sodilaud uses it
+only to post `⌘V` after a pick,
 and only into the app that was frontmost when the popup opened, never into itself. See
 [clipboard history](docs/clipboard-history.md) for the full privacy guarantees and a manual
 test checklist.

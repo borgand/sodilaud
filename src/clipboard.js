@@ -167,9 +167,9 @@ export function createPopup({ document, invoke, timers = globalThis, afterPaint 
     else render();
   }
 
-  async function pick(index) {
+  async function pick(index, paste = false) {
     const item = items[index];
-    if (item) await invoke("clip_select", { id: item.id }).catch(() => refresh());
+    if (item) await invoke("clip_select", { id: item.id, paste }).catch(() => refresh());
   }
 
   async function toggleReveal(index) {
@@ -244,6 +244,7 @@ export function createPopup({ document, invoke, timers = globalThis, afterPaint 
   }
 
   async function onKey(event) {
+    if (event.metaKey && event.key === "Enter" && !event.ctrlKey && !event.altKey) return pick(focused, true);
     if (event.metaKey || event.ctrlKey || event.altKey) return;
     const slot = event.key === "0" ? 9 : Number.parseInt(event.key, 10) - 1;
     if (/^[0-9]$/.test(event.key)) return pick(slot);

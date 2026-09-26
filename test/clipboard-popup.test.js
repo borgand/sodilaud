@@ -35,6 +35,7 @@ test("the footer hint mentions j/k and h alongside the arrow keys and Space", as
   const footer = html.slice(html.indexOf('class="clip-footer"'), html.indexOf("</footer>"));
   assert.match(footer, /jk/);
   assert.match(footer, /Space\/h/);
+  assert.match(footer, /⌘↵ paste/);
 });
 
 test("formats time left and slot keys", () => {
@@ -89,7 +90,7 @@ test("revealing swaps the eye icon and aria-label to Hide, and back on hide", as
 test("digit keys pick by slot", async () => {
   const { calls, key } = await setup();
   await key("2");
-  assert.deepEqual(calls.at(-1), { command: "clip_select", args: { id: 9 } });
+  assert.deepEqual(calls.at(-1), { command: "clip_select", args: { id: 9, paste: false } });
 });
 
 test("arrows and Enter pick the focused row", async () => {
@@ -97,7 +98,24 @@ test("arrows and Enter pick the focused row", async () => {
   await key("ArrowDown");
   await key("ArrowDown");
   await key("Enter");
-  assert.deepEqual(calls.at(-1), { command: "clip_select", args: { id: 11 } });
+  assert.deepEqual(calls.at(-1), { command: "clip_select", args: { id: 11, paste: false } });
+});
+
+test("Cmd-Enter picks the focused row and asks to paste it", async () => {
+  const { dom, calls, key, popup } = await setup();
+  await key("ArrowDown");
+  await popup.onKey(new dom.window.KeyboardEvent("keydown", { key: "Enter", metaKey: true }));
+  assert.deepEqual(calls.at(-1), { command: "clip_select", args: { id: 9, paste: true } });
+});
+
+test("Ctrl-Enter and Alt-Enter do nothing", async () => {
+  const { dom, calls, popup } = await setup();
+  const before = calls.length;
+  for (const modifier of ["ctrlKey", "altKey"]) {
+    await popup.onKey(new dom.window.KeyboardEvent("keydown", { key: "Enter", metaKey: true, [modifier]: true }));
+    await popup.onKey(new dom.window.KeyboardEvent("keydown", { key: "Enter", [modifier]: true }));
+  }
+  assert.equal(calls.length, before);
 });
 
 test("j and k move focus like ArrowDown and ArrowUp", async () => {
@@ -105,10 +123,10 @@ test("j and k move focus like ArrowDown and ArrowUp", async () => {
   await key("j");
   await key("j");
   await key("Enter");
-  assert.deepEqual(calls.at(-1), { command: "clip_select", args: { id: 11 } });
+  assert.deepEqual(calls.at(-1), { command: "clip_select", args: { id: 11, paste: false } });
   await key("k");
   await key("Enter");
-  assert.deepEqual(calls.at(-1), { command: "clip_select", args: { id: 9 } });
+  assert.deepEqual(calls.at(-1), { command: "clip_select", args: { id: 9, paste: false } });
 });
 
 test("h reveals and re-masks a masked row like Space", async () => {
@@ -178,7 +196,7 @@ test("focus follows the entry across a refresh that inserts a new copy at the to
   listing.items.unshift({ id: 20, text: "new copy", masked: false, secondsLeft: 600, extraLines: 0 });
   await popup.refresh();
   await key("Enter");
-  assert.deepEqual(calls.at(-1), { command: "clip_select", args: { id: 9 } });
+  assert.deepEqual(calls.at(-1), { command: "clip_select", args: { id: 9, paste: false } });
 });
 
 test("keys with a modifier do nothing", async () => {

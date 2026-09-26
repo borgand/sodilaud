@@ -31,24 +31,39 @@ const KNOWN_PREFIXES: &[(&str, usize)] = &[
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Mask {
     None,
-    Full { prefix: usize },
-    Partial { start: usize, end: usize },
+    /// `prefix` is how many bytes of the trimmed value may show before the dots:
+    /// a token's known prefix, or the ordinary text in front of the first secret.
+    Full {
+        prefix: usize,
+    },
+    Partial {
+        start: usize,
+        end: usize,
+    },
 }
 
 pub fn classify(value: &str) -> Mask {
-    if value.contains("-----BEGIN") && value.contains("PRIVATE KEY-----") {
-        return Mask::Full { prefix: 0 };
-    }
     let trimmed = value.trim();
+    const KEY_HEADER: &str = "PRIVATE KEY-----";
+    if trimmed.contains("-----BEGIN") {
+        if let Some(at) = trimmed.find(KEY_HEADER) {
+            return Mask::Full {
+                prefix: lead(trimmed, at + KEY_HEADER.len()),
+            };
+        }
+    }
     if let Some(prefix) = known_token(trimmed) {
         return Mask::Full { prefix };
     }
-    let embedded = value
+    let embedded = trimmed
         .split_whitespace()
         .map(|word| word.trim_matches(|c| matches!(c, '"' | '\'' | ',' | ';')))
-        .any(|word| known_token(word).is_some());
-    if embedded {
-        return Mask::Full { prefix: 0 };
+        .find(|word| known_token(word).is_some());
+    if let Some(word) = embedded {
+        let at = word.as_ptr() as usize - trimmed.as_ptr() as usize;
+        return Mask::Full {
+            prefix: lead(trimmed, at),
+        };
     }
     if trimmed.lines().count() > 1 {
         return classify_lines(value);
@@ -76,7 +91,11 @@ fn classify_lines(value: &str) -> Mask {
         if first.is_none() {
             first = Some((line_start, line));
         } else if secret_assignment(line).is_some() {
-            return Mask::Full { prefix: 0 };
+            let trimmed = value.trim();
+            let skipped = value.len() - value.trim_start().len();
+            return Mask::Full {
+                prefix: lead(trimmed, line_start - skipped),
+            };
         }
     }
     let Some((line_start, line)) = first else {
@@ -91,6 +110,16 @@ fn classify_lines(value: &str) -> Mask {
     }
 }
 
+/// Byte length of the ordinary text in front of a secret that starts at `secret_at`:
+/// it stops at the end of the first line and before any secret on that line.
+fn lead(trimmed: &str, secret_at: usize) -> usize {
+    let first_line = trimmed.find('\n').unwrap_or(trimmed.len());
+    let line = &trimmed[..first_line];
+    let inline = url_password(line).or_else(|| secret_assignment(line));
+    let end = inline.map_or(first_line, |(start, _)| start).min(secret_at);
+    trimmed[..end].trim_end_matches(['\r', '\n']).len()
+}
+
 pub fn hint(value: &str, mask: &Mask) -> Option<String> {
     match *mask {
         Mask::None => None,
@@ -101,8 +130,23 @@ pub fn hint(value: &str, mask: &Mask) -> Option<String> {
                 return Some(format!("•••••••• ({count})"));
             }
             let tail: String = secret.chars().skip(count - 4).collect();
-            let head = secret.get(..prefix).unwrap_or("");
-            Some(format!("{head}{DOTS}{tail} ({count})"))
+            let suffix = format!("{DOTS}{tail} ({count})");
+            let mut head = secret.get(..prefix).unwrap_or("").to_string();
+            if head.contains(['\n', '\r']) || count < head.chars().count() + 8 {
+                head.clear();
+            }
+            let line_break = secret
+                .get(prefix..)
+                .is_some_and(|rest| rest.starts_with(['\n', '\r']));
+            if !head.is_empty() && line_break {
+                head.push(' ');
+            }
+            let room = PREVIEW_CHARS - suffix.chars().count();
+            if head.chars().count() > room {
+                head = head.chars().take(room - 1).collect();
+                head.push('…');
+            }
+            Some(format!("{head}{suffix}"))
         }
         Mask::Partial { start, end } => Some(format!(
             "{}{DOTS}{}",
@@ -349,15 +393,20 @@ mod tests {
         assert!(masked("eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U"));
         assert_eq!(
             classify("-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAA\n-----END OPENSSH PRIVATE KEY-----\n"),
-            Mask::Full { prefix: 0 }
+            Mask::Full {
+                prefix: "-----BEGIN OPENSSH PRIVATE KEY-----".len()
+            }
         );
     }
 
     #[test]
-    fn token_inside_text_masks_the_whole_entry() {
+    fn token_inside_text_masks_the_whole_entry_after_its_leading_text() {
+        let value = "curl -H \"Authorization: Bearer ghp_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8\"";
         assert_eq!(
-            classify("curl -H \"Authorization: Bearer ghp_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8\""),
-            Mask::Full { prefix: 0 }
+            classify(value),
+            Mask::Full {
+                prefix: value.find("ghp_").unwrap()
+            }
         );
     }
 
@@ -417,7 +466,9 @@ mod tests {
     fn env_block_with_a_later_secret_is_fully_masked() {
         assert_eq!(
             classify("DB_HOST=localhost\nDB_PORT=5432\nDB_PASSWORD=hunter2hunter"),
-            Mask::Full { prefix: 0 }
+            Mask::Full {
+                prefix: "DB_HOST=localhost".len()
+            }
         );
     }
 
@@ -492,6 +543,57 @@ mod tests {
         assert_eq!(hint("plain", &Mask::None), None);
     }
 
+    fn shown(value: &str) -> String {
+        hint(value, &classify(value)).unwrap()
+    }
+
+    #[test]
+    fn hints_show_the_text_in_front_of_an_embedded_secret() {
+        let note = "## Start writing\n- Create a scratchpad with `Cmd/Ctrl+N`.\nAPI_TOKEN=fas32faw03lasdk3j5";
+        let count = note.chars().count();
+        assert_eq!(shown(note), format!("## Start writing ••••k3j5 ({count})"));
+        let curl = "curl -H \"Authorization: Bearer ghp_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8\"";
+        assert_eq!(
+            shown(curl),
+            "curl -H \"Authorization: Bearer ••••7r8\" (72)"
+        );
+        let key = "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAA\n-----END OPENSSH PRIVATE KEY-----";
+        assert!(shown(key).starts_with("-----BEGIN OPENSSH PRIVATE KEY----- ••••"));
+    }
+
+    #[test]
+    fn hints_stop_at_a_secret_on_the_first_line() {
+        let value = "API_KEY=abc123def\nnotes\nDB_PASSWORD=hunter2hunter";
+        assert!(shown(value).starts_with("API_KEY=••••"), "{}", shown(value));
+        let url = "postgres://app:s3cr3tpw@db ghp_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8";
+        assert!(
+            shown(url).starts_with("postgres://app:••••"),
+            "{}",
+            shown(url)
+        );
+    }
+
+    #[test]
+    fn long_leading_text_is_cut_so_the_dots_and_tail_stay_visible() {
+        let value = format!("{}\nAPI_TOKEN=fas32faw03lasdk3j5", "word ".repeat(20));
+        let hint = shown(&value);
+        assert!(hint.chars().count() <= PREVIEW_CHARS, "{hint}");
+        assert!(hint.contains("…••••k3j5 ("), "{hint}");
+        assert_eq!(preview(&hint, PREVIEW_CHARS).0, hint);
+    }
+
+    #[test]
+    fn leading_text_is_dropped_when_fewer_than_four_characters_would_stay_hidden() {
+        assert_eq!(
+            hint("abcd efgh", &Mask::Full { prefix: 5 }).unwrap(),
+            "•••••••• (9)"
+        );
+        assert_eq!(
+            hint("abcdef ghijklm", &Mask::Full { prefix: 7 }).unwrap(),
+            "••••jklm (14)"
+        );
+    }
+
     #[test]
     fn hint_never_leaks_more_than_four_secret_characters() {
         let secrets = [
@@ -499,6 +601,30 @@ mod tests {
             "9f86d081884c7d659a2feaa0c55ad015",
             "ghp_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8",
         ];
+        let embedded = [
+            (
+                "see ghp_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8 here",
+                "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8",
+            ),
+            (
+                "# Notes\nsome text\nAPI_TOKEN=fas32faw03lasdk3j5",
+                "fas32faw03lasdk3j5",
+            ),
+            (
+                "API_KEY=abc123defghi\nDB_PASSWORD=hunter2hunter",
+                "abc123defghi",
+            ),
+        ];
+        for (value, secret) in embedded {
+            let shown = shown(value);
+            let leaked = (5..=secret.len()).any(|n| {
+                secret
+                    .as_bytes()
+                    .windows(n)
+                    .any(|w| shown.contains(std::str::from_utf8(w).unwrap()))
+            });
+            assert!(!leaked, "{value:?} -> {shown}");
+        }
         for secret in secrets {
             let mask = classify(secret);
             let Mask::Full { prefix } = mask else {

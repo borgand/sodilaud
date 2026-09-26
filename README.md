@@ -26,7 +26,7 @@ See [release notes](RELEASE_NOTES.md) for highlights and compatibility details.
 
 ## Clipboard history (macOS)
 
-New in v0.8: press `⌘⇧V` in any app to open your recent text copies, newest first. Pick one with `1`-`9`/`0`, the arrow keys, `j`/`k`, or the mouse to put it back on the clipboard. Turn on auto-paste if you want Sodilaud to paste it for you.
+New in v0.8: press `⌘⇧V` in any app to open your recent text copies, newest first. Pick one with `1`-`9`/`0`, the arrow keys, `j`/`k`, or the mouse to put it back on the clipboard. Press `⌘↵` to paste it into the app you came from, or turn on auto-paste to make every pick paste.
 
 <p align="center">
   <img src="images/clipboard.png" alt="The Sodilaud clipboard history popup listing ten recent copies, with an API key and a database password masked and a GitHub token revealed" width="560">
@@ -122,6 +122,7 @@ The app displays `Cmd` on macOS and `Ctrl` on Windows or Linux.
 | --- | --- |
 | `Cmd/Ctrl + N` | Create a scratchpad |
 | `⌘⇧V` (macOS, configurable) | Open the clipboard history popup |
+| `⌘↵` (macOS, clipboard popup) | Paste the focused entry into the previous app |
 | `Cmd/Ctrl + B` | Toggle the sidebar |
 | `Cmd/Ctrl + \` | Toggle two-note side-by-side editing |
 | `Alt + ↑` / `Alt + ↓` | Move a list branch, or the active sidebar note outside a list |

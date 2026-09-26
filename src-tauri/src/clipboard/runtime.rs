@@ -252,8 +252,9 @@ impl ClipboardRuntime {
         Some(pid)
     }
 
-    pub fn request_paste_on_close(&self) {
-        let wanted = self.config().auto_paste && accessibility_trusted();
+    /// `paste` asks for a paste even when auto-paste is off (Cmd-Enter).
+    pub fn request_paste_on_close(&self, paste: bool) {
+        let wanted = (paste || self.config().auto_paste) && accessibility_trusted();
         self.paste_on_close.store(wanted, Ordering::SeqCst);
     }
 

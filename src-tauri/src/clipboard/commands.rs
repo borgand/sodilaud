@@ -59,21 +59,21 @@ pub fn clip_reveal(window: Window, id: u64) -> Result<Secret, ClipError> {
 }
 
 #[tauri::command]
-pub fn clip_select(window: Window, id: u64) -> Result<bool, ClipError> {
+pub fn clip_select(window: Window, id: u64, paste: bool) -> Result<bool, ClipError> {
     require_popup(&window)?;
     #[cfg(target_os = "macos")]
     {
         let runtime = open_runtime(&window)?;
         let picked = runtime.select(id);
         if picked {
-            runtime.request_paste_on_close();
+            runtime.request_paste_on_close(paste);
             on_main(&window, super::popup::hide);
         }
         Ok(picked)
     }
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = id;
+        let _ = (id, paste);
         Err(ClipError::Unsupported)
     }
 }
