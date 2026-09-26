@@ -348,8 +348,10 @@ connect can send tool results—including note contents—to its model provider.
 Enable access only when needed and under a client's privacy terms you accept.
 
 Agents can search the full text of every note in the open collection, so do not keep
-tokens, passwords or other secrets in a collection you expose to them. Clipboard history,
-when this fork adds it, is kept out of the agent snapshot by design.
+tokens, passwords or other secrets in a collection you expose to them. The optional macOS
+[clipboard history](../docs/clipboard-history.md) feature is never part of the MCP
+snapshot: it is not referenced by the MCP server, and only the clipboard popup window,
+never the main window or an agent, can read entry contents.
 
 Sodilaud has no update checker and makes no outbound request. MCP does not
 expose update-check or installation tools. See [Storage and privacy](../README.md#storage-and-privacy)

@@ -1,0 +1,17 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "clipboard",
+  "description": "Clipboard history popup. The only window that can read entries. clip_close lets Esc and the close button hide it, clip_shown and clip_hidden report that the page painted the list or its emptied DOM, and clip_start_drag moves only this window.",
+  "windows": ["clipboard"],
+  "platforms": ["macOS"],
+  "permissions": [
+    "allow-clip-list",
+    "allow-clip-reveal",
+    "allow-clip-select",
+    "allow-clip-delete",
+    "allow-clip-close",
+    "allow-clip-shown",
+    "allow-clip-hidden",
+    "allow-clip-start-drag"
+  ]
+}

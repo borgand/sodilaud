@@ -1,0 +1,27 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Clipboard</title>
+  <link rel="stylesheet" href="clipboard.css">
+  <script type="module" src="clipboard.js"></script>
+</head>
+<body>
+  <!-- Icon markup cloned by clipboard.js. No xmlns attribute: the HTML parser puts
+       <svg> in the SVG namespace on its own, so createElementNS/SVG_NS are not needed. -->
+  <template id="icon-eye"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z"/><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/></svg></template>
+  <template id="icon-eye-slash"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z"/><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="M3 3l18 18"/></svg></template>
+  <template id="icon-trash"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/></svg></template>
+  <div class="clip-popup" role="dialog" aria-labelledby="clip-title">
+    <header class="clip-header">
+      <h1 id="clip-title">Clipboard</h1>
+      <span id="clip-ttl" class="clip-ttl"></span>
+      <button type="button" id="clip-close" class="clip-icon" aria-label="Close">×</button>
+    </header>
+    <ol id="clip-list" class="clip-list" role="listbox" aria-label="Clipboard history"></ol>
+    <p id="clip-empty" class="clip-empty" hidden></p>
+    <footer class="clip-footer">1-9,0 paste · ↑↓/jk Enter · Space/h reveal · ⌫ delete · Esc close</footer>
+  </div>
+</body>
+</html>

@@ -29,6 +29,8 @@ import { escapeHTML, highlightPreviewCode, renderEditorBackdrop } from "./syntax
 import { renderEditorLineNumbers } from "./editor-line-numbers.js";
 import { createEditorRenderScheduler } from "./editor-render-scheduler.js";
 import { WELCOME_NOTE_CONTENT, WELCOME_NOTE_TITLE } from "./welcome-note.js";
+import { setupClipboardHistory, syncClipboardPopupTheme } from "./clipboard-settings-ui.js";
+import { isMacPlatform } from "./clipboard-settings.js";
 import {
   canMoveNote,
   getNoteMoveTargetIndex,
@@ -78,6 +80,11 @@ import {
 // ----------------------------------------------------
 
 const { invoke } = window.__TAURI__ ? window.__TAURI__.core : { invoke: () => Promise.resolve() };
+
+// Set once at start-up from the same check setupClipboardHistory makes, so
+// every later theme change can tell the popup about it without re-deriving
+// platform and Tauri presence each time.
+let clipboardHistoryIsMac = false;
 
 // Resolves any CSS colour an imported theme may use to sRGB, by asking the
 // engine. Themes only change on demand, so the probe it uses costs nothing.
@@ -608,6 +615,20 @@ async function init() {
   }, { once: true });
   await registerNativeAboutHandler();
   await registerCloseHandler();
+  await registerQuitHandler();
+  try {
+    clipboardHistoryIsMac = Boolean(window.__TAURI__) && isMacPlatform(navigator);
+    await setupClipboardHistory({
+      document,
+      invoke,
+      listen: window.__TAURI__?.event?.listen,
+      storage: localStorage,
+      notify: showNotification,
+      isMac: clipboardHistoryIsMac
+    });
+  } catch (error) {
+    console.error("Failed to set up clipboard history", error);
+  }
   await registerWindowResizeHandler();
 
   // 2. Load the saved theme (Default Dark on first launch) and layout mode
@@ -1497,6 +1518,15 @@ async function registerCloseHandler() {
         return;
       }
 
+      try {
+        if (await invoke("hide_main_window")) {
+          isClosePending = false;
+          return;
+        }
+      } catch (error) {
+        console.error("Failed to hide Sodilaud", error);
+      }
+
       isClosing = true;
       try {
         await appWindow.destroy();
@@ -1509,6 +1539,38 @@ async function registerCloseHandler() {
     });
   } catch (error) {
     console.error("Failed to register the close-save handler", error);
+  }
+}
+
+async function registerQuitHandler() {
+  const listen = window.__TAURI__?.event?.listen;
+  if (typeof listen !== "function") return;
+
+  let quitting = false;
+  try {
+    await listen("sodilaud-quit-requested", async () => {
+      if (quitting) return;
+      quitting = true;
+      try {
+        await dbSaveQueue;
+        const saved = await flushPendingSaves();
+        if (!saved) {
+          setSaveFailedState();
+          showNotification("Could not save the latest changes; quit cancelled");
+          return;
+        }
+        await invoke("quit_app");
+      } catch (error) {
+        console.error("Failed to quit Sodilaud", error);
+        showNotification("Could not quit Sodilaud");
+      } finally {
+        quitting = false;
+      }
+    });
+    // Until this runs, Rust quits without asking this window to flush first.
+    await invoke("quit_handler_ready");
+  } catch (error) {
+    console.error("Failed to register the quit handler", error);
   }
 }
 
@@ -4519,6 +4581,7 @@ function applyTheme(themeId) {
     setTheme("dark");
     if (themeBtnText) themeBtnText.textContent = "Theme: Default Dark";
     renderThemeGrid();
+    syncClipboardPopupTheme({ document, invoke, isMac: clipboardHistoryIsMac });
     return;
   }
   if (themeId === "default-light") {
@@ -4526,6 +4589,7 @@ function applyTheme(themeId) {
     setTheme("light");
     if (themeBtnText) themeBtnText.textContent = "Theme: Default Light";
     renderThemeGrid();
+    syncClipboardPopupTheme({ document, invoke, isMac: clipboardHistoryIsMac });
     return;
   }
 
@@ -4593,6 +4657,7 @@ function applyTheme(themeId) {
   activeThemeMenuValue.textContent = theme.name;
 
   renderThemeGrid();
+  syncClipboardPopupTheme({ document, invoke, isMac: clipboardHistoryIsMac });
 }
 
 function clearCustomThemeStyles() {

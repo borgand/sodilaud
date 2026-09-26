@@ -1,0 +1,33 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+
+/* --clip-* variables carry the main window's theme (see src/clipboard-settings-ui.js
+   and src-tauri/src/clipboard/service.rs::PopupTheme); these are the defaults
+   used until a themed listing arrives, and whenever a value is not set. */
+:root { color-scheme: light dark; --clip-bg: #fbfbfb; --clip-surface: #dbe7ff; --clip-fg: #1d1d1f; --clip-muted: #6e6e73; --clip-accent: #3b82f6; --clip-line: #e2e2e5; }
+@media (prefers-color-scheme: dark) { :root { --clip-bg: #1e1e20; --clip-surface: #2c3a55; --clip-fg: #f2f2f5; --clip-muted: #a1a1a6; --clip-accent: #3b82f6; --clip-line: #333338; } }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--clip-bg); color: var(--clip-fg); font: 13px -apple-system, BlinkMacSystemFont, sans-serif; overflow: hidden; user-select: none; }
+.clip-popup { display: flex; flex-direction: column; height: 100%; }
+.clip-header { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px; border-bottom: 1px solid var(--clip-line); cursor: default; -webkit-user-select: none; user-select: none; }
+.clip-header h1 { flex: 1; margin: 0; font-size: 13px; font-weight: 600; }
+.clip-ttl, .clip-footer, .clip-time { color: var(--clip-muted); }
+.clip-list { flex: 1; margin: 0; padding: 0; list-style: none; overflow-y: auto; }
+/* Fixed column tracks so the eye/time/trash controls line up across rows even
+   though each <li> is its own grid: slot | text (grows) | eye | time | trash. */
+.clip-row { display: grid; grid-template-columns: 1.2em minmax(0, 1fr) 22px 3em 22px; column-gap: 8px; align-items: start; min-height: 34px; padding: 4px 12px; border-left: 3px solid transparent; cursor: pointer; }
+.clip-row.clip-focused { background: var(--clip-surface); border-left-color: var(--clip-accent); }
+.clip-row.clip-expiring { opacity: 0.55; }
+.clip-slot { color: var(--clip-muted); font-variant-numeric: tabular-nums; }
+.clip-main { display: flex; min-width: 0; overflow: hidden; }
+.clip-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, Menlo, monospace; }
+.clip-row.clip-revealed .clip-text { white-space: pre-wrap; word-break: break-all; max-height: 5.6em; overflow-y: auto; }
+.clip-extra { color: var(--clip-muted); margin-left: 4px; }
+.clip-icon { border: 0; background: none; color: var(--clip-muted); cursor: pointer; font-size: 14px; padding: 2px 4px; display: inline-flex; align-items: center; }
+.clip-icon:hover, .clip-icon:focus-visible { color: var(--clip-fg); }
+/* Only within a row: keep controls pinned to the row's top edge, not centred
+   against a taller, wrapped/revealed text cell. Scoped so it does not affect
+   the header's close button. */
+.clip-row .clip-icon, .clip-row .clip-eye-slot { align-self: start; }
+.clip-time { text-align: right; }
+.clip-empty { margin: 16px 12px; color: var(--clip-muted); }
+.clip-footer { height: 30px; line-height: 30px; padding: 0 12px; border-top: 1px solid var(--clip-line); font-size: 11px; }

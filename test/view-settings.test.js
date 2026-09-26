@@ -30,7 +30,7 @@ test("editor and sidebar view settings are adjustable and persistent", async () 
   assert.deepEqual(
     [...document.querySelectorAll("#actions-dropdown-content > .dropdown-section > .dropdown-section-title")]
       .map(label => label.textContent),
-    ["Workspace", "Note", "Appearance", "Agent access", "Help"]
+    ["Workspace", "Note", "Appearance", "Agent access", "Clipboard history", "Help"]
   );
   assert.equal(document.getElementById("theme-picker-btn").firstElementChild.textContent, "Color theme");
   assert.equal(document.getElementById("active-theme-menu-value").textContent, "Default Dark");

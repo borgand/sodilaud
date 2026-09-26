@@ -23,6 +23,16 @@ test("the egress gate rejects a reintroduced fetch", async () => {
   }
 });
 
+test("clipboard.js and clipboard.html never contain a URL-looking string", async () => {
+  const [js, html] = await Promise.all([
+    readFile("src/clipboard.js", "utf8"),
+    readFile("src/clipboard.html", "utf8")
+  ]);
+  for (const source of [js, html]) {
+    assert.doesNotMatch(source, /https?:\/\//, "the popup must not carry any allowance for a URL-looking string");
+  }
+});
+
 test("no updater module or update command survives", async () => {
   const [lib, html, main] = await Promise.all([
     readFile("src-tauri/src/lib.rs", "utf8"),

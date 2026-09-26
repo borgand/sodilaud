@@ -7,9 +7,10 @@ use tauri::Manager;
 #[cfg(target_os = "macos")]
 use tauri::{
     menu::{Menu, MenuItem},
-    AppHandle, Emitter, Runtime,
+    AppHandle, Emitter, Wry,
 };
 
+mod clipboard;
 mod mcp;
 mod workspace;
 pub use mcp::run_mcp_stdio;
@@ -18,6 +19,8 @@ const PREFERENCES_FILE_NAME: &str = "sodilaud-preferences.json";
 
 #[cfg(target_os = "macos")]
 const NATIVE_ABOUT_MENU_ID: &str = "sodilaud-native-about";
+#[cfg(target_os = "macos")]
+const NATIVE_QUIT_MENU_ID: &str = "sodilaud-native-quit";
 #[cfg(target_os = "macos")]
 const OPEN_ABOUT_EVENT: &str = "sodilaud-open-about";
 
@@ -765,7 +768,7 @@ fn show_alert_dialog(title: String, message: String) {
 }
 
 #[cfg(target_os = "macos")]
-fn macos_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
+fn macos_menu(app: &AppHandle<Wry>) -> tauri::Result<Menu<Wry>> {
     let menu = Menu::default(app)?;
     let app_menu = menu
         .items()?
@@ -797,11 +800,40 @@ fn macos_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     )?;
     app_menu.insert(&about, 0)?;
 
+    let quit_position = app_menu.items()?.iter().position(|item| {
+        matches!(item, tauri::menu::MenuItemKind::Predefined(predefined)
+            if predefined.text().is_ok_and(|text| text.starts_with("Quit")))
+    });
+    if let Some(position) = quit_position {
+        app_menu.remove_at(position)?;
+        let quit = MenuItem::with_id(
+            app,
+            NATIVE_QUIT_MENU_ID,
+            format!("Quit {}", app.package_info().name),
+            true,
+            Some("CmdOrCtrl+Q"),
+        )?;
+        app_menu.insert(&quit, position)?;
+    }
+
     Ok(menu)
 }
 
 #[cfg(target_os = "macos")]
-fn handle_macos_menu_event<R: Runtime>(app: &AppHandle<R>, event: tauri::menu::MenuEvent) {
+fn handle_macos_menu_event(app: &AppHandle<Wry>, event: tauri::menu::MenuEvent) {
+    if event.id() == NATIVE_QUIT_MENU_ID {
+        // Cmd+Q in the popup hides only the popup.
+        if app
+            .state::<clipboard::runtime::ClipboardRuntime>()
+            .popup_open()
+        {
+            clipboard::popup::hide(app);
+        } else {
+            clipboard::tray::request_quit(app);
+        }
+        return;
+    }
+
     if event.id() != NATIVE_ABOUT_MENU_ID {
         return;
     }
@@ -824,7 +856,10 @@ pub fn run(context: tauri::Context<tauri::Wry>) {
     #[cfg(target_os = "macos")]
     let builder = builder
         .menu(macos_menu)
-        .on_menu_event(handle_macos_menu_event);
+        .on_menu_event(handle_macos_menu_event)
+        .manage(clipboard::runtime::ClipboardRuntime::default())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .on_window_event(clipboard::popup::on_window_event);
 
     builder
         // Only confirm_and_open_url uses the opener, from Rust; the webview has
@@ -857,10 +892,65 @@ pub fn run(context: tauri::Context<tauri::Wry>) {
             mcp::start_mcp_server,
             mcp::set_mcp_permissions,
             mcp::complete_mcp_write,
-            mcp::stop_mcp_server
+            mcp::stop_mcp_server,
+            clipboard::commands::clip_list,
+            clipboard::commands::clip_reveal,
+            clipboard::commands::clip_select,
+            clipboard::commands::clip_delete,
+            clipboard::commands::clip_close,
+            clipboard::commands::clip_shown,
+            clipboard::commands::clip_hidden,
+            clipboard::commands::clip_start_drag,
+            clipboard::commands::clip_set_config,
+            clipboard::commands::clip_set_theme,
+            clipboard::commands::hide_main_window,
+            clipboard::commands::quit_app,
+            clipboard::commands::quit_handler_ready,
+            clipboard::commands::open_accessibility_settings
         ])
-        .run(context)
-        .expect("error while running tauri application");
+        .setup(|_app| {
+            #[cfg(target_os = "macos")]
+            clipboard::tray::install(_app.handle())?;
+            Ok(())
+        })
+        .build(context)
+        .expect("error while building tauri application")
+        .run(|_app, _event| {
+            #[cfg(target_os = "macos")]
+            match _event {
+                tauri::RunEvent::ExitRequested {
+                    code: None, api, ..
+                } => {
+                    // Tauri asks this when the last window is gone. If main still
+                    // exists, flush through it first; otherwise let the exit through.
+                    if _app.get_webview_window("main").is_some() {
+                        api.prevent_exit();
+                        clipboard::tray::request_quit(_app);
+                    } else {
+                        _app.state::<clipboard::runtime::ClipboardRuntime>()
+                            .shutdown();
+                    }
+                }
+                // Logout and the Dock's Quit terminate without an ExitRequested,
+                // so wipe here too; shutdown is idempotent.
+                tauri::RunEvent::Exit => {
+                    _app.state::<clipboard::runtime::ClipboardRuntime>()
+                        .shutdown();
+                    clipboard::popup::destroy(_app);
+                }
+                tauri::RunEvent::Reopen { .. } => clipboard::tray::show_main(_app),
+                // Tauri has unregistered the label by now, so a popup re-enabled while
+                // the old one was being destroyed can be created.
+                tauri::RunEvent::WindowEvent {
+                    label,
+                    event: tauri::WindowEvent::Destroyed,
+                    ..
+                } if label == clipboard::commands::POPUP_LABEL => {
+                    clipboard::popup::on_destroyed(_app)
+                }
+                _ => {}
+            }
+        });
 }
 
 #[cfg(test)]

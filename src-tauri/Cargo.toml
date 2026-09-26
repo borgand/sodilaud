@@ -34,3 +34,13 @@ tauri-plugin-opener = "2.5.4"
 tokio = { version = "1", features = ["net", "sync", "time", "rt", "macros"] }
 tokio-util = { version = "0.7", features = ["rt"] }
 uuid = { version = "1", features = ["v4"] }
+zeroize = { version = "1", features = ["serde"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-global-shortcut = "2"
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSString", "NSArray", "NSGeometry", "NSRange"] }
+objc2-app-kit = { version = "0.3", features = ["NSPasteboard", "NSWorkspace", "NSRunningApplication", "NSScreen", "NSApplication", "NSResponder"] }
+core-graphics = "0.25"
+libc = "0.2"
