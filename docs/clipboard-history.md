@@ -107,6 +107,11 @@ Some copies cannot be wiped because they are held by frameworks Sodilaud does no
 
 - The popup's height is fixed at the moment it opens; if the list grows while it is open,
   the list scrolls instead of the window resizing.
+- Pressing the hotkey immediately after switching Spaces can make the popup close again at
+  once; the next press works. The likely cause is macOS handing keyboard focus to the new
+  Space's app while the popup appears, which the popup treats as a click elsewhere.
+  Reclaiming focus in that window was left out on purpose, because it could steal focus
+  from a deliberate switch.
 
 ## Manual macOS checklist
 
