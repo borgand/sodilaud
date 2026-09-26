@@ -899,6 +899,7 @@ pub fn run(context: tauri::Context<tauri::Wry>) {
             clipboard::commands::clip_delete,
             clipboard::commands::clip_close,
             clipboard::commands::clip_shown,
+            clipboard::commands::clip_hidden,
             clipboard::commands::clip_start_drag,
             clipboard::commands::clip_set_config,
             clipboard::commands::clip_set_theme,
@@ -938,6 +939,15 @@ pub fn run(context: tauri::Context<tauri::Wry>) {
                     clipboard::popup::destroy(_app);
                 }
                 tauri::RunEvent::Reopen { .. } => clipboard::tray::show_main(_app),
+                // Tauri has unregistered the label by now, so a popup re-enabled while
+                // the old one was being destroyed can be created.
+                tauri::RunEvent::WindowEvent {
+                    label,
+                    event: tauri::WindowEvent::Destroyed,
+                    ..
+                } if label == clipboard::commands::POPUP_LABEL => {
+                    clipboard::popup::on_destroyed(_app)
+                }
                 _ => {}
             }
         });

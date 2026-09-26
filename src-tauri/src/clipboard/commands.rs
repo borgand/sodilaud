@@ -35,7 +35,7 @@ pub fn clip_list(window: Window) -> Result<ClipListing, ClipError> {
     require_popup(&window)?;
     #[cfg(target_os = "macos")]
     {
-        Ok(window.state::<ClipboardRuntime>().listing())
+        Ok(open_runtime(&window)?.listing())
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -49,12 +49,7 @@ pub fn clip_reveal(window: Window, id: u64) -> Result<Secret, ClipError> {
     require_popup(&window)?;
     #[cfg(target_os = "macos")]
     {
-        let runtime = window.state::<ClipboardRuntime>();
-        // A reveal still in flight when the popup hides must not reach the page.
-        if !runtime.popup_open() {
-            return Err(ClipError::Disabled);
-        }
-        runtime.reveal(id).ok_or(ClipError::Disabled)
+        open_runtime(&window)?.reveal(id).ok_or(ClipError::Disabled)
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -68,7 +63,7 @@ pub fn clip_select(window: Window, id: u64) -> Result<bool, ClipError> {
     require_popup(&window)?;
     #[cfg(target_os = "macos")]
     {
-        let runtime = window.state::<ClipboardRuntime>();
+        let runtime = open_runtime(&window)?;
         let picked = runtime.select(id);
         if picked {
             runtime.request_paste_on_close();
@@ -88,7 +83,7 @@ pub fn clip_delete(window: Window, id: u64) -> Result<bool, ClipError> {
     require_popup(&window)?;
     #[cfg(target_os = "macos")]
     {
-        Ok(window.state::<ClipboardRuntime>().delete(id))
+        Ok(open_runtime(&window)?.delete(id))
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -111,17 +106,34 @@ pub fn clip_close(window: Window) -> Result<(), ClipError> {
     }
 }
 
-/// The popup page has rendered and painted the list Rust asked it to show.
+/// The popup page has rendered and painted the list for show `token`.
 #[tauri::command]
-pub fn clip_shown(window: Window) -> Result<(), ClipError> {
+pub fn clip_shown(window: Window, token: u64) -> Result<(), ClipError> {
     require_popup(&window)?;
     #[cfg(target_os = "macos")]
     {
-        on_main(&window, super::popup::present);
+        on_main(&window, move |app| super::popup::present(app, token));
         Ok(())
     }
     #[cfg(not(target_os = "macos"))]
     {
+        let _ = token;
+        Err(ClipError::Unsupported)
+    }
+}
+
+/// The popup page has emptied its DOM and painted that for hide `token`.
+#[tauri::command]
+pub fn clip_hidden(window: Window, token: u64) -> Result<(), ClipError> {
+    require_popup(&window)?;
+    #[cfg(target_os = "macos")]
+    {
+        on_main(&window, move |app| super::popup::finish_hide(app, token));
+        Ok(())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = token;
         Err(ClipError::Unsupported)
     }
 }
@@ -143,9 +155,21 @@ pub fn clip_start_drag(window: Window) -> Result<(), ClipError> {
 /// Panel calls need AppKit's main thread; this runs `action` inline when the
 /// command is already there.
 #[cfg(target_os = "macos")]
-fn on_main(window: &Window, action: fn(&AppHandle)) {
+fn on_main(window: &Window, action: impl FnOnce(&AppHandle) + Send + 'static) {
     let app = window.app_handle().clone();
     let _ = window.run_on_main_thread(move || action(&app));
+}
+
+/// Entry commands answer only while the popup is showing or shown, so a page that
+/// missed a hide (or a request still in flight when it hid) gets nothing.
+#[cfg(target_os = "macos")]
+fn open_runtime(window: &Window) -> Result<tauri::State<'_, ClipboardRuntime>, ClipError> {
+    let runtime = window.state::<ClipboardRuntime>();
+    if runtime.popup_open() {
+        Ok(runtime)
+    } else {
+        Err(ClipError::Disabled)
+    }
 }
 
 #[tauri::command]

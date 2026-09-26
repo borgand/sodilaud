@@ -68,6 +68,15 @@ pub fn present(window: &WebviewWindow) -> bool {
     is_panel
 }
 
+/// Takes the panel off the screen visually at once while it stays ordered in, so
+/// WebKit still paints the page (the emptied DOM) before `order_out`.
+pub fn conceal(window: &WebviewWindow) {
+    if let Ok(ns_window) = ns_window(window) {
+        ns_window.setAlphaValue(0.0);
+        ns_window.setIgnoresMouseEvents(true);
+    }
+}
+
 pub fn order_out(window: &WebviewWindow) {
     if let Ok(ns_window) = ns_window(window) {
         ns_window.orderOut(None);

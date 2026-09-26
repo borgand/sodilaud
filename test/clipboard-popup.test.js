@@ -323,7 +323,7 @@ function fakeTimers() {
   };
 }
 
-async function setupHidden(listing = LISTING) {
+async function setupHidden(listing = LISTING, { manualPaint = false } = {}) {
   const html = await readFile("src/clipboard.html", "utf8");
   const dom = new JSDOM(html);
   const doc = dom.window.document;
@@ -339,16 +339,23 @@ async function setupHidden(listing = LISTING) {
     }
     return true;
   };
-  const popup = createPopup({ document: doc, invoke, timers, afterPaint: async () => {} });
+  const paints = [];
+  const afterPaint = () => (manualPaint ? new Promise((resolve) => paints.push(resolve)) : Promise.resolve());
+  const popup = createPopup({ document: doc, invoke, timers, afterPaint });
   const key = (k) => popup.onKey(new dom.window.KeyboardEvent("keydown", { key: k }));
-  return { dom, doc, calls, pending, timers, popup, key };
+  const paint = async () => {
+    paints.splice(0).forEach((resolve) => resolve());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  };
+  return { dom, doc, calls, pending, timers, popup, key, paint };
 }
 
 test("show fetches and renders the list, starts the refresh timer, then signals readiness", async () => {
   const { doc, calls, timers, popup } = await setupHidden();
-  await popup.show();
+  await popup.show(4);
   const shown = calls.find((c) => c.command === "clip_shown");
   assert.ok(shown, "show must invoke clip_shown");
+  assert.deepEqual(shown.args, { token: 4 }, "readiness echoes the show's token");
   assert.equal(calls[0].command, "clip_list", "the list is fetched first");
   assert.equal(shown.rows, 3, "rows are rendered before readiness is signalled");
   assert.equal(doc.querySelectorAll(".clip-row").length, 3);
@@ -439,37 +446,71 @@ test("the header text cannot be selected", async () => {
 
 test("attach exposes the show/hide hooks and honours a show requested before the page loaded", async () => {
   const shown = [];
-  const popup = { show: () => shown.push("show"), hide: () => shown.push("hide") };
-  const win = { __sodilaudClipPending: true };
+  const popup = { show: (token) => shown.push(`show ${token}`), hide: () => shown.push("hide") };
+  const win = { __sodilaudClipPending: 5 };
   attach(win, popup);
-  assert.deepEqual(shown, ["show"]);
+  assert.deepEqual(shown, ["show 5"]);
   assert.equal(win.__sodilaudClipPending, false);
   win.__sodilaudClip.hide();
-  assert.deepEqual(shown, ["show", "hide"]);
-  attach({}, { show: () => shown.push("again") });
-  assert.deepEqual(shown, ["show", "hide"], "no pending flag, no show");
+  assert.deepEqual(shown, ["show 5", "hide"]);
+  attach({ __sodilaudClipPending: false }, { show: () => shown.push("again") });
+  assert.deepEqual(shown, ["show 5", "hide"], "no pending token, no show");
 });
 
-async function rustScript(name) {
-  const source = await readFile("src-tauri/src/clipboard/popup.rs", "utf8");
-  const match = source.match(new RegExp(`const ${name}: &str =\\s*"((?:[^"\\\\]|\\\\.)*)";`));
-  assert.ok(match, `${name} not found in popup.rs`);
-  return match[1].replaceAll('\\"', '"');
+async function rustScript(name, token) {
+  const source = await readFile("src-tauri/src/clipboard/popup_state.rs", "utf8");
+  const match = source.match(new RegExp(`fn ${name}\\(token: u64\\) -> String \\{\\s*format!\\(\\s*"((?:[^"\\\\]|\\\\.)*)"`));
+  assert.ok(match, `${name} not found in popup_state.rs`);
+  return match[1].replaceAll('\\"', '"').replaceAll("{token}", String(token));
 }
 
-test("the Rust eval scripts call the hooks, or leave a flag before the page has loaded", async () => {
-  const show = new Function("window", await rustScript("SHOW_SCRIPT"));
-  const hide = new Function("window", await rustScript("HIDE_SCRIPT"));
+test("the Rust eval scripts call the hooks with their token, or leave the token before the page has loaded", async () => {
+  const show = new Function("window", await rustScript("show_script", 12));
+  const hide = new Function("window", await rustScript("hide_script", 13));
   const early = {};
   show(early);
-  assert.equal(early.__sodilaudClipPending, true);
+  assert.equal(early.__sodilaudClipPending, 12);
   hide(early);
   assert.equal(early.__sodilaudClipPending, false);
   const seen = [];
-  const loaded = { __sodilaudClip: { show: () => seen.push("show"), hide: () => seen.push("hide") } };
+  const loaded = { __sodilaudClip: { show: (t) => seen.push(`show ${t}`), hide: (t) => seen.push(`hide ${t}`) } };
   show(loaded);
   hide(loaded);
-  assert.deepEqual(seen, ["show", "hide"]);
+  assert.deepEqual(seen, ["show 12", "hide 13"]);
+});
+
+test("hide reports the emptied page only after it painted, with the hide's token", async () => {
+  const { calls, popup, paint } = await setupHidden(LISTING, { manualPaint: true });
+  const showing = popup.show(1);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await paint();
+  await showing;
+  const hiding = popup.hide(2);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(calls.some((c) => c.command === "clip_hidden"), false, "no ack before the paint");
+  await paint();
+  await hiding;
+  const ack = calls.find((c) => c.command === "clip_hidden");
+  assert.deepEqual(ack.args, { token: 2 });
+  assert.equal(ack.rows, 0, "the page was empty when it reported");
+});
+
+test("a hide overtaken by a show never reports", async () => {
+  const { calls, popup, paint } = await setupHidden(LISTING, { manualPaint: true });
+  const hiding = popup.hide(3);
+  const showing = popup.show(4);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await paint();
+  await Promise.all([hiding, showing]);
+  assert.equal(calls.some((c) => c.command === "clip_hidden"), false);
+  assert.deepEqual(calls.find((c) => c.command === "clip_shown").args, { token: 4 });
+});
+
+test("show never signals readiness without a paint", async () => {
+  const { calls, popup } = await setupHidden(LISTING, { manualPaint: true });
+  popup.show(1);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(calls.some((c) => c.command === "clip_shown"), false);
 });
 
 test("a delete that answers after hide does not refill the page", async () => {

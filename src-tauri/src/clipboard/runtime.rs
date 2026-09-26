@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Mutex, PoisonError};
 
 use objc2_app_kit::{NSApplicationActivationOptions, NSRunningApplication, NSWorkspace};
@@ -11,7 +11,7 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use super::hygiene::{disable_core_dumps, now_ms, silence_clipboard_panics};
 use super::pasteboard::MacPasteboard;
 use super::popup;
-use super::popup_state::{needs_hide, PopupState};
+use super::popup_state::{is_open, PopupState};
 use super::service::{
     plan_hotkey, ClipConfig, ClipError, ClipListing, HotkeyPlan, PopupTheme, Secret, Service,
 };
@@ -38,6 +38,11 @@ pub struct ClipboardRuntime {
     frontmost_pid: Mutex<Option<i32>>,
     paste_on_close: AtomicBool,
     popup: Mutex<PopupState>,
+    popup_token: AtomicU64,
+    /// Set between `destroy` and the old window's `Destroyed` event, while its label
+    /// is still registered.
+    popup_destroying: AtomicBool,
+    create_popup_after_destroy: AtomicBool,
     quit_handler_ready: AtomicBool,
     /// The main window's colours for the popup, memory only. Never persisted.
     theme: Mutex<PopupTheme>,
@@ -201,7 +206,29 @@ impl ClipboardRuntime {
 
     /// Showing or shown: the page may be asked for entries.
     pub fn popup_open(&self) -> bool {
-        needs_hide(self.popup_state())
+        is_open(self.popup_state())
+    }
+
+    pub fn next_popup_token(&self) -> u64 {
+        self.popup_token.fetch_add(1, Ordering::SeqCst) + 1
+    }
+
+    pub fn popup_destroying(&self) -> bool {
+        self.popup_destroying.load(Ordering::SeqCst)
+    }
+
+    pub fn set_popup_destroying(&self, destroying: bool) {
+        self.popup_destroying.store(destroying, Ordering::SeqCst);
+    }
+
+    pub fn defer_popup_creation(&self, deferred: bool) {
+        self.create_popup_after_destroy
+            .store(deferred, Ordering::SeqCst);
+    }
+
+    pub fn take_deferred_popup_creation(&self) -> bool {
+        self.create_popup_after_destroy
+            .swap(false, Ordering::SeqCst)
     }
 
     /// Returns the pid a paste may target: the remembered app, if it is another

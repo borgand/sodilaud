@@ -33,6 +33,7 @@ fn main() {
             "clip_delete",
             "clip_close",
             "clip_shown",
+            "clip_hidden",
             "clip_start_drag",
             "clip_set_config",
             "clip_set_theme",

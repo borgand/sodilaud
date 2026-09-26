@@ -66,14 +66,18 @@ button.
   third-party clipboard managers that respect those markers.
 - The main Sodilaud window can only configure the feature (`clip_set_config`); it cannot
   list, reveal, select, or delete entries. Only the popup window holds the `clip_list`,
-  `clip_reveal`, `clip_select`, `clip_delete`, `clip_close`, `clip_shown`, and
-  `clip_start_drag` permissions, and it has no general window permissions: `clip_close`
+  `clip_reveal`, `clip_select`, `clip_delete`, `clip_close`, `clip_shown`, `clip_hidden`,
+  and `clip_start_drag` permissions, and it has no general window permissions: `clip_close`
   hides only the popup itself, and `clip_start_drag` moves only the popup itself.
 - The popup window is created once, when you enable the feature, and reused. Every time it
-  hides (Esc, a pick, a click elsewhere, the hotkey, the close button, or disabling), its
-  page forgets the list and every revealed value and stops refreshing before the window is
-  ordered out, so each open starts fully masked. The window is destroyed when you disable
-  the feature or quit.
+  hides (Esc, a pick, a click elsewhere, the hotkey, the close button, or disabling), it
+  turns transparent at once, and its page forgets the list and every revealed value and
+  stops refreshing. The window leaves the screen once the page reports that the emptied
+  page has been painted, or after 300 ms if it does not. An open becomes visible only after
+  the page reports that the new list has been painted, so each open starts fully masked
+  and never shows the previous open's rows. While the popup is hidden, Rust refuses to
+  list, reveal, pick, or delete entries. The window is destroyed when you disable the
+  feature or quit.
 - The popup window is content-protected, so screen sharing and screenshots should show it
   blank. This is best effort: some capture paths may ignore it.
 - Clipboard history is never reachable from MCP. The MCP snapshot sent to agents never

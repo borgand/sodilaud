@@ -65,8 +65,12 @@ widen or prolong exposure.
   - `clip_select(id)` - Rust writes to the pasteboard, hides the popup, restores focus,
     optionally auto-pastes
   - `clip_close()` - hides the popup (Esc, close button)
-  - `clip_shown()` - the page has rendered and painted the list for a pending show; only
-    then does Rust make the panel visible and key
+  - `clip_shown(token)` - the page has rendered and painted the list for show `token`;
+    only then does Rust make the panel visible and key
+  - `clip_hidden(token)` - the page has emptied its DOM and painted that for hide `token`;
+    only then (or after a 300 ms fallback) does Rust order the panel out
+  - `clip_list`, `clip_reveal`, `clip_select`, and `clip_delete` answer only while the
+    popup is showing or shown; otherwise they return `Disabled`
   - `clip_start_drag()` - starts a native window drag of the calling popup window, so the
     header can move it without any `core:window` permission
   - `clip_delete(id)`
@@ -81,10 +85,14 @@ widen or prolong exposure.
   (`NSWorkspace.frontmostApplication`), moves the panel to the fixed position and resizes
   it for the current row count, orders it in fully transparent and click-through, and asks
   the page to render; the panel becomes opaque and key only when the page calls
-  `clip_shown`. It hides the panel on blur, Esc, pick, the hotkey, `clip_close`, and
-  disable, reactivates the recorded app only if Sodilaud became frontmost, and destroys the
-  window only on disable and quit. Auto-paste posts Cmd+V with `CGEvent` after the hide,
-  only if `AXIsProcessTrusted()`.
+  `clip_shown` with that show's token (a show with no answer in 2 s is hidden again). It
+  hides the panel on blur, Esc, pick, the hotkey, `clip_close`, and disable: the panel
+  turns transparent and click-through at once, the page empties itself, and the panel is
+  ordered out when the page calls `clip_hidden` with that hide's token, or after 300 ms.
+  Then it reactivates the recorded app only if Sodilaud became frontmost. The window is
+  destroyed only on disable and quit; a re-enable before the old window's `Destroyed`
+  event creates the new window right after that event. Auto-paste posts Cmd+V with
+  `CGEvent` after the panel is ordered out, only if `AXIsProcessTrusted()`.
 - `tray.rs` - tray icon (Tauri `tray-icon` feature), menu, hide/show, activation policy.
 
 ### Frontend
@@ -92,9 +100,10 @@ widen or prolong exposure.
 - `src/clipboard.html`, `src/clipboard.js`: standalone page. No imports. No use of
   `localStorage`, `sessionStorage`, `indexedDB`, `console`, or `fetch`. Talks only to the popup
   `clip_*` commands. Follows `prefers-color-scheme`. Rust drives it with two hooks through
-  `eval`: `show()` fetches and renders the list, starts the 1 s refresh, and calls
-  `clip_shown` after the next paint; `hide()` forgets the revealed values, the list, and
-  the rows, and stops the refresh. An answer that arrives after a hide is dropped.
+  `eval`, each carrying a token: `show(token)` fetches and renders the list, starts the
+  1 s refresh, and calls `clip_shown` after the next paint; `hide(token)` forgets the
+  revealed values, the list, and the rows, stops the refresh, and calls `clip_hidden`
+  after the next paint. An answer that arrives after a later hide or show is dropped.
 - `src/main.js`: a "Clipboard history" settings section (macOS only) persisted under
   `clipboardHistory.*` in localStorage (settings only), pushed to Rust via `clip_set_config`
   at startup and on change. The close handler becomes flush-then-hide on macOS.
@@ -103,7 +112,7 @@ widen or prolong exposure.
 
 - `src-tauri/capabilities/clipboard.json`: window `clipboard`, permissions `allow-clip-list`,
   `allow-clip-reveal`, `allow-clip-select`, `allow-clip-delete`, `allow-clip-close`,
-  `allow-clip-shown`, `allow-clip-start-drag`. No `core:*` permissions
+  `allow-clip-shown`, `allow-clip-hidden`, `allow-clip-start-drag`. No `core:*` permissions
   unless the popup cannot work without one; any added core permission is named in the guard
   test and justified in the PR body.
 - `src-tauri/capabilities/default.json` (window `main`): gains only `allow-clip-set-config`.
@@ -149,7 +158,9 @@ Plaintext reaches JS only for unmasked previews and via `clip_reveal`.
 - The header ("Clipboard" and the TTL) drags the popup. The position is not kept: every
   open returns to the fixed spot.
 - Every open starts fully masked: the window is reused, and every hide empties the page
-  (revealed values, list, rows, refresh timer) before the panel is ordered out.
+  (revealed values, list, rows, refresh timer). The panel is transparent from the start
+  of the hide and is ordered out after the emptied page painted (or a 300 ms fallback).
+  The next open stays transparent until its own list has painted.
 - Empty state: "Nothing copied yet. Entries expire after N min."
 - Trash is immediate, no confirmation: wipes the value and clears the system clipboard if it
   still holds it.

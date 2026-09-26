@@ -33,11 +33,11 @@ export function slotKey(index) {
   return index === 9 ? "0" : "";
 }
 
-// Waits until the rendered list has been painted, so Rust makes the panel visible
-// only over fresh content. The timeout covers a page WebKit does not paint.
+// Resolves once the current DOM has been painted: the second frame callback runs
+// after the frame that drew it. No timeout: Rust never shows unpainted content and
+// has its own fallbacks.
 function afterNextPaint() {
   return new Promise((resolve) => {
-    setTimeout(resolve, 100);
     requestAnimationFrame(() => requestAnimationFrame(resolve));
   });
 }
@@ -203,7 +203,7 @@ export function createPopup({ document, invoke, timers = globalThis, afterPaint 
     return invoke("clip_close").catch(() => {});
   }
 
-  function hide() {
+  function clear() {
     session += 1;
     hidden = true;
     if (timer !== undefined) timers.clearInterval(timer);
@@ -216,8 +216,18 @@ export function createPopup({ document, invoke, timers = globalThis, afterPaint 
     shownLayout = undefined;
   }
 
-  async function show() {
-    hide();
+  // Rust orders the panel out only after this reports the emptied page painted.
+  async function hide(token) {
+    clear();
+    const hid = session;
+    await afterPaint();
+    if (hid !== session) return;
+    await invoke("clip_hidden", { token }).catch(() => {});
+  }
+
+  // Rust makes the panel visible only after this reports the list painted.
+  async function show(token) {
+    clear();
     hidden = false;
     const shown = session;
     await refresh();
@@ -225,7 +235,7 @@ export function createPopup({ document, invoke, timers = globalThis, afterPaint 
     timer = timers.setInterval(refresh, REFRESH_MS);
     await afterPaint();
     if (shown !== session) return;
-    await invoke("clip_shown").catch(() => {});
+    await invoke("clip_shown", { token }).catch(() => {});
   }
 
   function startDrag(event) {
@@ -254,14 +264,15 @@ export function createPopup({ document, invoke, timers = globalThis, afterPaint 
   return { refresh, onKey, show, hide, state: () => ({ items, focused, revealed }) };
 }
 
-// Rust drives the page through these hooks (see SHOW_SCRIPT and HIDE_SCRIPT in
-// src-tauri/src/clipboard/popup.rs). A show that arrived before this module ran
-// left a flag behind instead.
+// Rust drives the page through these hooks (see show_script and hide_script in
+// src-tauri/src/clipboard/popup_state.rs). A show that arrived before this module
+// ran left its token behind instead.
 export function attach(win, popup) {
   win.__sodilaudClip = { show: popup.show, hide: popup.hide };
-  if (win.__sodilaudClipPending) {
+  const token = win.__sodilaudClipPending;
+  if (token) {
     win.__sodilaudClipPending = false;
-    popup.show();
+    popup.show(token);
   }
 }
 

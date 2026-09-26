@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { readFile, readdir } from "node:fs/promises";
 
 const POPUP_COMMANDS = [
-  "clip_list", "clip_reveal", "clip_select", "clip_delete", "clip_close", "clip_shown", "clip_start_drag"
+  "clip_list", "clip_reveal", "clip_select", "clip_delete", "clip_close", "clip_shown", "clip_hidden", "clip_start_drag"
 ];
 
 async function capabilities() {

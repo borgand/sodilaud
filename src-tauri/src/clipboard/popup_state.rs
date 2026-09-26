@@ -5,13 +5,18 @@
 
 use super::service::is_css_hex_color;
 
+/// Each show and hide carries a fresh token, echoed back by the page's `clip_shown`
+/// and `clip_hidden`, so a late answer to an earlier show or hide is ignored.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum PopupState {
     #[default]
     Hidden,
-    /// Ordered in but fully transparent while the page renders the list.
-    Showing,
-    Shown,
+    /// Transparent and click-through, waiting for the page to paint its emptied
+    /// DOM before the panel is ordered out.
+    Hiding(u64),
+    /// Ordered in but transparent and click-through while the page renders the list.
+    Showing(u64),
+    Shown(u64),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -22,23 +27,57 @@ pub enum ToggleAction {
     Hide,
 }
 
-pub fn toggle_action(exists: bool, state: PopupState) -> ToggleAction {
-    match (exists, state) {
+/// `usable` is false when the window is missing or being destroyed.
+pub fn toggle_action(usable: bool, state: PopupState) -> ToggleAction {
+    match (usable, is_open(state)) {
         (false, _) => ToggleAction::Create,
-        (true, PopupState::Hidden) => ToggleAction::Show,
-        (true, PopupState::Showing | PopupState::Shown) => ToggleAction::Hide,
+        (true, false) => ToggleAction::Show,
+        (true, true) => ToggleAction::Hide,
     }
 }
 
-/// The page's readiness signal makes the panel visible only for the show that is
-/// still pending, never after a hide overtook it.
-pub fn accepts_shown(state: PopupState) -> bool {
-    state == PopupState::Showing
+/// Showing or shown: the only states in which the page may read or act on
+/// entries, and the only ones a hide has work to do in.
+pub fn is_open(state: PopupState) -> bool {
+    matches!(state, PopupState::Showing(_) | PopupState::Shown(_))
 }
 
-/// A hide does its work (forget the page, restore focus, paste) only once.
-pub fn needs_hide(state: PopupState) -> bool {
-    state != PopupState::Hidden
+/// The page painted the list for exactly the show still pending.
+pub fn accepts_shown(state: PopupState, token: u64) -> bool {
+    state == PopupState::Showing(token)
+}
+
+/// The page painted its emptied DOM for exactly the hide still pending (or that
+/// hide's timeout fired).
+pub fn accepts_hidden(state: PopupState, token: u64) -> bool {
+    state == PopupState::Hiding(token)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CreatePlan {
+    Reuse,
+    Create,
+    /// The old window is still being torn down under the same label; create the
+    /// new one once its `Destroyed` event has removed it.
+    AfterDestroy,
+}
+
+pub fn create_plan(exists: bool, destroying: bool) -> CreatePlan {
+    match (exists, destroying) {
+        (true, false) => CreatePlan::Reuse,
+        (true, true) => CreatePlan::AfterDestroy,
+        (false, _) => CreatePlan::Create,
+    }
+}
+
+// Evaluated in the popup page; see `attach` in src/clipboard.js. Before the page
+// has loaded, wry runs them at navigation commit, so a show leaves its token behind.
+pub fn show_script(token: u64) -> String {
+    format!("window.__sodilaudClip ? window.__sodilaudClip.show({token}) : (window.__sodilaudClipPending = {token})")
+}
+
+pub fn hide_script(token: u64) -> String {
+    format!("window.__sodilaudClip ? window.__sodilaudClip.hide({token}) : (window.__sodilaudClipPending = false)")
 }
 
 const DEFAULT_BACKGROUND: (u8, u8, u8, u8) = (0x1e, 0x1e, 0x20, 0xff);
@@ -77,32 +116,75 @@ fn parse_hex(value: &str) -> Option<(u8, u8, u8, u8)> {
 mod tests {
     use super::*;
 
+    const T: u64 = 7;
+
     #[test]
-    fn toggle_shows_a_hidden_popup_and_hides_a_visible_or_pending_one() {
+    fn toggle_shows_a_closed_popup_and_hides_an_open_one() {
         assert_eq!(toggle_action(true, PopupState::Hidden), ToggleAction::Show);
-        assert_eq!(toggle_action(true, PopupState::Showing), ToggleAction::Hide);
-        assert_eq!(toggle_action(true, PopupState::Shown), ToggleAction::Hide);
+        assert_eq!(
+            toggle_action(true, PopupState::Hiding(T)),
+            ToggleAction::Show
+        );
+        assert_eq!(
+            toggle_action(true, PopupState::Showing(T)),
+            ToggleAction::Hide
+        );
+        assert_eq!(
+            toggle_action(true, PopupState::Shown(T)),
+            ToggleAction::Hide
+        );
     }
 
     #[test]
-    fn toggle_creates_only_when_the_window_is_missing() {
-        for state in [PopupState::Hidden, PopupState::Showing, PopupState::Shown] {
+    fn toggle_creates_only_when_the_window_is_unusable() {
+        for state in [
+            PopupState::Hidden,
+            PopupState::Hiding(T),
+            PopupState::Showing(T),
+            PopupState::Shown(T),
+        ] {
             assert_eq!(toggle_action(false, state), ToggleAction::Create);
         }
     }
 
     #[test]
-    fn readiness_is_accepted_only_for_a_pending_show() {
-        assert!(accepts_shown(PopupState::Showing));
-        assert!(!accepts_shown(PopupState::Hidden));
-        assert!(!accepts_shown(PopupState::Shown));
+    fn entries_are_reachable_only_while_showing_or_shown() {
+        assert!(is_open(PopupState::Showing(T)));
+        assert!(is_open(PopupState::Shown(T)));
+        assert!(!is_open(PopupState::Hidden));
+        assert!(!is_open(PopupState::Hiding(T)));
     }
 
     #[test]
-    fn hide_work_runs_once() {
-        assert!(!needs_hide(PopupState::Hidden));
-        assert!(needs_hide(PopupState::Showing));
-        assert!(needs_hide(PopupState::Shown));
+    fn readiness_is_accepted_only_for_the_pending_show() {
+        assert!(accepts_shown(PopupState::Showing(T), T));
+        assert!(!accepts_shown(PopupState::Showing(T + 1), T));
+        assert!(!accepts_shown(PopupState::Hidden, T));
+        assert!(!accepts_shown(PopupState::Hiding(T), T));
+        assert!(!accepts_shown(PopupState::Shown(T), T));
+    }
+
+    #[test]
+    fn hidden_ack_is_accepted_only_for_the_pending_hide() {
+        assert!(accepts_hidden(PopupState::Hiding(T), T));
+        assert!(!accepts_hidden(PopupState::Hiding(T + 1), T));
+        assert!(!accepts_hidden(PopupState::Showing(T), T));
+        assert!(!accepts_hidden(PopupState::Hidden, T));
+    }
+
+    #[test]
+    fn a_window_being_destroyed_is_replaced_only_after_it_is_gone() {
+        assert_eq!(create_plan(true, false), CreatePlan::Reuse);
+        assert_eq!(create_plan(true, true), CreatePlan::AfterDestroy);
+        assert_eq!(create_plan(false, true), CreatePlan::Create);
+        assert_eq!(create_plan(false, false), CreatePlan::Create);
+    }
+
+    #[test]
+    fn scripts_carry_the_token() {
+        assert!(show_script(42).contains("show(42)"));
+        assert!(show_script(42).contains("__sodilaudClipPending = 42"));
+        assert!(hide_script(42).contains("hide(42)"));
     }
 
     #[test]

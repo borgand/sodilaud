@@ -46,11 +46,13 @@ Trust boundary: only the clipboard popup window can list, reveal, select, or del
 entries. The main Sodilaud window can only turn the feature on or off and change its
 settings; it has no permission to read entry contents. The popup can hide and drag only
 itself and has no other window permissions. The popup window is created once when the
-feature is enabled and reused; every hide empties its page (list, revealed values, refresh
-timer) before the window is ordered out, and the window is destroyed on disable and quit. The popup is content-protected so screen sharing and
-screenshots should not capture it; this is best effort, and some capture paths may ignore
-it. Clipboard history is never exposed
-to MCP: the clipboard module is not referenced by the MCP server, so no entry can reach an
+feature is enabled and reused. Every hide makes it transparent at once and tells its page
+to forget the list, revealed values, and refresh timer; the window leaves the screen once
+the page reports the emptied page painted, or after 300 ms if it does not. While hidden,
+the popup gets no entries: listing, revealing, picking, and deleting are refused. The
+window is destroyed on disable and quit. The popup is content-protected so screen sharing
+and screenshots should not capture it; this is best effort, and some capture paths may
+ignore it. Clipboard history is never exposed to MCP: the clipboard module is not referenced by the MCP server, so no entry can reach an
 agent or its model provider.
 
 Known residue that cannot be wiped: the `NSString` objects AppKit creates when Sodilaud

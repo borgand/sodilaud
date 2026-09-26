@@ -38,3 +38,13 @@ test("popup page keeps values out of storage, logs, and the network", async () =
   assert.doesNotMatch(source, /^\s*import\b/m);
   assert.doesNotMatch(source, /\b(?:localStorage|sessionStorage|indexedDB|console|fetch|XMLHttpRequest|innerHTML|outerHTML|insertAdjacentHTML)\b/);
 });
+
+test("entry commands answer only while the popup is open", async () => {
+  const source = await readFile(`${RUST_DIR}/commands.rs`, "utf8");
+  for (const command of ["clip_list", "clip_reveal", "clip_select", "clip_delete"]) {
+    const start = source.indexOf(`pub fn ${command}(`);
+    assert.ok(start >= 0, `${command} not found`);
+    const body = source.slice(start, source.indexOf("\n}\n", start));
+    assert.match(body, /open_runtime\(&window\)\?/, `${command} must check the popup is open`);
+  }
+});
