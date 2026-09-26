@@ -105,6 +105,7 @@ pub fn hide_main(app: &AppHandle) {
 pub fn request_quit(app: &AppHandle) {
     let runtime = app.state::<ClipboardRuntime>();
     runtime.shutdown();
+    popup::close(app);
     if !runtime.quit_handler_ready() {
         app.exit(0);
         return;

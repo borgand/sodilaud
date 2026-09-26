@@ -153,7 +153,10 @@ pub fn hide_main_window(app: AppHandle) -> bool {
 #[tauri::command]
 pub fn quit_app(app: AppHandle) {
     #[cfg(target_os = "macos")]
-    app.state::<ClipboardRuntime>().shutdown();
+    {
+        app.state::<ClipboardRuntime>().shutdown();
+        super::popup::close(&app);
+    }
     app.exit(0);
 }
 

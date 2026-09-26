@@ -933,6 +933,7 @@ pub fn run(context: tauri::Context<tauri::Wry>) {
                 tauri::RunEvent::Exit => {
                     _app.state::<clipboard::runtime::ClipboardRuntime>()
                         .shutdown();
+                    clipboard::popup::close(_app);
                 }
                 tauri::RunEvent::Reopen { .. } => clipboard::tray::show_main(_app),
                 _ => {}

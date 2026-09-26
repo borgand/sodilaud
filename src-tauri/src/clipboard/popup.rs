@@ -46,7 +46,11 @@ pub fn toggle(app: &AppHandle) {
     let Ok(window) = built else {
         return;
     };
-    if panel::make_floating_panel(&window) {
+    let converted = panel::make_floating_panel(&window);
+    // The clipboard panic hook hides this message, but in a debug build the panic
+    // still stops the app, so a refused swap cannot hide behind the fallback.
+    debug_assert!(converted.is_ok(), "popup panel refused: {converted:?}");
+    if converted.is_ok() {
         panel::show_panel(&window);
     } else {
         // An ordinary window cannot take keys without activating the app; the close
@@ -58,6 +62,7 @@ pub fn toggle(app: &AppHandle) {
 
 pub fn close(app: &AppHandle) {
     if let Some(window) = app.get_webview_window(POPUP_LABEL) {
+        panel::restore_window_class(&window);
         let _ = window.destroy();
     }
 }

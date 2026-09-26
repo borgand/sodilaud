@@ -6,10 +6,10 @@
 
 use std::ffi::CStr;
 use std::ptr;
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock, PoisonError};
 
 use objc2::rc::Retained;
-use objc2::runtime::{AnyClass, AnyObject, Bool, ClassBuilder, Sel};
+use objc2::runtime::{AnyClass, AnyObject, Bool, ClassBuilder, NSObjectProtocol, Sel};
 use objc2::{msg_send, sel, ClassType, MainThreadMarker};
 use objc2_app_kit::{
     NSEvent, NSEventType, NSPanel, NSPopUpMenuWindowLevel, NSWindow, NSWindowCollectionBehavior,
@@ -20,36 +20,72 @@ use tauri::WebviewWindow;
 const PANEL_CLASS: &CStr = c"SodilaudFloatingPanel";
 // tao 0.35 stores this flag on its window class; see `panel_class`.
 const TAO_FOCUSABLE_IVAR: &CStr = c"focusable";
+const KVO_PREFIX: &str = "NSKVONotifying_";
 
-/// Converts `window` in place. Returns false, leaving the window untouched, when
-/// not on the main thread or when its class is not one the swap is known to be
-/// safe for; the caller then shows it as an ordinary window.
-pub fn make_floating_panel(window: &WebviewWindow) -> bool {
-    let Some(ns_window) = ns_window(window) else {
-        return false;
+/// Why a window was left as it was.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PanelRefusal {
+    NotMainThread,
+    NoNativeWindow,
+    PanelClassUnavailable,
+    UnknownWindowClass,
+}
+
+/// Each converted window's class before the swap, keyed by the window's address,
+/// so `restore_window_class` can put back the exact (often KVO) class.
+static ORIGINAL_CLASSES: Mutex<Vec<(usize, &'static AnyClass)>> = Mutex::new(Vec::new());
+
+/// Converts `window` in place. On refusal the window is untouched and the caller
+/// shows it as an ordinary window. Call `restore_window_class` before destroying it.
+pub fn make_floating_panel(window: &WebviewWindow) -> Result<(), PanelRefusal> {
+    convert(&*ns_window(window)?)
+}
+
+/// Orders the panel in front and makes it key without activating the app.
+pub fn show_panel(window: &WebviewWindow) {
+    let Some(panel) = ns_window(window)
+        .ok()
+        .and_then(|w| w.downcast::<NSPanel>().ok())
+    else {
+        return;
     };
-    let Some(panel_class) = panel_class() else {
-        return false;
-    };
-    let current = AnyObject::class(&ns_window);
-    if !ptr::eq(current, panel_class) {
-        if !layout_compatible(current, panel_class) {
-            return false;
+    panel.orderFrontRegardless();
+    panel.makeKeyWindow();
+}
+
+/// Swaps the window back to the class it had before `make_floating_panel`, so the
+/// KVO machinery that isa-swizzled it finds its own class when observers are
+/// removed and the window is deallocated. A no-op for windows never converted.
+pub fn restore_window_class(window: &WebviewWindow) {
+    if let Ok(ns_window) = ns_window(window) {
+        restore(&ns_window);
+    }
+}
+
+fn convert(ns_window: &NSWindow) -> Result<(), PanelRefusal> {
+    let panel_class = panel_class().ok_or(PanelRefusal::PanelClassUnavailable)?;
+    if !ns_window.isKindOfClass(panel_class) {
+        let current = AnyObject::class(ns_window);
+        if !swappable(current, panel_class) {
+            return Err(PanelRefusal::UnknownWindowClass);
         }
+        let key = ptr::from_ref(ns_window) as usize;
+        let mut originals = lock_originals();
+        originals.retain(|(window, _)| *window != key);
+        originals.push((key, current));
         // SAFETY: we are on the main thread, where AppKit and tao touch this window,
-        // and `ns_window` keeps it alive. `layout_compatible` checked that the panel
-        // class has the same instance size as the current class, carries each of its
-        // ivars at the same offset with the same type, and overrides every method it
-        // overrides, so no code can read memory or behavior the swap removed.
+        // and the caller's reference keeps it alive. `swappable` checked that the
+        // panel class has the same instance size as the window's class, carries each
+        // of its base class's ivars at the same offset with the same type, and
+        // overrides every method the base class overrides, so no code can read
+        // memory or behavior the swap removed. The KVO subclass's own overrides are
+        // put back by `restore` before the window is destroyed.
         unsafe {
-            objc2::ffi::object_setClass(
-                Retained::as_ptr(&ns_window).cast_mut().cast(),
-                panel_class,
-            );
+            objc2::ffi::object_setClass(ptr::from_ref(ns_window).cast_mut().cast(), panel_class);
         }
     }
-    let Ok(panel) = ns_window.downcast::<NSPanel>() else {
-        return false;
+    let Some(panel) = ns_window.downcast_ref::<NSPanel>() else {
+        return Err(PanelRefusal::UnknownWindowClass);
     };
     // The panel class is swapped in after NSWindow's initializer ran, so NSPanel's
     // own defaults were never applied; set every property the popup relies on.
@@ -64,24 +100,69 @@ pub fn make_floating_panel(window: &WebviewWindow) -> bool {
             | NSWindowCollectionBehavior::Transient
             | NSWindowCollectionBehavior::IgnoresCycle,
     );
-    true
+    Ok(())
 }
 
-/// Orders the panel in front and makes it key without activating the app.
-pub fn show_panel(window: &WebviewWindow) {
-    let Some(panel) = ns_window(window).and_then(|w| w.downcast::<NSPanel>().ok()) else {
+fn restore(ns_window: &NSWindow) {
+    let key = ptr::from_ref(ns_window) as usize;
+    let original = {
+        let mut originals = lock_originals();
+        let index = originals.iter().position(|(window, _)| *window == key);
+        index.map(|index| originals.swap_remove(index).1)
+    };
+    let Some(original) = original else {
         return;
     };
-    panel.orderFrontRegardless();
-    panel.makeKeyWindow();
+    // Only undo our own swap. If something observed the panel meanwhile, KVO now
+    // owns the isa and swapping it away would break that observation.
+    if panel_class().is_some_and(|panel| ptr::eq(AnyObject::class(ns_window), panel)) {
+        // SAFETY: main thread, and the caller's reference keeps the window alive.
+        // `original` is the class the object had before `convert`, which checked it
+        // is layout-identical to the panel class, so restoring it is the inverse swap.
+        unsafe {
+            objc2::ffi::object_setClass(ptr::from_ref(ns_window).cast_mut().cast(), original);
+        }
+    }
+    // SAFETY: turning release-on-close off cannot over-release; tao owns the only
+    // strong reference and releases it itself, as tauri-nspanel also relies on.
+    unsafe { ns_window.setReleasedWhenClosed(false) };
 }
 
-fn ns_window(window: &WebviewWindow) -> Option<Retained<NSWindow>> {
-    MainThreadMarker::new()?;
-    let raw = window.ns_window().ok()?;
+fn lock_originals() -> std::sync::MutexGuard<'static, Vec<(usize, &'static AnyClass)>> {
+    ORIGINAL_CLASSES
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+}
+
+fn ns_window(window: &WebviewWindow) -> Result<Retained<NSWindow>, PanelRefusal> {
+    MainThreadMarker::new().ok_or(PanelRefusal::NotMainThread)?;
+    let raw = window
+        .ns_window()
+        .map_err(|_| PanelRefusal::NoNativeWindow)?;
     // SAFETY: Tauri returns tao's NSWindow pointer, which tao keeps retained for as
     // long as `window` exists; retaining it here keeps it valid while we use it.
-    unsafe { Retained::retain(raw.cast::<NSWindow>()) }
+    unsafe { Retained::retain(raw.cast::<NSWindow>()) }.ok_or(PanelRefusal::NoNativeWindow)
+}
+
+/// By the time Tauri hands the window over, AppKit or WebKit has usually added a
+/// key-value observer, which isa-swizzles the object to a runtime subclass named
+/// `NSKVONotifying_<class>`. That subclass adds no ivars and only overrides KVO
+/// plumbing (`class`, `dealloc`, `_isKVOA`, observed setters), so the layout that
+/// matters is its superclass's. Anything else must itself be the base class.
+fn base_class(current: &'static AnyClass) -> Option<&'static AnyClass> {
+    let name = current.name().to_str().ok()?;
+    let Some(base_name) = name.strip_prefix(KVO_PREFIX) else {
+        return Some(current);
+    };
+    let base = current.superclass()?;
+    let is_kvo_wrapper = base.name().to_str().ok() == Some(base_name)
+        && current.instance_size() == base.instance_size()
+        && current.instance_variables().is_empty();
+    is_kvo_wrapper.then_some(base)
+}
+
+fn swappable(current: &'static AnyClass, panel: &AnyClass) -> bool {
+    base_class(current).is_some_and(|base| layout_compatible(base, panel))
 }
 
 /// The swap must coexist with tao, which created the window as its own `TaoWindow`
@@ -238,5 +319,134 @@ mod tests {
         let panel = panel_class().expect("panel class registers");
         assert!(!layout_compatible(NSWindow::class(), panel));
         assert!(!layout_compatible(NSPanel::class(), panel));
+    }
+
+    extern "C-unwind" fn kvo_class(_this: &AnyObject, _sel: Sel) -> *const AnyClass {
+        ptr::null()
+    }
+
+    extern "C-unwind" fn kvo_noop(_this: &AnyObject, _sel: Sel) {}
+
+    extern "C-unwind" fn kvo_set_opaque(_this: &AnyObject, _sel: Sel, _opaque: Bool) {}
+
+    // Same shape as the runtime subclass KVO creates when something observes a
+    // window: no ivars, overriding `class`, `dealloc`, `_isKVOA`, and a setter.
+    fn kvo_like(
+        base: &AnyClass,
+        name: &CStr,
+        extra: impl FnOnce(&mut ClassBuilder),
+    ) -> &'static AnyClass {
+        let mut builder = ClassBuilder::new(name, base).expect("unique name");
+        // SAFETY: the signatures match the NSObject/NSWindow selectors they override.
+        unsafe {
+            builder.add_method(sel!(class), kvo_class as extern "C-unwind" fn(_, _) -> _);
+            builder.add_method(sel!(dealloc), kvo_noop as extern "C-unwind" fn(_, _));
+            builder.add_method(sel!(_isKVOA), yes as extern "C-unwind" fn(_, _) -> _);
+            builder.add_method(
+                sel!(setOpaque:),
+                kvo_set_opaque as extern "C-unwind" fn(_, _, _),
+            );
+        }
+        extra(&mut builder);
+        builder.register()
+    }
+
+    #[test]
+    fn a_kvo_wrapped_tao_window_is_checked_through_its_base_class() {
+        let tao = tao_like(c"PanelTestKvoBase", |_| {});
+        let kvo = kvo_like(tao, c"NSKVONotifying_PanelTestKvoBase", |_| {});
+        let panel = panel_class().expect("panel class registers");
+        assert!(base_class(kvo).is_some_and(|base| ptr::eq(base, tao)));
+        assert!(!layout_compatible(kvo, panel));
+        assert!(swappable(kvo, panel));
+    }
+
+    #[test]
+    fn a_kvo_wrapper_does_not_excuse_an_unknown_base_class() {
+        let tao = tao_like(c"PanelTestKvoExtraIvar", |builder| {
+            builder.add_ivar::<usize>(c"extra");
+        });
+        let kvo = kvo_like(tao, c"NSKVONotifying_PanelTestKvoExtraIvar", |_| {});
+        assert!(!swappable(
+            kvo,
+            panel_class().expect("panel class registers")
+        ));
+    }
+
+    #[test]
+    fn refuses_a_kvo_named_class_that_is_not_a_plain_wrapper() {
+        let panel = panel_class().expect("panel class registers");
+        let tao = tao_like(c"PanelTestKvoMismatch", |_| {});
+        let misnamed = kvo_like(tao, c"NSKVONotifying_SomethingElse", |_| {});
+        assert!(base_class(misnamed).is_none());
+        assert!(!swappable(misnamed, panel));
+
+        let tao = tao_like(c"PanelTestKvoOwnIvar", |_| {});
+        let with_ivar = kvo_like(tao, c"NSKVONotifying_PanelTestKvoOwnIvar", |builder| {
+            builder.add_ivar::<usize>(c"extra");
+        });
+        assert!(!swappable(with_ivar, panel));
+    }
+
+    // AppKit windows need the main thread, and libtest runs every test on a spawned
+    // thread, so this only passes when called from a harness-less binary's main().
+    #[test]
+    #[ignore = "needs the main thread, which libtest never provides"]
+    fn swaps_and_restores_a_real_key_value_observed_window() {
+        use objc2::rc::Allocated;
+        use objc2_app_kit::{NSApplication, NSBackingStoreType};
+        use objc2_foundation::{NSObject, NSPoint, NSRect, NSSize, NSString};
+
+        let mtm = MainThreadMarker::new().expect("must run on the main thread");
+        let _app = NSApplication::sharedApplication(mtm);
+        let tao = tao_like(c"PanelTestRealTaoWindow", |_| {});
+        // SAFETY: `tao` is an NSWindow subclass, so `alloc` returns an allocated
+        // NSWindow that the initializer below takes ownership of.
+        let allocated: Allocated<NSWindow> = unsafe { msg_send![tao, alloc] };
+        // SAFETY: plain borderless off-screen window; released by ARC, not on close.
+        let window = unsafe {
+            let window = NSWindow::initWithContentRect_styleMask_backing_defer(
+                allocated,
+                NSRect::new(NSPoint::new(-2000.0, -2000.0), NSSize::new(10.0, 10.0)),
+                NSWindowStyleMask::Borderless,
+                NSBackingStoreType::Buffered,
+                false,
+            );
+            window.setReleasedWhenClosed(false);
+            window
+        };
+        let focusable = tao.instance_variable(TAO_FOCUSABLE_IVAR).expect("ivar");
+        // SAFETY: the ivar is a BOOL declared on the window's class.
+        unsafe { *focusable.load_ptr::<Bool>(&window) = Bool::YES };
+
+        let observer = NSObject::new();
+        let key = NSString::from_str("opaque");
+        // SAFETY: valid observer and key path; the observer is removed below and no
+        // change to `opaque` is made, so it is never sent a notification.
+        unsafe {
+            let _: () = msg_send![&window, addObserver: &*observer, forKeyPath: &*key, options: 0usize, context: ptr::null_mut::<std::ffi::c_void>()];
+        }
+        let observed = AnyObject::class(&window);
+        assert!(observed
+            .name()
+            .to_bytes()
+            .starts_with(KVO_PREFIX.as_bytes()));
+
+        assert_eq!(convert(&window), Ok(()));
+        let panel = panel_class().expect("panel class registers");
+        assert!(ptr::eq(AnyObject::class(&window), panel));
+        assert!(window.canBecomeKeyWindow());
+        assert!(!window.canBecomeMainWindow());
+        // SAFETY: same ivar, which the panel class declares at the same offset.
+        assert!(unsafe { *focusable.load_ptr::<Bool>(&window) }.as_bool());
+
+        restore(&window);
+        assert!(ptr::eq(AnyObject::class(&window), observed));
+        // SAFETY: removes exactly the registration added above.
+        unsafe {
+            let _: () = msg_send![&window, removeObserver: &*observer, forKeyPath: &*key];
+        }
+        window.close();
+        drop(window);
     }
 }
