@@ -6,11 +6,12 @@ use std::time::Duration;
 use core_graphics::event::{CGEvent, CGEventFlags, CGEventTapLocation};
 use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
 use objc2::MainThreadMarker;
-use objc2_app_kit::{NSApplication, NSScreen};
+use objc2_app_kit::NSScreen;
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
 use super::commands::POPUP_LABEL;
 use super::layout::{popup_height, popup_origin, Rect, WIDTH};
+use super::panel;
 use super::runtime::{frontmost_pid, own_pid, should_paste, ClipboardRuntime};
 
 const PASTE_DELAY: Duration = Duration::from_millis(120);
@@ -40,11 +41,17 @@ pub fn toggle(app: &AppHandle) {
             .content_protected(true)
             .inner_size(WIDTH, popup_height(runtime.len()))
             .position(x, y)
-            .focused(true)
+            .visible(false)
             .build();
-    if let Ok(window) = built {
-        #[allow(deprecated)]
-        NSApplication::sharedApplication(mtm).activateIgnoringOtherApps(true);
+    let Ok(window) = built else {
+        return;
+    };
+    if panel::make_floating_panel(&window) {
+        panel::show_panel(&window);
+    } else {
+        // An ordinary window cannot take keys without activating the app; the close
+        // path hands focus back because Sodilaud is then frontmost.
+        let _ = window.show();
         let _ = window.set_focus();
     }
 }

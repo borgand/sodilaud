@@ -14,6 +14,8 @@ pub mod service;
 pub mod store;
 
 #[cfg(target_os = "macos")]
+pub mod panel;
+#[cfg(target_os = "macos")]
 pub mod pasteboard;
 #[cfg(target_os = "macos")]
 pub mod popup;

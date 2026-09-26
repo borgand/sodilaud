@@ -166,14 +166,24 @@ impl ClipboardRuntime {
     }
 
     /// Returns the pid a paste may target: the remembered app, if it is another
-    /// process and accepted the activation request.
+    /// process. It is reactivated only if Sodilaud became frontmost meanwhile; the
+    /// panel normally leaves it frontmost, and activating it anyway would pull it
+    /// in front of an app the user clicked to dismiss the popup.
     pub fn restore_frontmost(&self) -> Option<i32> {
         let pid = lock(&self.frontmost_pid).take()?;
-        let app = NSRunningApplication::runningApplicationWithProcessIdentifier(pid)?;
-        #[allow(deprecated)]
-        let activated =
-            app.activateWithOptions(NSApplicationActivationOptions::ActivateIgnoringOtherApps);
-        (activated && pid != own_pid()).then_some(pid)
+        if pid == own_pid() {
+            return None;
+        }
+        if should_reactivate(frontmost_pid(), own_pid()) {
+            let app = NSRunningApplication::runningApplicationWithProcessIdentifier(pid)?;
+            #[allow(deprecated)]
+            let activated =
+                app.activateWithOptions(NSApplicationActivationOptions::ActivateIgnoringOtherApps);
+            if !activated {
+                return None;
+            }
+        }
+        Some(pid)
     }
 
     pub fn request_paste_on_close(&self) {
@@ -213,6 +223,12 @@ pub fn own_pid() -> i32 {
 /// so a secret can never land in Sodilaud's own editor or an unrelated app.
 pub fn should_paste(target: i32, frontmost: Option<i32>, own: i32) -> bool {
     target != own && frontmost == Some(target)
+}
+
+/// On popup close, give focus back only if Sodilaud holds it (the popup fell back
+/// to activating the app). Any other frontmost app is where the user wants to be.
+pub fn should_reactivate(frontmost: Option<i32>, own: i32) -> bool {
+    frontmost == Some(own)
 }
 
 fn register_hotkey(app: &AppHandle, hotkey: &str, old: Option<&str>) -> Result<(), ClipError> {
@@ -258,7 +274,7 @@ pub fn accessibility_trusted() -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::should_paste;
+    use super::{should_paste, should_reactivate};
 
     const OWN: i32 = 100;
     const TARGET: i32 = 200;
@@ -278,5 +294,16 @@ mod tests {
     #[test]
     fn never_pastes_into_sodilaud_itself() {
         assert!(!should_paste(OWN, Some(OWN), OWN));
+    }
+
+    #[test]
+    fn reactivates_only_when_sodilaud_took_frontmost() {
+        assert!(should_reactivate(Some(OWN), OWN));
+    }
+
+    #[test]
+    fn leaves_activation_alone_when_another_app_is_frontmost() {
+        assert!(!should_reactivate(Some(TARGET), OWN));
+        assert!(!should_reactivate(None, OWN));
     }
 }

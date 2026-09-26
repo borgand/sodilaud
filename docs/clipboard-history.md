@@ -10,10 +10,12 @@ When enabled, every text copy from any app is captured automatically, including 
 from password managers. Press the hotkey (`⌘⇧V` by default) to open a small popup listing
 your recent copies, newest first. Pick one with `1`-`9`/`0`, or `↑`/`↓` and `Enter`, to put
 it back on the system clipboard; press `⌘V` yourself to paste it, or turn on auto-paste in
-settings to have Sodilaud post `⌘V` for you. Auto-paste only fires after Sodilaud
-successfully reactivates the app that was frontmost when you pressed the hotkey and that
-app is still frontmost about 120 ms later, and it never pastes into Sodilaud itself; if
-either check fails, the value stays on the clipboard for a manual paste. Entries expire a
+settings to have Sodilaud post `⌘V` for you. The popup is a floating panel that takes
+keyboard input without activating Sodilaud, so the app you were using stays frontmost,
+the popup also appears over full-screen apps, and the `⌘⇥` order does not change.
+Auto-paste only fires if the app that was frontmost when you pressed the hotkey is still
+frontmost about 120 ms after the popup closes, and it never pastes into Sodilaud itself;
+if either check fails, the value stays on the clipboard for a manual paste. Entries expire a
 fixed time after they were copied, values that look like secrets are masked in the popup,
 and the history lives only in memory: nothing is written to disk, to the workspace
 database, or sent anywhere.
@@ -86,9 +88,6 @@ Some copies cannot be wiped because they are held by frameworks Sodilaud does no
 
 ## Known limitations
 
-- Clicking away to another app closes the popup and reactivates the app that was frontmost
-  when the popup opened, not the app you clicked. On macOS 13 and earlier this can steal
-  focus back from the app you actually clicked.
 - The popup's height is fixed at the moment it opens; if the list grows while it is open,
   the list scrolls instead of the window resizing.
 
@@ -143,3 +142,11 @@ checked before release, in addition to the items above:
 - [ ] Hiding and showing the app through the Dock and through the tray both work.
 - [ ] Quit from the tray and `⌘Q` in the main window both wipe, flush, and exit.
 - [ ] Pressing `⌘Q` while the popup is open closes only the popup, not the app.
+- [ ] Open the popup over full-screen Ghostty and over full-screen Safari. The popup is
+  visible on the full-screen Space and takes typing (arrows, digits, Esc) at once.
+- [ ] With the main Sodilaud window open on the same Space as another app, open the popup
+  and close it with the hotkey, a pick, and Esc. The main window never flashes in front.
+- [ ] Use `⌘⇥` right after using the popup. The app you were in is still the most recent
+  app; Sodilaud has not moved to the front of the list.
+- [ ] With the popup open, click another app's window. The popup closes and the app you
+  clicked stays in front.
