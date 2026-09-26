@@ -52,14 +52,18 @@ the page reports the emptied page painted, or after 300 ms if it does not. While
 the popup gets no entries: listing, revealing, picking, and deleting are refused. The
 window is destroyed on disable and quit. The popup is content-protected so screen sharing
 and screenshots should not capture it; this is best effort, and some capture paths may
-ignore it. Clipboard history is never exposed to MCP: the clipboard module is not referenced by the MCP server, so no entry can reach an
-agent or its model provider.
+ignore it. Clipboard history is never exposed to MCP: the clipboard module is not
+referenced by the MCP server, so no entry can reach an agent or its model provider.
 
 Known residue that cannot be wiped: the `NSString` objects AppKit creates when Sodilaud
 reads the pasteboard and when it writes or compares the pasteboard's contents, Tauri's IPC
 buffers for the popup's list and reveal responses, and the heap of the popup webview's
 WebContent process, which lives from enable to disable or quit and can keep list previews
-and revealed values after a hide because freed memory is not zeroed.
+and revealed values after a hide because freed memory is not zeroed. If the popup page
+misses the 300 ms paint acknowledgement on a hide, the last frame shown before the hide,
+which can include a revealed value, stays in the window server's and WebKit's layer
+memory after the window is ordered out; it is never shown again, because the next open
+stays transparent until its own list has painted.
 Any app with Accessibility permission can read the popup's text through the macOS
 Accessibility (AX) API while it is open. If your macOS version keeps its own clipboard
 history (Spotlight), a value Sodilaud writes back when you pick an entry may appear there;

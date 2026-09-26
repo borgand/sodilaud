@@ -96,6 +96,10 @@ Some copies cannot be wiped because they are held by frameworks Sodilaud does no
   every hide, but freed memory there is not zeroed, so list previews and revealed values
   can stay in that process's memory, which lives from enable to disable or quit, until the
   memory is reused.
+- The last frame the popup showed before a hide, if its page does not report the emptied
+  page painted within 300 ms. That frame, which can include a revealed value, then stays
+  in the window server's and WebKit's layer memory after the popup leaves the screen. It
+  is never shown again: the next open stays transparent until its own list has painted.
 - Any app you have granted Accessibility permission can read the popup's visible text
   through the macOS Accessibility (AX) API while the popup is open.
 
