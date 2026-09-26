@@ -236,6 +236,36 @@ function cssRule(css, selector) {
   return css.slice(start, end);
 }
 
+// Splits a grid-template-columns value into its tracks, respecting spaces inside
+// function-like tracks such as minmax(0, 1fr) so it is not mistaken for two tracks.
+function splitTracks(value) {
+  const guarded = value.replace(/\(([^)]*)\)/g, (_, inner) => `(${inner.replace(/\s+/g, "\u0000")})`);
+  return guarded.trim().split(/\s+/).map((t) => t.replace(/\u0000/g, " "));
+}
+
+test("clip-row is a CSS grid with 5 fixed column tracks so icons line up across independently-sized rows", async () => {
+  const css = await readFile("src/clipboard.css", "utf8");
+  const base = cssRule(css, ".clip-row");
+  assert.match(base, /display:\s*grid/, "clip-row must be a grid, not a flex row");
+  const match = base.match(/grid-template-columns:\s*([^;]+);/);
+  assert.ok(match, "clip-row must declare grid-template-columns");
+  assert.equal(splitTracks(match[1]).length, 5, `expected 5 column tracks, got: ${match[1]}`);
+});
+
+test("an unmasked row still reserves the eye column, and revealing a masked row keeps the same cell order and count", async () => {
+  const { doc, key } = await setup();
+  const rows = [...doc.querySelectorAll(".clip-row")];
+  assert.equal(rows[0].children.length, 5, "every row has 5 top-level cells, masked or not");
+  assert.ok(rows[0].querySelector(".clip-eye-slot"), "an unmasked row still renders an eye placeholder cell");
+  const beforeTags = [...rows[1].children].map((c) => c.className.split(" ")[0]);
+  await key("ArrowDown");
+  await key(" ");
+  const revealedRow = doc.querySelectorAll(".clip-row")[1];
+  const afterTags = [...revealedRow.children].map((c) => c.className.split(" ")[0]);
+  assert.equal(afterTags.length, beforeTags.length, "revealing must not change the cell count");
+  assert.deepEqual(afterTags, beforeTags, "revealing must not reorder or add/remove cells");
+});
+
 test("the focused row's accent border has a non-zero width and a solid style", async () => {
   const css = await readFile("src/clipboard.css", "utf8");
   const base = cssRule(css, ".clip-row");

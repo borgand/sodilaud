@@ -125,17 +125,22 @@ export function createPopup({ document, invoke, timers = globalThis, afterPaint 
       if (item.secondsLeft < EXPIRING_SECONDS) row.classList.add("clip-expiring");
       const plain = revealed.get(item.id);
       if (plain !== undefined) row.classList.add("clip-revealed");
+      // Fixed cell order (slot, text, eye, time, trash) on every row, masked or
+      // not, so the columns line up: an unmasked row gets an empty eye-slot
+      // placeholder instead of skipping that cell.
+      const main = element("span", "clip-main");
+      main.append(element("span", "clip-text", plain ?? item.text));
+      if (item.extraLines > 0 && plain === undefined) main.append(element("span", "clip-extra", `+${item.extraLines}`));
       row.append(element("span", "clip-slot", slotKey(index)));
-      row.append(element("span", "clip-text", plain ?? item.text));
-      if (item.extraLines > 0 && plain === undefined) row.append(element("span", "clip-extra", `+${item.extraLines}`));
-      if (item.masked) {
-        row.append(iconButton(
-          "clip-reveal",
-          plain === undefined ? "eye" : "eyeOff",
-          plain === undefined ? "Reveal" : "Hide",
-          (event) => { event.stopPropagation(); focus(index); toggleReveal(index); }
-        ));
-      }
+      row.append(main);
+      row.append(item.masked
+        ? iconButton(
+            "clip-reveal",
+            plain === undefined ? "eye" : "eyeOff",
+            plain === undefined ? "Reveal" : "Hide",
+            (event) => { event.stopPropagation(); focus(index); toggleReveal(index); }
+          )
+        : element("span", "clip-eye-slot"));
       row.append(element("span", "clip-time", formatRemaining(item.secondsLeft)));
       row.append(iconButton("clip-trash", "trash", "Delete", (event) => { event.stopPropagation(); remove(index); }));
       row.addEventListener("click", () => pick(index));
