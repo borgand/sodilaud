@@ -30,6 +30,13 @@ async function setup(listing = LISTING) {
   return { dom, doc: dom.window.document, calls, popup, key };
 }
 
+test("the footer hint mentions j/k and h alongside the arrow keys and Space", async () => {
+  const html = await readFile("src/clipboard.html", "utf8");
+  const footer = html.slice(html.indexOf('class="clip-footer"'), html.indexOf("</footer>"));
+  assert.match(footer, /jk/);
+  assert.match(footer, /Space\/h/);
+});
+
 test("formats time left and slot keys", () => {
   assert.equal(formatRemaining(540), "9m");
   assert.equal(formatRemaining(59), "59s");
@@ -49,6 +56,36 @@ test("renders rows with slot numbers, masks, and time left", async () => {
   assert.equal(doc.getElementById("clip-ttl").textContent, "10 min TTL");
 });
 
+test("reveal and delete icons are outline SVGs, not emoji glyphs", async () => {
+  const { doc } = await setup();
+  const rows = [...doc.querySelectorAll(".clip-row")];
+  const eye = rows[1].querySelector(".clip-reveal");
+  const trash = rows[0].querySelector(".clip-trash");
+  assert.equal(eye.getAttribute("aria-label"), "Reveal");
+  assert.equal(eye.textContent, "", "the button must hold an svg icon, not emoji text");
+  const eyeSvg = eye.querySelector("svg");
+  assert.ok(eyeSvg, "reveal button must contain an svg icon");
+  assert.equal(eyeSvg.getAttribute("fill"), "none");
+  assert.equal(eyeSvg.getAttribute("stroke"), "currentColor");
+  assert.equal(trash.getAttribute("aria-label"), "Delete");
+  const trashSvg = trash.querySelector("svg");
+  assert.ok(trashSvg, "delete button must contain an svg icon");
+  assert.equal(trashSvg.getAttribute("fill"), "none");
+  assert.equal(trashSvg.getAttribute("stroke"), "currentColor");
+});
+
+test("revealing swaps the eye icon and aria-label to Hide, and back on hide", async () => {
+  const { doc, key } = await setup();
+  await key("ArrowDown");
+  await key(" ");
+  const revealedButton = doc.querySelectorAll(".clip-row")[1].querySelector(".clip-reveal");
+  assert.equal(revealedButton.getAttribute("aria-label"), "Hide");
+  assert.ok(revealedButton.querySelector("svg"));
+  await key(" ");
+  const hiddenButton = doc.querySelectorAll(".clip-row")[1].querySelector(".clip-reveal");
+  assert.equal(hiddenButton.getAttribute("aria-label"), "Reveal");
+});
+
 test("digit keys pick by slot", async () => {
   const { calls, key } = await setup();
   await key("2");
@@ -61,6 +98,38 @@ test("arrows and Enter pick the focused row", async () => {
   await key("ArrowDown");
   await key("Enter");
   assert.deepEqual(calls.at(-1), { command: "clip_select", args: { id: 11 } });
+});
+
+test("j and k move focus like ArrowDown and ArrowUp", async () => {
+  const { calls, key } = await setup();
+  await key("j");
+  await key("j");
+  await key("Enter");
+  assert.deepEqual(calls.at(-1), { command: "clip_select", args: { id: 11 } });
+  await key("k");
+  await key("Enter");
+  assert.deepEqual(calls.at(-1), { command: "clip_select", args: { id: 9 } });
+});
+
+test("h reveals and re-masks a masked row like Space", async () => {
+  const { doc, key } = await setup();
+  await key("ArrowDown");
+  await key("h");
+  assert.match(doc.querySelectorAll(".clip-row")[1].querySelector(".clip-text").textContent, /^ghp_A1b2/);
+  await key("h");
+  assert.equal(doc.querySelectorAll(".clip-row")[1].querySelector(".clip-text").textContent, "ghp_••••Q7r8 (40)");
+});
+
+test("l and uppercase J do nothing", async () => {
+  const { dom, calls, popup } = await setup();
+  const before = calls.length;
+  const focusedBefore = popup.state().focused;
+  await popup.onKey(new dom.window.KeyboardEvent("keydown", { key: "l" }));
+  await popup.onKey(new dom.window.KeyboardEvent("keydown", { key: "J" }));
+  await popup.onKey(new dom.window.KeyboardEvent("keydown", { key: "K" }));
+  await popup.onKey(new dom.window.KeyboardEvent("keydown", { key: "H" }));
+  assert.equal(calls.length, before);
+  assert.equal(popup.state().focused, focusedBefore);
 });
 
 test("Space reveals and re-masks a masked row", async () => {

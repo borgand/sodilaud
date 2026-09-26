@@ -19,7 +19,7 @@ html, body { margin: 0; height: 100%; background: var(--clip-bg); color: var(--c
 .clip-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, Menlo, monospace; }
 .clip-row.clip-revealed .clip-text { white-space: pre-wrap; word-break: break-all; max-height: 5.6em; overflow-y: auto; }
 .clip-extra { color: var(--clip-muted); }
-.clip-icon { border: 0; background: none; color: var(--clip-muted); cursor: pointer; font-size: 14px; padding: 2px 4px; }
-.clip-icon:hover { color: var(--clip-fg); }
+.clip-icon { border: 0; background: none; color: var(--clip-muted); cursor: pointer; font-size: 14px; padding: 2px 4px; display: inline-flex; align-items: center; }
+.clip-icon:hover, .clip-icon:focus-visible { color: var(--clip-fg); }
 .clip-empty { margin: 16px 12px; color: var(--clip-muted); }
 .clip-footer { height: 30px; line-height: 30px; padding: 0 12px; border-top: 1px solid var(--clip-line); font-size: 11px; }
