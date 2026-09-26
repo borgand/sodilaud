@@ -19,7 +19,8 @@ make every pick paste. `Space` or `h` reveals a masked entry at the focused row.
 keyboard input without activating Sodilaud, so the app you were using stays frontmost,
 the popup also appears over full-screen apps, and the `⌘⇥` order does not change. Drag the
 popup by its header to look behind it; it opens at its usual spot again next time.
-Auto-paste and `⌘↵` need Accessibility permission; without it they only copy. A paste only fires if the app that was frontmost when you pressed the hotkey is still
+Auto-paste and `⌘↵` need Accessibility permission. Without it a pick only copies, and macOS
+shows its dialog for granting the permission; restart Sodilaud after granting it. A paste only fires if the app that was frontmost when you pressed the hotkey is still
 frontmost about 120 ms after the popup closes, and it never pastes into Sodilaud itself;
 if either check fails, the value stays on the clipboard for a manual paste. Entries expire a
 fixed time after they were copied, values that look like secrets are masked in the popup,
