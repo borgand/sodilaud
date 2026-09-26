@@ -1,5 +1,9 @@
 # Clipboard history (macOS)
 
+<p align="center">
+  <img src="../images/clipboard.png" alt="The Sodilaud clipboard history popup listing ten recent copies, with an API key and a database password masked and a GitHub token revealed" width="560">
+</p>
+
 Clipboard history is an optional, macOS-only feature that keeps the last few things you
 copied so you can pick one back up without re-copying it from its source. It is off by
 default. On Windows and Linux it is not wired up: the platform-independent core and the
@@ -79,7 +83,10 @@ button.
   list, reveal, pick, or delete entries. The window is destroyed when you disable the
   feature or quit.
 - The popup window is content-protected, so screen sharing and screenshots should show it
-  blank. This is best effort: some capture paths may ignore it.
+  blank. This is best effort: some capture paths may ignore it. To take a screenshot for
+  documentation, run a local build with the `.content_protected(true)` line in
+  `src-tauri/src/clipboard/popup.rs` commented out, copy only made-up values, and do not
+  commit the change.
 - Clipboard history is never reachable from MCP. The MCP snapshot sent to agents never
   includes it, by capability boundary as well as by code: the clipboard module is not
   referenced from the MCP server.

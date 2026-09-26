@@ -7,6 +7,7 @@ on:
       - ".github/workflows/pages.yml"
       - "images/logo.png"
       - "images/preview.png"
+      - "images/clipboard.png"
       - "scripts/generate-release-manifest.mjs"
       - "site/**"
   release:
@@ -55,7 +56,7 @@ jobs:
         run: |
           mkdir -p .pages-staging/assets
           cp -R site/. .pages-staging/
-          cp images/logo.png images/preview.png .pages-staging/assets/
+          cp images/logo.png images/preview.png images/clipboard.png .pages-staging/assets/
           gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" > "$RUNNER_TEMP/releases.json"
           node scripts/generate-release-manifest.mjs --input "$RUNNER_TEMP/releases.json" --output .pages-staging/release.json
           touch .pages-staging/.nojekyll

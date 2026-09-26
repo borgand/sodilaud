@@ -60,3 +60,15 @@ test("the landing page describes current Markdown assistance", () => {
   assert.match(markdownFeature.textContent, /optional line numbers/);
   assert.match(markdownFeature.textContent, /language-aware code previews/);
 });
+
+test("the landing page features clipboard history with its privacy promises", () => {
+  const document = new JSDOM(html).window.document;
+  const section = document.getElementById("clipboard");
+
+  assert.ok(document.querySelector("nav a[href='#clipboard']"));
+  assert.equal(section.getAttribute("aria-labelledby"), "clipboard-title");
+  assert.match(section.textContent, /⌘⇧V/);
+  assert.match(section.textContent, /Memory only/);
+  assert.match(section.textContent, /Off by default/);
+  assert.equal(section.querySelector("img").getAttribute("src"), "./assets/clipboard.png");
+});
