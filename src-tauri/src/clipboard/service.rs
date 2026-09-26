@@ -740,7 +740,13 @@ mod tests {
 
     #[test]
     fn hex_color_rejects_css_functions_and_keywords() {
-        for invalid in ["var(--x)", "url(evil.svg)", "rgb(0,0,0)", "red", "transparent"] {
+        for invalid in [
+            "var(--x)",
+            "url(evil.svg)",
+            "rgb(0,0,0)",
+            "red",
+            "transparent",
+        ] {
             assert!(!is_css_hex_color(invalid), "{invalid}");
         }
     }
