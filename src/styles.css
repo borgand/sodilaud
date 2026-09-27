@@ -3153,3 +3153,96 @@ kbd {
 .trash-list span { margin-top: 4px; font-size: 0.75rem; color: var(--text-muted); }
 .trash-confirm-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 .trash-empty-btn { color: var(--danger-color, #ef4444); }
+
+/* Editor: live preview */
+.cm-editor.cm-mode-live .cm-content { font-family: var(--font-sans); }
+.cm-editor.cm-mode-source .cm-content { font-family: var(--font-mono); }
+
+.cm-mode-live .cm-lp-h1,
+.cm-mode-live .cm-lp-h2,
+.cm-mode-live .cm-lp-h3,
+.cm-mode-live .cm-lp-h4,
+.cm-mode-live .cm-lp-h5,
+.cm-mode-live .cm-lp-h6 {
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--text-primary);
+}
+.cm-mode-live .cm-lp-h1 { font-size: 1.8em; }
+.cm-mode-live .cm-lp-h2 { font-size: 1.45em; }
+.cm-mode-live .cm-lp-h3 { font-size: 1.25em; }
+.cm-mode-live .cm-lp-h4 { font-size: 1.1em; }
+.cm-mode-live .cm-lp-h5 { font-size: 1.05em; }
+.cm-mode-live .cm-lp-h6 { font-size: 1em; }
+
+.cm-mode-live .cm-lp-code {
+  background-color: var(--preview-code-bg);
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+
+.cm-mode-live .cm-lp-codeblock {
+  background-color: var(--preview-code-bg);
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+
+.cm-mode-live .cm-lp-link {
+  color: var(--accent-color);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+}
+
+.cm-mode-live .cm-lp-quote {
+  border-left: 4px solid var(--preview-quote-border);
+  background-color: var(--preview-quote-bg);
+  padding-left: 12px;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.cm-mode-live .cm-lp-task {
+  margin: 0 0.4em 0 0;
+  vertical-align: middle;
+  cursor: pointer;
+  accent-color: var(--accent-color);
+}
+
+.cm-mode-live .cm-lp-bullet {
+  color: var(--text-muted);
+}
+
+.cm-mode-live .cm-lp-hr-widget {
+  display: inline-block;
+  width: 100%;
+  height: 1px;
+  border: none;
+  background-color: var(--preview-hr);
+  vertical-align: middle;
+  margin: 0;
+}
+
+.cm-mode-live .cm-lp-image {
+  max-width: 100%;
+  border-radius: 6px;
+  vertical-align: bottom;
+}
+
+.cm-mode-live .cm-lp-image-blocked {
+  color: var(--text-muted);
+}
+
+.cm-mode-live .cm-lp-table.markdown-preview {
+  flex: none;
+  overflow: visible;
+  padding: 4px 0;
+  font-family: var(--font-sans);
+  font-size: inherit;
+  cursor: text;
+}
+
+.cm-mode-live .cm-lp-table.markdown-preview table {
+  margin-bottom: 0;
+}
