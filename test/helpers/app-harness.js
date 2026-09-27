@@ -9,6 +9,8 @@
 import { readFile } from "node:fs/promises";
 import { JSDOM } from "jsdom";
 import * as Diff from "diff";
+import { polyfillLayout } from "./cm-dom.js";
+import { EditorView } from "../../src/vendor/codemirror.js";
 
 export const settle = (ms = 50) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -48,6 +50,11 @@ export async function bootApp({ storage = {}, handlers = {}, instance = 1, windo
   globalThis.window = dom.window;
   globalThis.document = dom.window.document;
   globalThis.localStorage = dom.window.localStorage;
+  // CodeMirror reads these as bare globals.
+  for (const name of ["MutationObserver", "requestAnimationFrame", "cancelAnimationFrame", "getComputedStyle", "Window"]) {
+    globalThis[name] = dom.window[name];
+  }
+  polyfillLayout(dom.window);
   Object.defineProperty(globalThis, "navigator", {
     value: dom.window.navigator,
     configurable: true
@@ -71,6 +78,10 @@ export async function bootApp({ storage = {}, handlers = {}, instance = 1, windo
   await import(`${new URL("../../src/main.js", import.meta.url).href}?boot=${instance}`);
   await settle();
 
+  const editor = (pane = "primary") => EditorView.findFromDOM(dom.window.document.querySelector(
+    pane === "primary" ? "#editor-host .cm-editor" : "#secondary-editor-host .cm-editor"
+  ));
+
   return {
     dom,
     emit: (name, payload) => eventListeners.get(name)?.({ payload }),
@@ -86,10 +97,11 @@ export async function bootApp({ storage = {}, handlers = {}, instance = 1, windo
       }
       return contents;
     },
+    editor,
+    editorText: (pane = "primary") => editor(pane).state.doc.toString(),
     type: async (text) => {
-      const editor = dom.window.document.getElementById("editor-textarea");
-      editor.value = text;
-      editor.dispatchEvent(new dom.window.Event("input"));
+      const view = editor();
+      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text }, userEvent: "input.type" });
       await settle(600);
     },
     read: (key) => {

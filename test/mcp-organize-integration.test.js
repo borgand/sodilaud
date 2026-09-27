@@ -43,19 +43,21 @@ for (const database of [false, true]) {
     const args = (operation, requestId, extra) => ({ collectionId: snapshot().collectionId, requestId,
       ...(operation === "rename_folder" ? { folderId: "f", expectedRevision: snapshot().folderRevisions.f }
         : { noteId: "n", expectedRevision: snapshot().noteRevisions.n }), ...extra });
-    const editor = document.getElementById("editor-textarea");
+    const view = app.editor();
+    const text = () => view.state.doc.toString();
+    const typeAtEnd = insert => view.dispatch({ changes: { from: view.state.doc.length, insert }, userEvent: "input.type" });
     for (const [operation, extra] of [["rename_note", { title: "Agent title" }], ["move_note", { folderId: "f" }], ["rename_folder", { name: "Projects" }]]) {
       assert.equal((await send(operation, args(operation, `denied-${operation}`, extra))).ok, false);
       app.click(`mcp-permission-${operation}`);
       await settle();
-      editor.focus(); editor.setSelectionRange(2, 6);
+      view.focus(); view.dispatch({ selection: { anchor: 2, head: 6 } });
       const request = args(operation, operation, extra);
       const result = await send(operation, request);
       assert.equal(result.ok, true, result.error);
-      assert.equal(document.activeElement, editor);
-      assert.equal(editor.selectionStart, 2);
-      assert.equal(editor.selectionEnd, 6);
-      assert.equal(editor.value, "Original body");
+      assert.equal(document.activeElement, view.contentDOM);
+      assert.equal(view.state.selection.main.from, 2);
+      assert.equal(view.state.selection.main.to, 6);
+      assert.equal(text(), "Original body");
       assert.deepEqual(await send(operation, request), result);
       assert.equal(document.getElementById("note-title").value, "Agent title");
       assert.equal(document.querySelector('#secondary-note-select option[value="n"]').textContent, "Agent title");
@@ -76,8 +78,7 @@ for (const database of [false, true]) {
     assert.equal(top.ok, true);
     assert.equal(stored().notes[0].folderId, null);
     const stale = args("rename_note", "stale", { title: "Stale rename" });
-    editor.value += " typed";
-    editor.dispatchEvent(new app.dom.window.Event("input"));
+    typeAtEnd(" typed");
     assert.match((await send("rename_note", stale)).error, /Revision conflict/);
     assert.equal(document.getElementById("note-title").value, "Agent title", "manual MCP title stays locked during typing");
     await settle(600);
@@ -103,16 +104,15 @@ for (const database of [false, true]) {
       const pending = send("rename_note", request);
       await settle(20);
       assert.equal(document.getElementById("note-title").value, "Concurrent rename");
-      editor.value += " during save";
-      editor.dispatchEvent(new app.dom.window.Event("input"));
+      typeAtEnd(" during save");
       const release = hold.release; hold = null; release();
       assert.equal((await pending).ok, true);
       await settle(600);
-      assert.equal(disk.notes[0].content, editor.value);
+      assert.equal(disk.notes[0].content, text());
       assert.equal(disk.notes[0].title, "Concurrent rename");
       app.click("db-disconnect-btn"); await settle(100);
       app.click("db-connect-btn"); await settle(100);
-      assert.equal(editor.value, disk.notes[0].content);
+      assert.equal(text(), disk.notes[0].content);
       assert.equal(document.getElementById("note-title").value, "Concurrent rename");
       assert.equal(snapshot().folders[0].name, "Saved retry folder");
     }

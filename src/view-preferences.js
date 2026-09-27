@@ -70,3 +70,12 @@ export function normalizeEditorLineNumbers(value) {
   if (value === false || value === "false" || value === "0") return false;
   return DEFAULT_EDITOR_LINE_NUMBERS;
 }
+
+export const LAYOUT_MODES = ["live", "source", "reading"];
+
+const LEGACY_LAYOUT_MODES = { edit: "live", split: "live", preview: "reading" };
+
+export function normalizeLayoutMode(value) {
+  if (LAYOUT_MODES.includes(value)) return value;
+  return Object.hasOwn(LEGACY_LAYOUT_MODES, value) ? LEGACY_LAYOUT_MODES[value] : "live";
+}

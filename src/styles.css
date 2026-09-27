@@ -1098,9 +1098,8 @@ button.view-setting-value:hover {
   flex: 1 1 auto;
 }
 
-/* Force disable markdown preview and dividers in Dual-Note Split Mode */
-.panes-container.dual-split-mode .preview-wrapper,
-.panes-container.dual-split-mode .editor-divider {
+/* Force disable markdown preview in Dual-Note Split Mode */
+.panes-container.dual-split-mode .preview-wrapper {
   display: none !important;
 }
 
@@ -1238,6 +1237,61 @@ button.view-setting-value:hover {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+
+.editor-host {
+  position: absolute;
+  inset: 0;
+}
+
+/* CodeMirror injects its base theme after this sheet, so these rules carry an
+   extra class to win at equal specificity. */
+.editor-host .cm-editor {
+  height: 100%;
+  background: var(--editor-bg);
+  color: var(--editor-text);
+}
+
+.editor-host .cm-editor.cm-focused {
+  outline: none;
+}
+
+.editor-host .cm-editor .cm-scroller {
+  scrollbar-gutter: stable;
+  line-height: var(--editor-line-height);
+}
+
+.editor-host .cm-editor .cm-content {
+  padding: 24px;
+  font-size: var(--editor-font-size);
+  line-height: var(--editor-line-height);
+  caret-color: var(--editor-text);
+}
+
+.editor-host .cm-editor .cm-gutters {
+  font-family: var(--font-mono);
+  font-size: var(--editor-font-size);
+  line-height: var(--editor-line-height);
+  background-color: color-mix(in srgb, var(--bg-input) 55%, var(--editor-bg));
+  border-right: 1px solid color-mix(in srgb, var(--border-color) 65%, transparent);
+  color: var(--text-muted);
+}
+
+.editor-host .cm-editor .cm-gutterElement {
+  padding: 0 8px 0 12px;
+}
+
+.editor-host .cm-editor .cm-placeholder {
+  color: var(--text-muted);
+}
+
+.editor-host .cm-editor .cm-selectionBackground,
+.editor-host .cm-editor.cm-focused .cm-selectionBackground {
+  background-color: rgba(139, 92, 246, 0.35);
+}
+
+.editor-host .cm-editor .cm-cursor {
+  border-left-color: var(--editor-text);
 }
 
 /* Editor Specifics */
@@ -1394,24 +1448,29 @@ html:not(.editor-line-numbers-enabled) .app-container.compare-mode .editor-line-
   color: inherit;
 }
 
-.editor-backdrop .syntax-punctuation {
+.editor-backdrop .syntax-punctuation,
+.cm-editor .syntax-punctuation {
   color: var(--syntax-muted);
 }
 
-.editor-backdrop .syntax-heading {
+.editor-backdrop .syntax-heading,
+.cm-editor .syntax-heading {
   color: var(--accent-color);
 }
 
-.editor-backdrop .syntax-emphasis {
+.editor-backdrop .syntax-emphasis,
+.cm-editor .syntax-emphasis {
   color: var(--accent-hover);
 }
 
-.editor-backdrop .syntax-link {
+.editor-backdrop .syntax-link,
+.cm-editor .syntax-link {
   color: var(--accent-hover);
 }
 
 .editor-backdrop .syntax-code,
-.editor-backdrop .syntax-code-block {
+.editor-backdrop .syntax-code-block,
+.cm-editor .syntax-code {
   color: var(--syntax-code);
 }
 
@@ -1440,14 +1499,6 @@ html:not(.editor-line-numbers-enabled) .app-container.compare-mode .editor-line-
 .editor-backdrop .diff-text-removed {
   background-color: color-mix(in srgb, #e05263 30%, transparent);
   box-shadow: inset 0 -1px color-mix(in srgb, #e05263 70%, transparent);
-}
-
-/* Divider block between edit and preview (visible in split) */
-.editor-divider {
-  width: 1px;
-  height: 100%;
-  background-color: var(--border-color);
-  display: none;
 }
 
 /* Markdown Preview Area */
@@ -1639,21 +1690,12 @@ html:not(.editor-line-numbers-enabled) .app-container.compare-mode .editor-line-
    App Layout Adjustments (Splits, Previews, Focus)
    ---------------------------------------------------- */
 
-/* Split Screen Layout overrides */
-.app-container.mode-split .editor-divider {
-  display: block;
-}
-
-.app-container.mode-split .preview-wrapper {
-  display: flex;
-}
-
-/* Preview Only Layout overrides */
-.app-container.mode-preview .editor-wrapper {
+/* Reading mode shows the rendered preview instead of the editor */
+.app-container.mode-reading .editor-wrapper {
   display: none;
 }
 
-.app-container.mode-preview .preview-wrapper {
+.app-container.mode-reading .preview-wrapper {
   display: flex;
   border-left: none;
 }

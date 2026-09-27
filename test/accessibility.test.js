@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { JSDOM } from "jsdom";
+import { bootApp } from "./helpers/app-harness.js";
 
 const html = await readFile(new URL("../src/index.html", import.meta.url), "utf8");
 const document = new JSDOM(html).window.document;
@@ -20,6 +21,13 @@ test("interactive controls have an accessible name", () => {
     .map((element) => element.id || element.outerHTML);
 
   assert.deepEqual(unnamed, []);
+});
+
+test("both editors expose their content element with an accessible name", async () => {
+  const app = await bootApp();
+  assert.equal(app.editor().contentDOM.getAttribute("aria-label"), "Sodilaud content");
+  assert.equal(app.editor("secondary").contentDOM.getAttribute("aria-label"), "Secondary scratchpad content");
+  assert.ok(app.editor().contentDOM.matches(".cm-content"));
 });
 
 test("help, theme, about, MCP, clipboard, and trash overlays expose modal dialog semantics", () => {

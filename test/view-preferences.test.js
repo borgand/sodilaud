@@ -4,9 +4,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  LAYOUT_MODES,
   normalizeEditorLineNumbers,
   normalizeEditorLineSpacing,
   normalizeEditorZoom,
+  normalizeLayoutMode,
   normalizeNotePreviewLines,
   normalizeSyntaxHighlighting,
   stepEditorLineSpacing,
@@ -51,4 +53,18 @@ test("editor line number preferences accept stored booleans and default off", ()
   assert.equal(normalizeEditorLineNumbers("false"), false);
   assert.equal(normalizeEditorLineNumbers("0"), false);
   assert.equal(normalizeEditorLineNumbers(null), false);
+});
+
+test("layout modes migrate legacy values and default to live", () => {
+  assert.deepEqual(LAYOUT_MODES, ["live", "source", "reading"]);
+  assert.equal(normalizeLayoutMode("edit"), "live");
+  assert.equal(normalizeLayoutMode("split"), "live");
+  assert.equal(normalizeLayoutMode("preview"), "reading");
+  assert.equal(normalizeLayoutMode("live"), "live");
+  assert.equal(normalizeLayoutMode("source"), "source");
+  assert.equal(normalizeLayoutMode("reading"), "reading");
+  assert.equal(normalizeLayoutMode(null), "live");
+  assert.equal(normalizeLayoutMode("garbage"), "live");
+  assert.equal(normalizeLayoutMode(42), "live");
+  assert.equal(normalizeLayoutMode("toString"), "live");
 });

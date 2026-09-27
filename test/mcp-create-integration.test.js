@@ -53,7 +53,7 @@ test("MCP creations persist, preserve editor work, and cannot cross workspace sw
   assert.equal(app.read("sodilaud_notes").filter(n => n.id === localNote.note.id).length, 1);
   assert.equal((await send("create_note", localNoteArgs)).note.id, localNote.note.id);
   assert.equal(document.getElementById("note-title").value, "Original");
-  assert.equal(document.getElementById("editor-textarea").value, "Original body");
+  assert.equal(app.editorText(), "Original body");
 
   const storagePrototype = app.dom.window.Storage.prototype;
   const originalSetItem = storagePrototype.setItem;
@@ -86,10 +86,12 @@ test("MCP creations persist, preserve editor work, and cannot cross workspace sw
   holdSave = {};
   const created = send("create_note", noteArgs);
   await settle(20);
-  const editor = document.getElementById("editor-textarea");
+  const editor = app.editor();
   editor.focus();
-  editor.value = "Typed while MCP was saving";
-  editor.dispatchEvent(new app.dom.window.Event("input"));
+  editor.dispatch({
+    changes: { from: 0, to: editor.state.doc.length, insert: "Typed while MCP was saving" },
+    userEvent: "input.type"
+  });
   app.click("new-note-btn");
   const selectedTitle = document.getElementById("note-title").value;
   const release = holdSave.release;

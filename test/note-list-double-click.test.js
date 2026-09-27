@@ -34,7 +34,7 @@ test("double-clicking the empty space below the list creates a scratchpad", () =
   assert.ok(created, "a blank scratchpad was stored");
   assert.equal(document.querySelector(".note-item.active").dataset.id, created.id);
   assert.equal(document.getElementById("note-title").value, "Untitled Scratchpad");
-  assert.equal(document.getElementById("editor-textarea").value, "");
+  assert.equal(app.editorText(), "");
 });
 
 test("gaps between rows count as empty space", () => {

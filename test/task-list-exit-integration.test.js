@@ -5,18 +5,22 @@ import test from "node:test";
 
 import { bootApp } from "./helpers/app-harness.js";
 
-function pressEnter(dom, editor) {
+function pressEnter(dom, view) {
   const event = new dom.window.KeyboardEvent("keydown", {
     key: "Enter",
     bubbles: true,
     cancelable: true
   });
-  editor.dispatchEvent(event);
+  view.contentDOM.dispatchEvent(event);
   return event;
 }
 
+function typeOverSelection(view, text) {
+  view.dispatch({ ...view.state.replaceSelection(text), userEvent: "input.type" });
+}
+
 test("an inserted task list continues once and exits from its empty task", async () => {
-  const { dom } = await bootApp({
+  const { dom, editor: editorView } = await bootApp({
     storage: {
       sodilaud_notes: [{
         id: "task-note",
@@ -27,28 +31,28 @@ test("an inserted task list continues once and exits from its empty task", async
       }]
     }
   });
-  const editor = document.getElementById("editor-textarea");
+  const view = editorView();
+  const text = () => view.state.doc.toString();
+  const selected = () => text().slice(view.state.selection.main.from, view.state.selection.main.to);
 
-  editor.dispatchEvent(new dom.window.MouseEvent("contextmenu", {
+  view.contentDOM.dispatchEvent(new dom.window.MouseEvent("contextmenu", {
     bubbles: true,
     cancelable: true
   }));
   document.getElementById("ctx-insert").click();
   document.querySelector('[data-markdown-template="task-list"]').click();
 
-  assert.equal(editor.value, "- [ ] Task");
-  assert.equal(editor.value.slice(editor.selectionStart, editor.selectionEnd), "Task");
+  assert.equal(text(), "- [ ] Task");
+  assert.equal(selected(), "Task");
 
-  editor.setRangeText("Buy milk", editor.selectionStart, editor.selectionEnd, "end");
-  editor.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
-  assert.equal(pressEnter(dom, editor).defaultPrevented, true);
-  assert.equal(editor.value, "- [ ] Buy milk\n- [ ] ");
+  typeOverSelection(view, "Buy milk");
+  assert.equal(pressEnter(dom, view).defaultPrevented, true);
+  assert.equal(text(), "- [ ] Buy milk\n- [ ] ");
 
-  assert.equal(pressEnter(dom, editor).defaultPrevented, true);
-  assert.equal(editor.value, "- [ ] Buy milk\n\n");
-  assert.equal(editor.selectionStart, editor.value.length - 1);
+  assert.equal(pressEnter(dom, view).defaultPrevented, true);
+  assert.equal(text(), "- [ ] Buy milk\n\n");
+  assert.equal(view.state.selection.main.head, text().length - 1);
 
-  editor.setRangeText("Notes", editor.selectionStart, editor.selectionEnd, "end");
-  editor.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
-  assert.equal(editor.value, "- [ ] Buy milk\nNotes\n");
+  typeOverSelection(view, "Notes");
+  assert.equal(text(), "- [ ] Buy milk\nNotes\n");
 });

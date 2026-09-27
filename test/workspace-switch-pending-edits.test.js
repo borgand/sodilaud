@@ -20,20 +20,21 @@ const app = await bootApp({
 });
 
 test("connecting and disconnecting flush edits that are still inside the debounce window", async () => {
-  const editor = document.getElementById("editor-textarea");
-  editor.value = "Latest local body";
-  editor.dispatchEvent(new app.dom.window.Event("input", { bubbles: true }));
+  const replaceText = (text) => {
+    const editor = app.editor();
+    editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: text }, userEvent: "input.type" });
+  };
+  replaceText("Latest local body");
 
   app.click("db-connect-btn");
   await app.settle(100);
   assert.equal(workspaceNotes[0].content, "Latest local body");
   assert.equal(app.read("sodilaud_notes")[0].content, "Latest local body");
 
-  editor.value = "Latest workspace body";
-  editor.dispatchEvent(new app.dom.window.Event("input", { bubbles: true }));
+  replaceText("Latest workspace body");
   app.click("db-disconnect-btn");
   await app.settle(100);
 
   assert.equal(workspaceNotes[0].content, "Latest workspace body");
-  assert.equal(document.getElementById("editor-textarea").value, "Latest local body");
+  assert.equal(app.editorText(), "Latest local body");
 });

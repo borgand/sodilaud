@@ -42,8 +42,10 @@ test("the editor context menu inserts a table through the normal input path", as
     }
   });
 
-  const editor = document.getElementById("editor-textarea");
-  editor.setSelectionRange(editor.value.length, editor.value.length);
+  const view = app.editor();
+  const editor = view.contentDOM;
+  const text = () => view.state.doc.toString();
+  view.dispatch({ selection: { anchor: view.state.doc.length } });
   editor.dispatchEvent(new app.dom.window.MouseEvent("contextmenu", {
     bubbles: true,
     cancelable: true,
@@ -60,8 +62,8 @@ test("the editor context menu inserts a table through the normal input path", as
   document.querySelector('[data-markdown-template="table"]').click();
 
   assert.equal(contextMenu.style.display, "none");
-  assert.match(editor.value, /^Intro\n\| Column 1 \| Column 2 \| Column 3 \|/);
-  assert.equal(editor.value.slice(editor.selectionStart, editor.selectionEnd), "Column 1");
+  assert.match(text(), /^Intro\n\| Column 1 \| Column 2 \| Column 3 \|/);
+  assert.equal(text().slice(view.state.selection.main.from, view.state.selection.main.to), "Column 1");
   assert.equal(document.activeElement, editor);
 
   const title = document.getElementById("note-title");

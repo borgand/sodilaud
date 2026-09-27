@@ -20,14 +20,11 @@ import { PRESET_THEMES } from "./preset-themes.js";
 import { compareNoteText, emptyNoteComparison } from "./note-compare.js";
 import { findTextMatches } from "./find.js";
 import { getCursorPosition } from "./editor-position.js";
-import { handleEditorTab } from "./editor-indent.js";
-import { handleMarkdownAutocomplete } from "./editor-autocomplete.js";
-import { handleEditorSmartKeydown, handleMarkdownPaste } from "./editor-smart.js";
-import { applyEditorEdit } from "./editor-edit.js";
+import { createMarkdownEditor } from "./editor-view.js";
+import { markdownEditingCommands } from "./editor-commands.js";
+import { livePreview } from "./editor-live-preview.js";
 import { getMarkdownTemplateEdit } from "./markdown-insert.js";
-import { escapeHTML, highlightPreviewCode, renderEditorBackdrop } from "./syntax-highlighting.js";
-import { renderEditorLineNumbers } from "./editor-line-numbers.js";
-import { createEditorRenderScheduler } from "./editor-render-scheduler.js";
+import { escapeHTML, highlightPreviewCode } from "./syntax-highlighting.js";
 import { WELCOME_NOTE_CONTENT, WELCOME_NOTE_TITLE } from "./welcome-note.js";
 import { setupClipboardHistory, syncClipboardPopupTheme } from "./clipboard-settings-ui.js";
 import { isMacPlatform } from "./clipboard-settings.js";
@@ -67,6 +64,7 @@ import {
   normalizeEditorLineSpacing,
   normalizeEditorLineNumbers,
   normalizeEditorZoom,
+  normalizeLayoutMode,
   normalizeNotePreviewLines,
   normalizeSyntaxHighlighting,
   stepEditorLineSpacing,
@@ -101,10 +99,7 @@ const searchInput = document.getElementById("search-input");
 const noteListContainer = document.getElementById("note-list-container");
 const noteList = document.getElementById("note-list");
 const noteTitleInput = document.getElementById("note-title");
-const editorWrapper = document.getElementById("editor-wrapper");
-const editorTextarea = document.getElementById("editor-textarea");
-const editorLineNumbers = document.getElementById("editor-line-numbers");
-const previewWrapper = document.getElementById("preview-wrapper");
+const editorHost = document.getElementById("editor-host");
 const markdownPreview = document.getElementById("markdown-preview");
 const wordCharCount = document.getElementById("word-char-count");
 const cursorPosition = document.getElementById("cursor-position");
@@ -118,9 +113,11 @@ const compareNotesBtn = document.getElementById("compare-notes-btn");
 const compareNotesCount = document.getElementById("compare-notes-count");
 const topbarLeft = document.getElementById("topbar-left");
 
-const modeEditBtn = document.getElementById("mode-edit");
-const modeSplitBtn = document.getElementById("mode-split");
-const modePreviewBtn = document.getElementById("mode-preview");
+const layoutModeButtons = {
+  live: document.getElementById("mode-live"),
+  source: document.getElementById("mode-source"),
+  reading: document.getElementById("mode-reading")
+};
 
 const actionsBtn = document.getElementById("actions-btn");
 const actionsDropdown = document.getElementById("actions-dropdown-content");
@@ -159,13 +156,7 @@ const secondaryPaneWrapper = document.getElementById("secondary-pane-wrapper");
 const secondaryNoteSelect = document.getElementById("secondary-note-select");
 const secondaryNoteTitle = document.getElementById("secondary-note-title");
 const closeSecondaryBtn = document.getElementById("close-secondary-btn");
-const secondaryEditorPane = document.getElementById("secondary-editor-pane");
-const secondaryEditorWrapper = document.getElementById("secondary-editor-wrapper");
-const secondaryEditorTextarea = document.getElementById("secondary-editor-textarea");
-const secondaryEditorLineNumbers = document.getElementById("secondary-editor-line-numbers");
-const secondaryEditorBackdrop = document.getElementById("secondary-editor-backdrop");
-const secondaryEditorDivider = document.getElementById("secondary-editor-divider");
-const secondaryPreviewWrapper = document.getElementById("secondary-preview-wrapper");
+const secondaryEditorHost = document.getElementById("secondary-editor-host");
 const secondaryMarkdownPreview = document.getElementById("secondary-markdown-preview");
 
 const findBar = document.getElementById("find-bar");
@@ -188,7 +179,6 @@ const replaceRow = document.getElementById("replace-row");
 const replaceInput = document.getElementById("replace-input");
 const replaceOneBtn = document.getElementById("replace-one-btn");
 const replaceAllBtn = document.getElementById("replace-all-btn");
-const editorBackdrop = document.getElementById("editor-backdrop");
 
 const customContextMenu = document.getElementById("custom-context-menu");
 const ctxCutBtn = document.getElementById("ctx-cut");
@@ -272,7 +262,9 @@ let noteComparisonSource = null;
 let noteComparisonRefreshTimer = null;
 let isNoteComparisonPending = false;
 let activeDbPath = null;
-let currentLayoutMode = "edit"; // edit, split, preview
+let currentLayoutMode = "live";
+let primaryEditor = null;
+let secondaryEditor = null;
 let isFocusMode = false;
 let isHelpModalOpen = false;
 let helpModalPreviousFocus = null;
@@ -291,6 +283,7 @@ let isFindResultsOpen = false;
 let isFindAllNotesMode = false;
 let hasInvalidFindPattern = false;
 let contextMenuTarget = null;
+let contextMenuEditor = null;
 let contextMenuNoteId = null;
 let contextMenuFolderId = null;
 let editingFolderId = null;
@@ -302,10 +295,6 @@ let isRegexMode = false;
 let isReplaceOpen = false;
 const noteSaveDebounceTimers = new Map();
 let previewDebounceTimer = null;
-let highlightRedrawTimer = null;
-let highlightSettledRedrawTimer = null;
-let highlightResizeObserver = null;
-let nativeWindowResizeUnlisten = null;
 let nativeAboutUnlisten = null;
 let dbSaveQueue = Promise.resolve();
 let isClosing = false;
@@ -356,23 +345,19 @@ const mcpWriter = createMcpWriter({
     triggerSavingState();
     scheduleMcpNoteUpdate(note.id);
     try {
-      for (const [id, textarea] of [[activeNoteId, editorTextarea], [secondaryNoteId, secondaryEditorTextarea]]) {
+      for (const [id, editor] of [[activeNoteId, primaryEditor], [secondaryNoteId, secondaryEditor]]) {
         if (id !== note.id || operation !== "append_to_note") continue;
-        const { selectionStart, selectionEnd, selectionDirection, scrollTop, scrollLeft } = textarea;
-        textarea.value = note.content;
-        textarea.setSelectionRange(selectionStart, selectionEnd, selectionDirection);
-        textarea.scrollTop = scrollTop;
-        textarea.scrollLeft = scrollLeft;
+        editor.setText(note.content);
       }
       if (activeNoteId === note.id) {
         if (operation === "rename_note") noteTitleInput.value = note.title;
         updateMarkdownPreview();
-        updateWordCharCount();
-        primaryEditorRenderScheduler.schedule();
+        updateWordCharCountForText(primaryEditor);
+        if (!isFindBarOpen) updateHighlights();
       }
       if (secondaryNoteId === note.id) {
         updateSecondaryMarkdownPreview();
-        secondaryEditorRenderScheduler.schedule();
+        updateSecondaryEditorBackdrop();
       }
       populateSecondaryNoteSelect();
       if (isFindResultsOpen && isFindAllNotesMode) renderFindResults();
@@ -550,22 +535,25 @@ let mcpConnectionInfo = null;
 let mcpSnapshotTimer = null;
 const mcpNoteSnapshotTimers = new Map();
 
-const editorRenderFrameOptions = {
-  requestFrame: typeof window.requestAnimationFrame === "function"
-    ? (callback) => window.requestAnimationFrame(callback)
-    : undefined,
-  cancelFrame: typeof window.cancelAnimationFrame === "function"
-    ? (frameId) => window.cancelAnimationFrame(frameId)
-    : undefined
-};
-const primaryEditorRenderScheduler = createEditorRenderScheduler(
-  () => updateHighlights(),
-  editorRenderFrameOptions
-);
-const secondaryEditorRenderScheduler = createEditorRenderScheduler(
-  () => updateSecondaryEditorBackdrop(),
-  editorRenderFrameOptions
-);
+const editorModeFor = mode => mode === "source" ? "source" : "live";
+
+function createAppEditor(host, { ariaLabel, pane }) {
+  const editor = createMarkdownEditor({
+    parent: host,
+    ariaLabel,
+    placeholder: "Type something here... Supports Markdown formatting.",
+    mode: editorModeFor(currentLayoutMode),
+    syntaxHighlighting: syntaxHighlightingEnabled,
+    lineNumbers: editorLineNumbersEnabled,
+    extensions: [markdownEditingCommands(), livePreview({ onOpenLink: openExternalHref })],
+    onChange: pane === "primary" ? handleEditorInput : handleSecondaryEditorInput,
+    onSelectionChange: () => {
+      if (activePane === pane) updateWordCharCountForText(editor);
+    },
+    onFocus: () => setActivePane(pane)
+  });
+  return editor;
+}
 
 function applyPlatformShortcutLabels() {
   const platform = navigator.userAgentData?.platform || navigator.platform || navigator.userAgent || "";
@@ -609,6 +597,11 @@ async function loadRememberedWorkspacePath() {
 async function init() {
   // 1. Localize shortcut labels and attach event listeners immediately.
   applyPlatformShortcutLabels();
+  primaryEditor = createAppEditor(editorHost, { ariaLabel: "Sodilaud content", pane: "primary" });
+  secondaryEditor = createAppEditor(secondaryEditorHost, {
+    ariaLabel: "Secondary scratchpad content",
+    pane: "secondary"
+  });
   attachEventListeners();
   window.addEventListener("pagehide", () => {
     nativeAboutUnlisten?.();
@@ -629,15 +622,12 @@ async function init() {
   } catch (error) {
     console.error("Failed to set up clipboard history", error);
   }
-  await registerWindowResizeHandler();
 
   // 2. Load the saved theme (Default Dark on first launch) and layout mode
   loadSavedThemes();
   loadViewPreferences();
   const savedLayoutMode = localStorage.getItem("sodilaud_layout_mode");
-  if (savedLayoutMode) {
-    setLayoutMode(savedLayoutMode);
-  }
+  setLayoutMode(normalizeLayoutMode(savedLayoutMode), { persist: savedLayoutMode !== null });
 
   // 3. Always load the local-only collection first as guaranteed baseline
   loadNotesFromLocalStorage();
@@ -784,12 +774,12 @@ function createNote(title = "Untitled Scratchpad", content = "", folderId = unde
     activeItem.scrollIntoView({ block: "nearest" });
   }
 
-  // A blank scratchpad has nothing to render, and Preview hides the editor, so
+  // A blank scratchpad has nothing to render, and Reading hides the editor, so
   // it would open on an empty pane with nowhere to type. Only that mode strands
-  // the user: Split still shows an editor, and an import or the welcome note
-  // arrives with content worth previewing, so both are left as they are.
-  if (!content && currentLayoutMode === "preview") setLayoutMode("edit");
-  editorTextarea.focus();
+  // the user, and an import or the welcome note arrives with content worth
+  // reading, so it is left as it is.
+  if (!content && currentLayoutMode === "reading") setLayoutMode("live");
+  primaryEditor.focus();
 }
 
 function deleteNote(id, event) {
@@ -815,15 +805,10 @@ function loadActiveNote() {
   cancelScheduledNoteComparison();
 
   noteTitleInput.value = activeNote.title;
-  editorTextarea.value = activeNote.content;
-  
-  updateWordCharCount();
+  primaryEditor.loadText(activeNote.content);
+
+  updateWordCharCountForText(primaryEditor);
   updateMarkdownPreview();
-  
-  // Reset scrolling of editor & preview
-  editorTextarea.scrollTop = 0;
-  editorBackdrop.scrollTop = 0;
-  editorLineNumbers.scrollTop = 0;
   markdownPreview.scrollTop = 0;
   const compareStopped = syncCompareControl();
   if (isFindBarOpen) {
@@ -1574,22 +1559,6 @@ async function registerQuitHandler() {
   }
 }
 
-async function registerWindowResizeHandler() {
-  const getCurrentWindow = window.__TAURI__?.window?.getCurrentWindow;
-  if (typeof getCurrentWindow !== "function") return;
-
-  try {
-    const appWindow = getCurrentWindow();
-    if (typeof appWindow.onResized !== "function") return;
-
-    nativeWindowResizeUnlisten = await appWindow.onResized(() => {
-      scheduleFindHighlightRedraw(80);
-    });
-  } catch (error) {
-    console.error("Failed to register the native highlight resize handler", error);
-  }
-}
-
 async function registerNativeAboutHandler() {
   const listen = window.__TAURI__?.event?.listen;
   if (typeof listen !== "function") return;
@@ -1604,24 +1573,21 @@ async function registerNativeAboutHandler() {
 // ----------------------------------------------------
 // UI Logic: Word counts, auto-saves, live previews
 // ----------------------------------------------------
-function handleEditorInput() {
+function handleEditorInput(text) {
   const activeNote = notes.find(n => n.id === activeNoteId);
   if (!activeNote) return;
 
-  activeNote.content = editorTextarea.value;
+  activeNote.content = text;
   activeNote.updatedAt = Date.now();
   scheduleMcpNoteUpdate(activeNote.id);
-  updateCursorPositionForText(editorTextarea);
   scheduleNoteComparisonRefresh();
   if (isFindBarOpen) {
     runFind({ preserveActive: true, selectActive: false });
-  } else {
-    primaryEditorRenderScheduler.schedule();
   }
 
   // Auto-rename the title from the first line until the user edits it manually.
   if (!activeNote.isTitleLocked) {
-    const lines = editorTextarea.value.trim().split("\n");
+    const lines = text.trim().split("\n");
     let firstLine = lines[0] || "";
     // Clean markdown headings out of title
     firstLine = firstLine.replace(/^#+\s+/, "").trim();
@@ -1645,7 +1611,6 @@ function handleEditorInput() {
   clearTimeout(previewDebounceTimer);
   previewDebounceTimer = setTimeout(() => {
     updateMarkdownPreview();
-    updateWordCharCount();
   }, 150);
 }
 
@@ -1687,36 +1652,10 @@ function setSavedState() {
   saveStatus.classList.remove("unsaved");
 }
 
-function updateWordCharCount() {
-  const text = editorTextarea.value;
-  const totalWords = text.trim() ? text.trim().split(/\s+/).filter(Boolean).length : 0;
-  const totalChars = text.length;
-  
-  // Always update global count on the left
-  wordCharCount.textContent = `${totalWords} word${totalWords !== 1 ? 's' : ''} • ${totalChars} character${totalChars !== 1 ? 's' : ''}`;
-  updateCursorPositionForText(editorTextarea);
-
-  const start = editorTextarea.selectionStart;
-  const end = editorTextarea.selectionEnd;
-  
-  if (start !== end && start !== undefined && end !== undefined) {
-    const selectedText = text.substring(start, end);
-    const selectedWords = selectedText.trim() ? selectedText.trim().split(/\s+/).filter(Boolean).length : 0;
-    const selectedChars = selectedText.length;
-    
-    // Show and update selection count on the right
-    selectionCount.textContent = `${selectedWords} word${selectedWords !== 1 ? 's' : ''} • ${selectedChars} character${selectedChars !== 1 ? 's' : ''} selected`;
-    selectionCount.style.display = "inline-block";
-  } else {
-    // Hide selection count on the right
-    selectionCount.style.display = "none";
-  }
-}
-
 function updateMarkdownPreview() {
-  if (currentLayoutMode === "edit" || isSplitNoteMode) return; // don't render if not visible or in dual-note split mode
+  if (currentLayoutMode !== "reading" || isSplitNoteMode) return; // don't render if not visible or in dual-note split mode
 
-  const rawText = editorTextarea.value;
+  const rawText = primaryEditor.getText();
   
   if (window.marked) {
     try {
@@ -1748,34 +1687,24 @@ function updateMarkdownPreview() {
 }
 
 // ----------------------------------------------------
-// UI Layout Modes (Edit, Split, Preview, Focus)
+// UI Layout Modes (Live, Source, Reading, Focus)
 // ----------------------------------------------------
-function setLayoutMode(mode) {
+function setLayoutMode(value, { persist = true } = {}) {
+  const mode = normalizeLayoutMode(value);
   currentLayoutMode = mode;
-  localStorage.setItem("sodilaud_layout_mode", mode);
 
-  // Manage UI classes
-  appContainer.classList.remove("mode-split", "mode-preview");
-  modeEditBtn.classList.remove("active");
-  modeSplitBtn.classList.remove("active");
-  modePreviewBtn.classList.remove("active");
-  modeEditBtn.setAttribute("aria-pressed", String(mode === "edit"));
-  modeSplitBtn.setAttribute("aria-pressed", String(mode === "split"));
-  modePreviewBtn.setAttribute("aria-pressed", String(mode === "preview"));
-
-  if (mode === "split") {
-    appContainer.classList.add("mode-split");
-    modeSplitBtn.classList.add("active");
-    updateMarkdownPreview();
-  } else if (mode === "preview") {
-    appContainer.classList.add("mode-preview");
-    modePreviewBtn.classList.add("active");
-    updateMarkdownPreview();
-  } else {
-    modeEditBtn.classList.add("active");
+  appContainer.classList.remove("mode-live", "mode-source", "mode-reading");
+  appContainer.classList.add(`mode-${mode}`);
+  for (const [buttonMode, button] of Object.entries(layoutModeButtons)) {
+    button.classList.toggle("active", buttonMode === mode);
+    button.setAttribute("aria-pressed", String(buttonMode === mode));
   }
 
-  scheduleFindHighlightRedraw();
+  primaryEditor.setMode(editorModeFor(mode));
+  secondaryEditor.setMode(editorModeFor(mode));
+  if (mode === "reading") updateMarkdownPreview();
+
+  if (persist) localStorage.setItem("sodilaud_layout_mode", mode);
 }
 
 function applyEditorZoom(value, { persist = true } = {}) {
@@ -1788,7 +1717,6 @@ function applyEditorZoom(value, { persist = true } = {}) {
   if (persist) {
     localStorage.setItem("sodilaud_editor_zoom", String(currentEditorZoom));
   }
-  scheduleFindHighlightRedraw(80);
 }
 
 function applyEditorLineSpacing(value, { persist = true } = {}) {
@@ -1801,7 +1729,6 @@ function applyEditorLineSpacing(value, { persist = true } = {}) {
   if (persist) {
     localStorage.setItem("sodilaud_editor_line_spacing", String(editorLineSpacing));
   }
-  scheduleFindHighlightRedraw(80);
 }
 
 function applyNotePreviewLines(value, { persist = true, render = true } = {}) {
@@ -1829,33 +1756,10 @@ function updateSecondaryEditorBackdrop() {
 }
 
 function renderSecondaryEditorBackdrop() {
-  secondaryEditorRenderScheduler.cancel();
   const comparison = visibleNoteComparison();
-  secondaryEditorBackdrop.innerHTML = renderEditorBackdrop(secondaryEditorTextarea.value, {
-    syntaxEnabled: syntaxHighlightingEnabled,
-    decorations: isCompareMode ? comparison.rightDecorations : []
-  });
-  updateEditorLineNumberGutter(
-    secondaryEditorTextarea,
-    secondaryEditorLineNumbers,
-    secondaryEditorWrapper,
-    {
-      changedLines: isCompareMode ? comparison.rightChangedLines : [],
-      changeType: "added"
-    }
-  );
-}
-
-function updateEditorLineNumberGutter(textarea, gutter, wrapper, comparison = {}) {
-  if (!editorLineNumbersEnabled && !isCompareMode) {
-    if (gutter.childNodes.length > 0) gutter.replaceChildren();
-    return;
-  }
-
-  const lineCount = textarea.value.split("\n").length;
-  const digitCount = String(lineCount).length;
-  wrapper.style.setProperty("--editor-line-number-gutter", `calc(${digitCount}ch + 1.5em)`);
-  gutter.innerHTML = renderEditorLineNumbers(textarea.value, comparison);
+  secondaryEditor.setDiff(isCompareMode
+    ? { decorations: comparison.rightDecorations, changedLines: comparison.rightChangedLines }
+    : null);
 }
 
 function applyEditorLineNumbers(value, { persist = true, render = true } = {}) {
@@ -1868,23 +1772,8 @@ function applyEditorLineNumbers(value, { persist = true, render = true } = {}) {
     localStorage.setItem("sodilaud_editor_line_numbers", String(editorLineNumbersEnabled));
   }
   if (render) {
-    const comparison = visibleNoteComparison();
-    updateEditorLineNumberGutter(editorTextarea, editorLineNumbers, editorWrapper);
-    updateEditorLineNumberGutter(
-      secondaryEditorTextarea,
-      secondaryEditorLineNumbers,
-      secondaryEditorWrapper,
-      {
-        changedLines: isCompareMode ? comparison.rightChangedLines : [],
-        changeType: "added"
-      }
-    );
-    if (isCompareMode) {
-      updateEditorLineNumberGutter(editorTextarea, editorLineNumbers, editorWrapper, {
-        changedLines: comparison.leftChangedLines,
-        changeType: "removed"
-      });
-    }
+    primaryEditor.setLineNumbers(editorLineNumbersEnabled);
+    secondaryEditor.setLineNumbers(editorLineNumbersEnabled);
   }
 }
 
@@ -1898,8 +1787,8 @@ function applySyntaxHighlighting(value, { persist = true, render = true } = {}) 
     localStorage.setItem("sodilaud_syntax_highlighting", String(syntaxHighlightingEnabled));
   }
   if (render) {
-    updateHighlights();
-    updateSecondaryEditorBackdrop();
+    primaryEditor.setSyntaxHighlighting(syntaxHighlightingEnabled);
+    secondaryEditor.setSyntaxHighlighting(syntaxHighlightingEnabled);
     updateMarkdownPreview();
     updateSecondaryMarkdownPreview();
   }
@@ -1919,7 +1808,7 @@ function loadViewPreferences() {
   );
   applySyntaxHighlighting(
     localStorage.getItem("sodilaud_syntax_highlighting") ?? DEFAULT_SYNTAX_HIGHLIGHTING,
-    { persist: false, render: false }
+    { persist: false }
   );
   applyEditorLineNumbers(
     localStorage.getItem("sodilaud_editor_line_numbers") ?? DEFAULT_EDITOR_LINE_NUMBERS,
@@ -1930,7 +1819,6 @@ function loadViewPreferences() {
 function toggleSidebar() {
   sidebar.classList.toggle("collapsed");
   toggleSidebarBtn.setAttribute("aria-expanded", String(!sidebar.classList.contains("collapsed")));
-  scheduleFindHighlightRedraw(250);
 }
 
 function toggleFocusMode() {
@@ -1945,7 +1833,6 @@ function toggleFocusMode() {
     sidebar.classList.remove("collapsed");
     toggleSidebarBtn.setAttribute("aria-expanded", "true");
   }
-  scheduleFindHighlightRedraw(250);
 }
 
 // ----------------------------------------------------
@@ -2190,7 +2077,7 @@ function copyMcpConfigValue(value, label) {
 }
 
 function copyMarkdownToClipboard() {
-  const text = editorTextarea.value;
+  const text = primaryEditor.getText();
   navigator.clipboard.writeText(text).then(() => {
     showNotification("Markdown copied to clipboard!");
   }).catch(err => {
@@ -2199,11 +2086,9 @@ function copyMarkdownToClipboard() {
 }
 
 function copyHtmlToClipboard() {
-  // Render temporary markdown if in full edit mode
-  let html = markdownPreview.innerHTML;
-  if (currentLayoutMode === "edit" && window.marked) {
-    html = renderMarkdown(editorTextarea.value);
-  }
+  const html = currentLayoutMode === "reading"
+    ? markdownPreview.innerHTML
+    : renderMarkdown(primaryEditor.getText());
   
   navigator.clipboard.writeText(html).then(() => {
     showNotification("HTML preview copied to clipboard!");
@@ -2325,25 +2210,7 @@ function dismissNotification(message, sequence = null) {
 // Event Listeners
 // ----------------------------------------------------
 function attachEventListeners() {
-  // Editor and Title inputs
-  editorTextarea.addEventListener("input", handleEditorInput);
-  editorTextarea.addEventListener("keydown", handleEditorTab);
-  editorTextarea.addEventListener("keydown", handleMarkdownAutocomplete);
-  editorTextarea.addEventListener("keydown", handleEditorSmartKeydown);
-  editorTextarea.addEventListener("paste", handleMarkdownPaste);
-  editorTextarea.addEventListener("select", updateWordCharCount);
-  editorTextarea.addEventListener("mouseup", updateWordCharCount);
-  editorTextarea.addEventListener("keyup", updateWordCharCount);
   noteTitleInput.addEventListener("input", handleTitleInput);
-
-  window.addEventListener("resize", () => scheduleFindHighlightRedraw(80));
-  if (typeof window.ResizeObserver === "function") {
-    highlightResizeObserver = new window.ResizeObserver(() => {
-      scheduleFindHighlightRedraw(80);
-    });
-    highlightResizeObserver.observe(editorWrapper);
-    highlightResizeObserver.observe(previewWrapper);
-  }
 
   // Sidebar toggle
   toggleSidebarBtn.addEventListener("click", toggleSidebar);
@@ -2368,9 +2235,9 @@ function attachEventListeners() {
   });
 
   // Layout mode controls
-  modeEditBtn.addEventListener("click", () => setLayoutMode("edit"));
-  modeSplitBtn.addEventListener("click", () => setLayoutMode("split"));
-  modePreviewBtn.addEventListener("click", () => setLayoutMode("preview"));
+  for (const [mode, button] of Object.entries(layoutModeButtons)) {
+    button.addEventListener("click", () => setLayoutMode(mode));
+  }
 
   // Markdown preview links
   markdownPreview.addEventListener("click", handlePreviewLinkClick);
@@ -2443,16 +2310,6 @@ function attachEventListeners() {
     secondaryNoteId = e.target.value;
     loadSecondaryNote();
   });
-  secondaryEditorTextarea.addEventListener("input", handleSecondaryEditorInput);
-  secondaryEditorTextarea.addEventListener("keydown", handleEditorTab);
-  secondaryEditorTextarea.addEventListener("keydown", handleMarkdownAutocomplete);
-  secondaryEditorTextarea.addEventListener("keydown", handleEditorSmartKeydown);
-  secondaryEditorTextarea.addEventListener("paste", handleMarkdownPaste);
-  secondaryEditorTextarea.addEventListener("select", () => updateWordCharCountForText(secondaryEditorTextarea));
-  secondaryEditorTextarea.addEventListener("mouseup", () => updateWordCharCountForText(secondaryEditorTextarea));
-  secondaryEditorTextarea.addEventListener("keyup", () => updateWordCharCountForText(secondaryEditorTextarea));
-  secondaryEditorTextarea.addEventListener("focus", () => setActivePane("secondary"));
-  editorTextarea.addEventListener("focus", () => setActivePane("primary"));
   secondaryNoteTitle.addEventListener("input", handleSecondaryTitleInput);
 
   // Theme selector button in sidebar footer
@@ -2809,37 +2666,6 @@ function attachEventListeners() {
       }
     }
   });
-
-  // Sync scrolling of Edit & Preview in Split mode + Backdrop scroll always
-  editorTextarea.addEventListener("scroll", () => {
-    editorBackdrop.scrollTop = editorTextarea.scrollTop;
-    editorLineNumbers.scrollTop = editorTextarea.scrollTop;
-
-    if (currentLayoutMode !== "split") return;
-    
-    const editScrollHeight = editorTextarea.scrollHeight - editorTextarea.clientHeight;
-    if (editScrollHeight <= 0) return;
-    
-    const percentage = editorTextarea.scrollTop / editScrollHeight;
-    const previewScrollHeight = markdownPreview.scrollHeight - markdownPreview.clientHeight;
-    
-    markdownPreview.scrollTop = percentage * previewScrollHeight;
-  });
-
-  secondaryEditorTextarea.addEventListener("scroll", () => {
-    secondaryEditorBackdrop.scrollTop = secondaryEditorTextarea.scrollTop;
-    secondaryEditorLineNumbers.scrollTop = secondaryEditorTextarea.scrollTop;
-
-    if (currentLayoutMode !== "split") return;
-    
-    const editScrollHeight = secondaryEditorTextarea.scrollHeight - secondaryEditorTextarea.clientHeight;
-    if (editScrollHeight <= 0) return;
-    
-    const percentage = secondaryEditorTextarea.scrollTop / editScrollHeight;
-    const previewScrollHeight = secondaryMarkdownPreview.scrollHeight - secondaryMarkdownPreview.clientHeight;
-    
-    secondaryMarkdownPreview.scrollTop = percentage * previewScrollHeight;
-  });
 }
 
 // ----------------------------------------------------
@@ -2853,7 +2679,13 @@ function handlePreviewLinkClick(event) {
   if (!link) return;
 
   event.preventDefault();
-  const action = resolveLinkAction(link.getAttribute("href"));
+  openExternalHref(link.getAttribute("href"));
+}
+
+// Live-preview links arrive unfiltered (autolinks carry raw text), so they take
+// the same resolveLinkAction gate as sanitized preview links.
+function openExternalHref(href) {
+  const action = resolveLinkAction(href);
   if (action.kind !== "external") return;
 
   if (!window.__TAURI__) {
@@ -3165,8 +2997,8 @@ function toggleFindBar(openReplace = false) {
       toggleReplace(true);
     }
     
-    // Check if there is selected text in the textarea, prefill the find input
-    const selection = editorTextarea.value.substring(editorTextarea.selectionStart, editorTextarea.selectionEnd);
+    const { start, end } = primaryEditor.getSelection();
+    const selection = primaryEditor.getText().slice(start, end);
     if (selection) {
       findInput.value = selection;
     }
@@ -3184,10 +3016,6 @@ function toggleFindBar(openReplace = false) {
 
 function hideFindBar() {
   isFindBarOpen = false;
-  clearTimeout(highlightRedrawTimer);
-  clearTimeout(highlightSettledRedrawTimer);
-  highlightRedrawTimer = null;
-  highlightSettledRedrawTimer = null;
   toggleFindResults(false);
   findBar.style.display = "none";
   findMatches = [];
@@ -3198,7 +3026,7 @@ function hideFindBar() {
   toggleReplace(false);
   updateFindCount();
   updateHighlights();
-  editorTextarea.focus();
+  primaryEditor.focus();
 }
 
 function toggleReplace(forceState) {
@@ -3245,7 +3073,7 @@ function runFind({ preserveActive = false, selectActive = true } = {}) {
   const previousActiveIndex = activeMatchIndex;
   findInput.classList.remove("invalid-regex");
 
-  const result = findTextMatches(editorTextarea.value, query, getFindOptions());
+  const result = findTextMatches(primaryEditor.getText(), query, getFindOptions());
   findMatches = result.matches;
   hasInvalidFindPattern = result.invalidPattern;
 
@@ -3286,12 +3114,12 @@ function selectMatch(index, focusEditor = false) {
   activeMatchIndex = index;
   const match = findMatches[index];
   
-  const editorIsVisible = currentLayoutMode !== "preview" || isSplitNoteMode;
+  const editorIsVisible = currentLayoutMode !== "reading" || isSplitNoteMode;
   if (focusEditor && editorIsVisible) {
-    editorTextarea.focus();
+    primaryEditor.focus();
   }
-  editorTextarea.setSelectionRange(match.start, match.end);
-  updateCursorPositionForText(editorTextarea);
+  primaryEditor.setSelection(match.start, match.end, { scroll: false });
+  updateCursorPositionForText(primaryEditor);
 
   updateFindCount();
   updateHighlights();
@@ -3300,24 +3128,9 @@ function selectMatch(index, focusEditor = false) {
 }
 
 function scrollActiveMatchIntoView(match) {
-  // The backdrop has the same typography, padding, wrapping, and width as the
-  // textarea, so its active mark gives us the real visual position. Counting
-  // newline characters is not enough when a long Markdown line wraps.
-  const activeHighlight = editorBackdrop.querySelector("mark.active-match");
+  primaryEditor.scrollToRange(match.start, match.end);
 
-  if (activeHighlight) {
-    const viewportOffset = Math.min(editorTextarea.clientHeight * 0.3, 160);
-    editorTextarea.scrollTop = Math.max(0, activeHighlight.offsetTop - viewportOffset);
-  } else {
-    const textBefore = editorTextarea.value.slice(0, match.start);
-    const lineCountBefore = textBefore.split("\n").length;
-    const lineHeight = parseFloat(window.getComputedStyle(editorTextarea).lineHeight) || 20;
-    editorTextarea.scrollTop = Math.max(0, (lineCountBefore - 3) * lineHeight);
-  }
-
-  editorBackdrop.scrollTop = editorTextarea.scrollTop;
-
-  if (currentLayoutMode !== "edit" && !isSplitNoteMode) {
+  if (currentLayoutMode === "reading" && !isSplitNoteMode) {
     const previewHighlight = markdownPreview.querySelector("mark.active-match");
     previewHighlight?.scrollIntoView?.({ block: "center", inline: "nearest" });
   }
@@ -3336,20 +3149,14 @@ function findPrev() {
 }
 
 function applyFindReplacement(edit) {
-  const previouslyFocused = document.activeElement;
-  editorTextarea.focus({ preventScroll: true });
-  applyEditorEdit(editorTextarea, edit);
-
-  if (previouslyFocused && previouslyFocused !== editorTextarea) {
-    previouslyFocused.focus?.({ preventScroll: true });
-  }
+  primaryEditor.applyEdit(edit);
 }
 
 function replaceOne() {
   if (findMatches.length === 0 || activeMatchIndex < 0) return;
   const match = findMatches[activeMatchIndex];
   const replaceText = replaceInput.value;
-  const text = editorTextarea.value;
+  const text = primaryEditor.getText();
   
   let replacement = replaceText;
   if (isRegexMode) {
@@ -3379,7 +3186,7 @@ function replaceAll() {
   if (findMatches.length === 0) return;
   const query = findInput.value;
   const replaceText = replaceInput.value;
-  const text = editorTextarea.value;
+  const text = primaryEditor.getText();
   const totalMatches = findMatches.length;
   
   let newContent = text;
@@ -3449,8 +3256,6 @@ function toggleFindResults(forceState) {
   } else {
     findResultsList.replaceChildren();
   }
-
-  scheduleFindHighlightRedraw(220);
 }
 
 function toggleFindAllNotesMode() {
@@ -3637,7 +3442,7 @@ function updatePreviewHighlights() {
   clearPreviewHighlights();
 
   if (
-    currentLayoutMode === "edit" ||
+    currentLayoutMode !== "reading" ||
     isSplitNoteMode ||
     !isFindBarOpen ||
     !findInput.value ||
@@ -3683,40 +3488,6 @@ function updatePreviewHighlights() {
   });
 }
 
-function scheduleFindHighlightRedraw(delay = 0) {
-  if (!isFindBarOpen) return;
-
-  clearTimeout(highlightRedrawTimer);
-  clearTimeout(highlightSettledRedrawTimer);
-
-  highlightRedrawTimer = setTimeout(() => redrawFindHighlights(), delay);
-  // A packaged webview can report the new dimensions before native layout and
-  // paint have completely settled. Redraw once promptly and once after that
-  // transition window so highlights cannot retain the intermediate wrapping.
-  highlightSettledRedrawTimer = setTimeout(
-    () => redrawFindHighlights(),
-    Math.max(delay + 80, 260)
-  );
-}
-
-function redrawFindHighlights() {
-  if (!isFindBarOpen) return;
-
-  const redraw = () => {
-    if (!isFindBarOpen) return;
-    updateHighlights();
-    if (activeMatchIndex >= 0 && activeMatchIndex < findMatches.length) {
-      scrollActiveMatchIntoView(findMatches[activeMatchIndex]);
-    }
-  };
-
-  if (typeof window.requestAnimationFrame === "function") {
-    window.requestAnimationFrame(redraw);
-  } else {
-    redraw();
-  }
-}
-
 function updateHighlights() {
   if (isCompareMode) {
     redrawComparisonBackdrops();
@@ -3727,32 +3498,12 @@ function updateHighlights() {
 }
 
 function renderPrimaryEditorBackdrop() {
-  primaryEditorRenderScheduler.cancel();
-  const text = editorTextarea.value;
-  const query = findInput.value;
   const comparison = visibleNoteComparison();
-
-  updateEditorLineNumberGutter(editorTextarea, editorLineNumbers, editorWrapper, {
-    changedLines: isCompareMode ? comparison.leftChangedLines : [],
-    changeType: "removed"
-  });
-
   updatePreviewHighlights();
-  
-  if (!isFindBarOpen || !query || findMatches.length === 0) {
-    editorBackdrop.innerHTML = renderEditorBackdrop(text, {
-      syntaxEnabled: syntaxHighlightingEnabled,
-      decorations: isCompareMode ? comparison.leftDecorations : []
-    });
-    return;
-  }
-
-  editorBackdrop.innerHTML = renderEditorBackdrop(text, {
-    syntaxEnabled: syntaxHighlightingEnabled,
-    matches: findMatches,
-    activeMatchIndex,
-    decorations: isCompareMode ? comparison.leftDecorations : []
-  });
+  primaryEditor.setFindMatches(isFindBarOpen && findInput.value ? findMatches : [], activeMatchIndex);
+  primaryEditor.setDiff(isCompareMode
+    ? { decorations: comparison.leftDecorations, changedLines: comparison.leftChangedLines }
+    : null);
 }
 
 // ----------------------------------------------------
@@ -3854,19 +3605,25 @@ function showContextMenu(e, noteId = null, folderId = null) {
     ctxSelectAllBtn.style.display = "flex";
     ctxFindBtn.style.display = "flex";
     
-    const target = e.target.closest("textarea, input[type='text'], .markdown-preview");
+    // Checked first: a live-preview table widget also carries .markdown-preview.
+    const target = e.target.closest(".cm-editor") ??
+      e.target.closest("textarea, input[type='text'], .markdown-preview");
     if (!target) {
       hideContextMenu();
       return;
     }
     
     contextMenuTarget = target;
-    hasInsertMenu = target === editorTextarea || target === secondaryEditorTextarea;
+    contextMenuEditor = [primaryEditor, secondaryEditor].find(editor => editor.view.dom === target) ?? null;
+    hasInsertMenu = contextMenuEditor !== null;
     ctxInsertDivider.style.display = hasInsertMenu ? "block" : "none";
     ctxInsertGroup.style.display = hasInsertMenu ? "block" : "none";
     
     let hasSelection = false;
-    if (target.tagName === "TEXTAREA" || target.tagName === "INPUT") {
+    if (contextMenuEditor) {
+      const { start, end } = contextMenuEditor.getSelection();
+      hasSelection = start !== end;
+    } else if (target.tagName === "TEXTAREA" || target.tagName === "INPUT") {
       hasSelection = target.selectionStart !== target.selectionEnd;
     } else {
       hasSelection = Boolean(window.getSelection().toString());
@@ -3908,27 +3665,31 @@ function hideContextMenu() {
 }
 
 function handleContextInsert(templateName) {
-  const target = contextMenuTarget;
-  if (target !== editorTextarea && target !== secondaryEditorTextarea) return;
+  const editor = contextMenuEditor;
+  if (!editor) return;
 
-  const edit = getMarkdownTemplateEdit(
-    target.value,
-    target.selectionStart,
-    target.selectionEnd,
-    templateName
-  );
+  const { start, end } = editor.getSelection();
+  const edit = getMarkdownTemplateEdit(editor.getText(), start, end, templateName);
   if (!edit) return;
 
   hideContextMenu();
-  target.focus({ preventScroll: true });
-  applyEditorEdit(target, edit);
+  editor.focus();
+  editor.applyEdit(edit);
 }
 
 async function handleContextCut() {
   if (!contextMenuTarget) return;
   hideContextMenu();
   
-  if (contextMenuTarget.tagName === "TEXTAREA" || contextMenuTarget.tagName === "INPUT") {
+  if (contextMenuEditor) {
+    const editor = contextMenuEditor;
+    const { start, end } = editor.getSelection();
+    const text = editor.getText().slice(start, end);
+    if (text) {
+      await navigator.clipboard.writeText(text);
+      editor.replaceRange(start, end, "");
+    }
+  } else if (contextMenuTarget.tagName === "TEXTAREA" || contextMenuTarget.tagName === "INPUT") {
     const start = contextMenuTarget.selectionStart;
     const end = contextMenuTarget.selectionEnd;
     const text = contextMenuTarget.value.substring(start, end);
@@ -3946,7 +3707,10 @@ async function handleContextCopy() {
   hideContextMenu();
   
   let text = "";
-  if (contextMenuTarget.tagName === "TEXTAREA" || contextMenuTarget.tagName === "INPUT") {
+  if (contextMenuEditor) {
+    const { start, end } = contextMenuEditor.getSelection();
+    text = contextMenuEditor.getText().slice(start, end);
+  } else if (contextMenuTarget.tagName === "TEXTAREA" || contextMenuTarget.tagName === "INPUT") {
     text = contextMenuTarget.value.substring(contextMenuTarget.selectionStart, contextMenuTarget.selectionEnd);
   } else {
     text = window.getSelection().toString();
@@ -3963,7 +3727,10 @@ async function handleContextPaste() {
   
   try {
     const text = await navigator.clipboard.readText();
-    if (text && (contextMenuTarget.tagName === "TEXTAREA" || contextMenuTarget.tagName === "INPUT")) {
+    if (text && contextMenuEditor) {
+      const { start, end } = contextMenuEditor.getSelection();
+      contextMenuEditor.replaceRange(start, end, text);
+    } else if (text && (contextMenuTarget.tagName === "TEXTAREA" || contextMenuTarget.tagName === "INPUT")) {
       const start = contextMenuTarget.selectionStart;
       const end = contextMenuTarget.selectionEnd;
       contextMenuTarget.value = contextMenuTarget.value.substring(0, start) + text + contextMenuTarget.value.substring(end);
@@ -3979,7 +3746,10 @@ function handleContextSelectAll() {
   if (!contextMenuTarget) return;
   hideContextMenu();
   
-  if (contextMenuTarget.tagName === "TEXTAREA" || contextMenuTarget.tagName === "INPUT") {
+  if (contextMenuEditor) {
+    contextMenuEditor.focus();
+    contextMenuEditor.setSelection(0, contextMenuEditor.getText().length, { scroll: false });
+  } else if (contextMenuTarget.tagName === "TEXTAREA" || contextMenuTarget.tagName === "INPUT") {
     contextMenuTarget.select();
   }
 }
@@ -4076,8 +3846,8 @@ function resetNoteComparison() {
 function scheduleNoteComparisonRefresh() {
   if (!isCompareMode) return;
 
-  const leftText = editorTextarea.value;
-  const rightText = secondaryEditorTextarea.value;
+  const leftText = primaryEditor.getText();
+  const rightText = secondaryEditor.getText();
   if (noteComparisonMatches(leftText, rightText)) {
     cancelScheduledNoteComparison();
     syncCompareControl();
@@ -4099,8 +3869,8 @@ function scheduleNoteComparisonRefresh() {
 function redrawComparisonBackdrops({ forceComparison = false } = {}) {
   syncCompareControl();
   if (isCompareMode) {
-    const leftText = editorTextarea.value;
-    const rightText = secondaryEditorTextarea.value;
+    const leftText = primaryEditor.getText();
+    const rightText = secondaryEditor.getText();
     if (noteComparisonMatches(leftText, rightText)) {
       cancelScheduledNoteComparison();
     } else if (forceComparison || !isNoteComparisonPending) {
@@ -4176,10 +3946,8 @@ function toggleSplitNoteMode(forceState) {
     splitNoteBtn.classList.remove("active");
     compareNotesBtn.hidden = true;
     activePane = "primary";
-    editorTextarea.focus();
+    primaryEditor.focus();
   }
-
-  scheduleFindHighlightRedraw(220);
 }
 
 function openNoteInSecondaryPane(noteId) {
@@ -4193,7 +3961,7 @@ function openNoteInSecondaryPane(noteId) {
   }
   activePane = "secondary";
   setActivePane("secondary");
-  secondaryEditorTextarea.focus();
+  secondaryEditor.focus();
 }
 
 function populateSecondaryNoteSelect() {
@@ -4246,7 +4014,7 @@ function loadSecondaryNote() {
   cancelScheduledNoteComparison();
 
   secondaryNoteTitle.value = note.title;
-  secondaryEditorTextarea.value = note.content;
+  secondaryEditor.loadText(note.content);
 
   const compareStopped = syncCompareControl();
   updateSecondaryEditorBackdrop();
@@ -4257,16 +4025,14 @@ function loadSecondaryNote() {
   }
 }
 
-function handleSecondaryEditorInput() {
+function handleSecondaryEditorInput(text) {
   const note = notes.find(n => n.id === secondaryNoteId);
   if (!note) return;
 
-  note.content = secondaryEditorTextarea.value;
+  note.content = text;
   note.updatedAt = Date.now();
   scheduleMcpNoteUpdate(note.id);
-  updateCursorPositionForText(secondaryEditorTextarea);
   scheduleNoteComparisonRefresh();
-  secondaryEditorRenderScheduler.schedule();
 
   // Auto-rename if not locked
   if (!note.isTitleLocked) {
@@ -4290,9 +4056,6 @@ function handleSecondaryEditorInput() {
   clearTimeout(previewDebounceTimer);
   previewDebounceTimer = setTimeout(() => {
     updateSecondaryMarkdownPreview();
-    if (activePane === "secondary") {
-      updateWordCharCountForText(secondaryEditorTextarea);
-    }
   }, 150);
 }
 
@@ -4314,9 +4077,9 @@ function handleSecondaryTitleInput() {
 }
 
 function updateSecondaryMarkdownPreview() {
-  if (currentLayoutMode === "edit") return;
+  if (currentLayoutMode !== "reading") return;
   if (window.marked) {
-    secondaryMarkdownPreview.innerHTML = renderMarkdown(secondaryEditorTextarea.value);
+    secondaryMarkdownPreview.innerHTML = renderMarkdown(secondaryEditor.getText());
     highlightPreviewCode(secondaryMarkdownPreview, window.hljs, syntaxHighlightingEnabled);
   }
 }
@@ -4326,26 +4089,25 @@ function setActivePane(pane) {
   if (pane === "secondary") {
     primaryPaneWrapper.classList.remove("active-pane");
     secondaryPaneWrapper.classList.add("active-pane");
-    updateWordCharCountForText(secondaryEditorTextarea);
+    updateWordCharCountForText(secondaryEditor);
   } else {
     primaryPaneWrapper.classList.add("active-pane");
     secondaryPaneWrapper.classList.remove("active-pane");
-    updateWordCharCountForText(editorTextarea);
+    updateWordCharCountForText(primaryEditor);
   }
 }
 
-function updateWordCharCountForText(el) {
-  const text = el.value || "";
+function updateWordCharCountForText(editor) {
+  const text = editor.getText();
   const totalWords = text.trim() ? text.trim().split(/\s+/).filter(Boolean).length : 0;
   const totalChars = text.length;
   
   wordCharCount.textContent = `${totalWords} word${totalWords !== 1 ? 's' : ''} • ${totalChars} character${totalChars !== 1 ? 's' : ''}`;
-  updateCursorPositionForText(el);
+  updateCursorPositionForText(editor, text);
 
-  const start = el.selectionStart;
-  const end = el.selectionEnd;
+  const { start, end } = editor.getSelection();
   
-  if (start !== end && start !== undefined && end !== undefined) {
+  if (start !== end) {
     const selectedText = text.substring(start, end);
     const selectedWords = selectedText.trim() ? selectedText.trim().split(/\s+/).filter(Boolean).length : 0;
     const selectedChars = selectedText.length;
@@ -4357,13 +4119,9 @@ function updateWordCharCountForText(el) {
   }
 }
 
-function updateCursorPositionForText(el) {
-  const position = getCursorPosition(
-    el.value || "",
-    el.selectionStart ?? 0,
-    el.selectionEnd ?? el.selectionStart ?? 0,
-    el.selectionDirection || "none"
-  );
+function updateCursorPositionForText(editor, text = editor.getText()) {
+  const { start, end, direction } = editor.getSelection();
+  const position = getCursorPosition(text, start, end, direction);
 
   cursorPosition.textContent = `Ln ${position.line}, Col ${position.column}`;
   cursorPosition.title = `Line ${position.line}, column ${position.column}`;

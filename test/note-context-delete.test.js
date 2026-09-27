@@ -27,7 +27,7 @@ test("the note context menu deletes its target and stays separate from folder an
   assert.equal(document.getElementById("note-title").value, "One");
   assert.equal(document.getElementById("custom-context-menu").style.display, "none");
 
-  for (const target of [document.querySelector('.note-folder-header'), document.getElementById("editor-textarea")]) {
+  for (const target of [document.querySelector('.note-folder-header'), app.editor().contentDOM]) {
     open(target);
     assert.equal(button.style.display, "none");
     assert.equal(divider.style.display, "none");
@@ -40,5 +40,5 @@ test("the note context menu deletes its target and stays separate from folder an
   assert.equal(remaining.length, 1, "deleting the last note retains the existing blank-note fallback");
   assert.notEqual(remaining[0].id, "one");
   assert.equal(remaining[0].content, "");
-  assert.equal(document.getElementById("editor-textarea").value, "");
+  assert.equal(app.editorText(), "");
 });

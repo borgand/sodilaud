@@ -75,14 +75,43 @@ test("emphasis and links render with a data-href on the link text", async () => 
   } finally { t.done(); }
 });
 
+function setPlatform(t, platform) {
+  Object.defineProperty(t.env.window.navigator, "platform", { value: platform, configurable: true });
+}
+
 test("Cmd-mousedown on a link opens it, a plain mousedown does not", async () => {
   const t = await setup("[l](https://x.y)\nother");
+  setPlatform(t, "MacIntel");
   try {
     await t.caret(t.editor.getText().length);
     const link = t.view.contentDOM.querySelector(".cm-lp-link");
     t.mousedown(link);
     assert.deepEqual(t.opened, []);
     const event = t.mousedown(t.view.contentDOM.querySelector(".cm-lp-link"), { metaKey: true });
+    assert.deepEqual(t.opened, ["https://x.y"]);
+    assert.equal(event.defaultPrevented, true);
+  } finally { t.done(); }
+});
+
+test("on macOS Ctrl-click is a right-click, so only Cmd opens links", async () => {
+  const t = await setup("[l](https://x.y)\nother");
+  setPlatform(t, "MacIntel");
+  try {
+    await t.caret(t.editor.getText().length);
+    const event = t.mousedown(t.view.contentDOM.querySelector(".cm-lp-link"), { ctrlKey: true });
+    assert.deepEqual(t.opened, []);
+    assert.equal(event.defaultPrevented, false);
+  } finally { t.done(); }
+});
+
+test("off macOS Ctrl-click opens links and Meta-click does not", async () => {
+  const t = await setup("[l](https://x.y)\nother");
+  setPlatform(t, "Win32");
+  try {
+    await t.caret(t.editor.getText().length);
+    t.mousedown(t.view.contentDOM.querySelector(".cm-lp-link"), { metaKey: true });
+    assert.deepEqual(t.opened, []);
+    const event = t.mousedown(t.view.contentDOM.querySelector(".cm-lp-link"), { ctrlKey: true });
     assert.deepEqual(t.opened, ["https://x.y"]);
     assert.equal(event.defaultPrevented, true);
   } finally { t.done(); }

@@ -78,9 +78,11 @@ test("agent access shares the live collection and can be turned off", async () =
   assert.equal(document.getElementById("mcp-config-args").value, "");
   assert.equal(document.getElementById("mcp-config-example-code").textContent, "");
 
-  const editor = document.getElementById("editor-textarea");
-  editor.value = "Unsaved agent-visible body";
-  editor.dispatchEvent(new app.dom.window.Event("input"));
+  const editor = app.editor();
+  editor.dispatch({
+    changes: { from: 0, to: editor.state.doc.length, insert: "Unsaved agent-visible body" },
+    userEvent: "input.type"
+  });
   await settle(100);
 
   const noteUpdate = app.invocations.findLast(({ command }) => command === "update_mcp_note");

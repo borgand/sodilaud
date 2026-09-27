@@ -410,13 +410,24 @@ function eventElement(event) {
   return target && target.nodeType === 1 ? target : target?.parentElement ?? null;
 }
 
+function isMacNavigator(nav) {
+  const platform = nav?.userAgentData?.platform || nav?.platform || nav?.userAgent || "";
+  return /mac|iphone|ipad|ipod/i.test(platform);
+}
+
+// macOS turns Ctrl-click into a right-click, so the link modifier is Cmd there.
+function isOpenLinkClick(event, view) {
+  const nav = view.dom.ownerDocument.defaultView?.navigator ?? globalThis.navigator;
+  return isMacNavigator(nav) ? event.metaKey : event.ctrlKey;
+}
+
 /**
  * Obsidian-style live preview: Markdown syntax is hidden and rendered inline,
  * except on lines the selection touches while the editor has focus. Inert
  * unless the mode facet is "live".
  *
  * @param {object} [options]
- * @param {(href: string) => void} [options.onOpenLink] called on Cmd/Ctrl-click of a link
+ * @param {(href: string) => void} [options.onOpenLink] called on Cmd-click (Ctrl-click off macOS) of a link
  */
 export function livePreview({ onOpenLink } = {}) {
   const handlers = EditorView.domEventHandlers({
@@ -440,7 +451,7 @@ export function livePreview({ onOpenLink } = {}) {
         return true;
       }
 
-      if (event.metaKey || event.ctrlKey) {
+      if (isOpenLinkClick(event, view)) {
         const link = element.closest(".cm-lp-link");
         if (link) {
           event.preventDefault();
