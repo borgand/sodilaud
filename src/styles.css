@@ -785,7 +785,8 @@ body {
   align-items: center;
   column-gap: 1px;
   flex: 0 1 auto;
-  min-width: 0;
+  /* One button plus padding and border, so the More button always stays reachable. */
+  min-width: 36px;
   overflow: hidden;
   background-color: var(--bg-input);
   padding: 3px;

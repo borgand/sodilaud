@@ -1888,6 +1888,7 @@ function handleFormatControlClick(event) {
   }
   if (!button.dataset.format) return;
   closeFormatMenus();
+  toggleActionsDropdown(false);
   applyToolbarFormat(button.dataset.format);
 }
 
@@ -1904,7 +1905,9 @@ function handleFormatMenuKeydown(entry, event) {
     setFormatMenuOpen(entry, false);
     entry.trigger.focus();
   } else if (event.key === "Tab") {
+    // The menus sit after the toolbar in the DOM, so Tab continues from the trigger.
     setFormatMenuOpen(entry, false);
+    entry.trigger.focus();
   }
 }
 

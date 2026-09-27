@@ -93,6 +93,29 @@ test("Bold wraps the primary selection, keeps it, and refocuses the editor", () 
   }
 });
 
+test("a format button closes the Sodilaud menu", () => {
+  load("primary", "word", 0, 4);
+  const actions = document.getElementById("actions-btn");
+  actions.click();
+  assert.equal(actions.getAttribute("aria-expanded"), "true");
+  press("format-italic");
+  assert.equal(app.editorText("primary"), "*word*");
+  assert.equal(actions.getAttribute("aria-expanded"), "false");
+  assert.equal(document.getElementById("actions-dropdown-content").classList.contains("show"), false);
+});
+
+test("Tab from an open format menu closes it and continues from its trigger", () => {
+  const trigger = document.getElementById("format-heading-btn");
+  trigger.focus();
+  trigger.click();
+  assert.equal(document.activeElement.id, "format-heading-1");
+  const tab = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+  document.activeElement.dispatchEvent(tab);
+  assert.equal(document.getElementById("format-heading-menu").hidden, true);
+  assert.equal(document.activeElement.id, "format-heading-btn");
+  assert.equal(tab.defaultPrevented, false);
+});
+
 test("the heading menu sets H2", () => {
   load("primary", "Title\nbody", 2);
   const trigger = document.getElementById("format-heading-btn");
