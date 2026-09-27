@@ -71,6 +71,10 @@ const diffLineMarkers = {
 };
 
 const emptyLineMarkers = new RangeSetBuilder().finish();
+
+// Alt+Up/Down belongs to the app (note move); editor-commands handles list moves.
+const appOwnedKeys = new Set(["Alt-ArrowUp", "Alt-ArrowDown", "Shift-Alt-ArrowUp", "Shift-Alt-ArrowDown"]);
+const baseKeymap = defaultKeymap.filter(binding => !appOwnedKeys.has(binding.key));
 const findMatchMark = Decoration.mark({ class: "cm-find-match" });
 const findActiveMark = Decoration.mark({ class: "cm-find-match cm-find-active" });
 
@@ -223,7 +227,7 @@ export function createMarkdownEditor(options) {
       history(),
       drawSelection(),
       EditorView.lineWrapping,
-      keymap.of([...historyKeymap, ...defaultKeymap]),
+      keymap.of([...historyKeymap, ...baseKeymap]),
       options.placeholder ? placeholder(options.placeholder) : [],
       EditorView.contentAttributes.of({
         "aria-label": ariaLabel,
@@ -320,10 +324,13 @@ export function createMarkdownEditor(options) {
   }
 
   function setDiff(nextDiff) {
+    const hadGutter = showLineNumbers || diff !== null;
     diff = nextDiff ?? null;
-    view.dispatch({
-      effects: [setDiffEffect.of(diff), gutterCompartment.reconfigure(gutterExtension())]
-    });
+    const effects = [setDiffEffect.of(diff)];
+    if (hadGutter !== (showLineNumbers || diff !== null)) {
+      effects.push(gutterCompartment.reconfigure(gutterExtension()));
+    }
+    view.dispatch({ effects });
   }
 
   function scrollToRange(start, end) {

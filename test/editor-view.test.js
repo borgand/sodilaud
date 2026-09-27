@@ -67,8 +67,48 @@ test("setText appends externally, keeps the selection, and is not undoable", asy
     const { start, end } = t.editor.getSelection();
     assert.deepEqual({ start, end }, { start: 0, end: 5 });
     assert.deepEqual(t.changes, []);
-    t.undo(t.editor.view);
+  } finally { t.done(); }
+});
+
+test("undo after a user edit and an external append removes only the user edit", async () => {
+  const t = await setup();
+  try {
+    t.editor.loadText("hello world");
+    t.editor.view.dispatch({ changes: { from: 0, insert: "> " }, userEvent: "input.type" });
+    t.editor.setText("> hello world\nappended");
+    assert.equal(t.undo(t.editor.view), true);
     assert.equal(t.editor.getText(), "hello world\nappended");
+    assert.equal(t.undo(t.editor.view), false);
+  } finally { t.done(); }
+});
+
+test("setDiff reconfigures the gutter only when its visibility changes", async () => {
+  const { EditorView } = await import("../src/vendor/codemirror.js");
+  let reconfigures = 0;
+  const t = await setup({
+    lineNumbers: false,
+    extensions: [EditorView.updateListener.of(update => {
+      reconfigures += update.transactions.filter(tr => tr.reconfigured).length;
+    })]
+  });
+  try {
+    t.editor.loadText("a\nb");
+    const diff = { decorations: [], changedLines: [0] };
+    t.editor.setDiff(null);
+    assert.equal(reconfigures, 0);
+    t.editor.setDiff(diff);
+    assert.equal(reconfigures, 1);
+    t.editor.setDiff(diff);
+    assert.equal(reconfigures, 1);
+    assert.ok(t.editor.view.dom.querySelector(".cm-gutterElement.cm-diff-line-added"));
+    t.editor.setDiff(null);
+    assert.equal(reconfigures, 2);
+    t.editor.setLineNumbers(true);
+    assert.equal(reconfigures, 3);
+    t.editor.setDiff(diff);
+    t.editor.setDiff(null);
+    assert.equal(reconfigures, 3);
+    assert.ok(t.editor.view.dom.querySelector(".cm-lineNumbers"));
   } finally { t.done(); }
 });
 

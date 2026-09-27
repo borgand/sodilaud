@@ -180,6 +180,32 @@ test("Alt+Arrow that moves nothing still reaches document-level shortcuts", asyn
   } finally { t.done(); }
 });
 
+for (const shiftKey of [false, true]) {
+  for (const key of ["ArrowDown", "ArrowUp"]) {
+    test(`${shiftKey ? "Shift+" : ""}Alt+${key} on a non-list line leaves a multi-line note unchanged and reaches the app shortcut`, async () => {
+      const t = await setup();
+      try {
+        const text = "alpha\nbeta\ngamma";
+        t.editor.loadText(text);
+        t.editor.setSelection(7, 7);
+
+        let seenByDocument = false;
+        const onDocumentKeydown = () => { seenByDocument = true; };
+        t.env.document.addEventListener("keydown", onDocumentKeydown);
+        try {
+          const event = dispatchKey(t, { key, altKey: true, shiftKey });
+          assert.equal(event.defaultPrevented, false);
+          assert.equal(seenByDocument, true);
+          assert.equal(t.editor.getText(), text);
+          assert.deepEqual(t.changes, []);
+        } finally {
+          t.env.document.removeEventListener("keydown", onDocumentKeydown);
+        }
+      } finally { t.done(); }
+    });
+  }
+}
+
 test("Home toggles between the list content start and the true line start like getHomePosition", async () => {
   const t = await setup();
   try {

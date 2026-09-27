@@ -62,8 +62,14 @@ test("appending uses live revisions, preserves selection, and retries failed sav
   assert.equal(snapshot().noteRevisions.n, result.revision);
   assert.equal((await send(args)).revision, result.revision);
   assert.equal(text().match(/Appended/g).length, 1);
-  undo(view);
-  assert.equal(text(), "Original text\n\nAppended 📝", "undo does not remove the agent's text");
+
+  view.dispatch({ changes: { from: 0, insert: "Typed " }, userEvent: "input.type" });
+  await settle(100);
+  const afterTyping = await send({ ...args, requestId: "after-typing", expectedRevision: app.invocations.findLast(i => i.command === "update_mcp_note").args.revision, content: "\nAgent line" });
+  assert.equal(afterTyping.ok, true, afterTyping.error);
+  assert.equal(text(), "Typed Original text\n\nAppended 📝\nAgent line");
+  assert.equal(undo(view), true);
+  assert.equal(text(), "Original text\n\nAppended 📝\nAgent line", "undo removes the user edit and keeps the agent's text");
 
   // Conflict against typing before its 50ms MCP snapshot debounce has fired.
   typeAtEnd("\nUnsaved typing");
