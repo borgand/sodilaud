@@ -6,6 +6,7 @@ import {
   getIndentColumns,
   getLineEnd,
   getLineStart,
+  isInsideFencedCode,
   parseListLine
 } from "./editor-context.js";
 import { getMarkdownTemplateEdit } from "./markdown-insert.js";
@@ -85,11 +86,22 @@ function getInlineRangeEdit(value, start, end, marker) {
   );
 }
 
-function getInlineEdit(value, start, end, marker) {
+// Whitespace at the selection edges (a triple-clicked line ends with its line
+// break) stays outside the marks. A whitespace-only selection acts like a caret.
+function trimSelection(value, start, end) {
+  let from = start;
+  let to = end;
+  while (from < to && /\s/.test(value[from])) from += 1;
+  while (to > from && /\s/.test(value[to - 1])) to -= 1;
+  return from === to ? [start, start] : [from, to];
+}
+
+function getInlineEdit(value, selectionStart, selectionEnd, marker) {
+  const [start, end] = trimSelection(value, selectionStart, selectionEnd);
   if (start !== end) return getInlineRangeEdit(value, start, end, marker);
 
   const isWord = index => WORD_CHARACTER.test(value[index] ?? "");
-  if (!isWord(start - 1) || !isWord(start)) {
+  if (!isWord(start - 1) && !isWord(start)) {
     return getInlineRangeEdit(value, start, start, marker);
   }
 
@@ -110,20 +122,15 @@ function findLinkAround(value, start, end) {
     const to = from + match[0].length;
     if (value[from - 1] === "!") continue;
     const inside = start === end ? from < start && start < to : from <= start && end <= to;
-    if (inside) return { from, to, text: match[1] };
+    if (inside) return { from, url: from + match[1].length + 3, to };
   }
   return null;
 }
 
-function getLinkEdit(value, start, end) {
+function getLinkEdit(value, selectionStart, selectionEnd) {
+  const [start, end] = trimSelection(value, selectionStart, selectionEnd);
   const link = findLinkAround(value, start, end);
-  if (link) {
-    return edit(
-      value.slice(0, link.from) + link.text + value.slice(link.to),
-      link.from,
-      link.from + link.text.length
-    );
-  }
+  if (link) return edit(value, link.url, link.to - 1);
 
   if (start === end) return getMarkdownTemplateEdit(value, start, end, "link");
 
@@ -183,10 +190,12 @@ function applyLineChanges(value, start, end, { from, to, lines }, changes) {
   return edit(value.slice(0, from) + texts.join("\n") + value.slice(to), selectionStart, selectionEnd);
 }
 
+// On a list line the heading goes after the list marker: "- ## item".
 function parseHeading(text) {
-  const container = getBlockquotePrefix(text);
+  const list = parseListLine(text);
+  const container = list ? text.slice(0, list.contentStart) : getBlockquotePrefix(text);
   const rest = text.slice(container.length);
-  const lead = rest.match(/^ {0,3}/)[0];
+  const lead = list ? "" : rest.match(/^ {0,3}/)[0];
   const match = rest.slice(lead.length).match(HEADING_PREFIX);
   return {
     at: container.length + lead.length,
@@ -283,7 +292,10 @@ function isClosingFence(line, opener) {
 }
 
 function getCodeBlockEdit(value, start, end) {
-  if (start === end) return getMarkdownTemplateEdit(value, start, end, "code-block");
+  if (start === end) {
+    if (isInsideFencedCode(value, start)) return null;
+    return getMarkdownTemplateEdit(value, start, end, "code-block");
+  }
 
   const { from, to, lines } = getSelectedLines(value, start, end);
   const first = lines[0].text;
@@ -297,7 +309,8 @@ function getCodeBlockEdit(value, start, end) {
     return edit(value.slice(0, from) + inner + value.slice(to), from, from + inner.length);
   }
 
-  if (from > 0 && to < value.length && getFenceStateBeforeLine(value, from)) {
+  const insideFence = from > 0 && getFenceStateBeforeLine(value, from);
+  if (insideFence && to < value.length) {
     const openerStart = getLineStart(value, from - 1);
     const opener = value.slice(openerStart, from - 1).match(FENCE_OPEN);
     const closerEnd = getLineEnd(value, to + 1);
@@ -310,6 +323,8 @@ function getCodeBlockEdit(value, start, end) {
       );
     }
   }
+
+  if (insideFence) return null;
 
   const content = value.slice(from, to);
   const longestRun = Math.max(0, ...[...content.matchAll(/^ {0,3}(`{3,})/gm)].map(match => match[1].length));
@@ -347,7 +362,8 @@ export function getFormatEdit(value, selectionStart, selectionEnd, actionId) {
   if (actionId === "quote") return getQuoteEdit(source, start, end);
   if (actionId === "code-block") return getCodeBlockEdit(source, start, end);
   if (actionId === "table" || actionId === "horizontal-rule") {
-    return getMarkdownTemplateEdit(source, start, end, actionId);
+    const at = start === end ? start : getSelectedLines(source, start, end).to;
+    return getMarkdownTemplateEdit(source, at, at, actionId);
   }
   return null;
 }

@@ -62,8 +62,24 @@ for (const [id, marker] of inlineMarks) {
 
   test(`${id} inserts an empty marker pair outside a word and removes it again`, () => {
     assert.equal(format("a ‸", id), `a ${marker}‸${marker}`);
-    assert.equal(format("word‸ next", id), `word${marker}‸${marker} next`);
+    assert.equal(format("a ‸ b", id), `a ${marker}‸${marker} b`);
     assert.equal(format(`a ${marker}‸${marker}`, id), "a ‸");
+  });
+
+  test(`${id} acts on the word when the caret sits at its edge`, () => {
+    assert.equal(format("hello‸ world", id), `${marker}hello‸${marker} world`);
+    assert.equal(format("say ‸hello", id), `say ${marker}‸hello${marker}`);
+    assert.equal(format(`${marker}‸bold${marker} x`, id), "‸bold x");
+    assert.equal(format(`x ${marker}bold‸${marker}`, id), "x bold‸");
+  });
+
+  test(`${id} keeps whitespace and line breaks at the selection edges outside the marks`, () => {
+    assert.equal(format("«line one\n»next", id), `${marker}«line one»${marker}\nnext`);
+    assert.equal(format("a «word »b", id), `a ${marker}«word»${marker} b`);
+    assert.equal(format("a« word» b", id), `a ${marker}«word»${marker} b`);
+    assert.equal(format(`«${marker}line${marker}\n»next`, id), "«line»\nnext");
+    assert.equal(format("«\n»next", id), `${marker}‸${marker}\nnext`);
+    assert.equal(format("a « » b", id), `a ${marker}‸${marker}  b`);
   });
 }
 
@@ -76,9 +92,19 @@ test("italic and bold tell single and double asterisks apart", () => {
 
 test("link wraps a selection and selects the url", () => {
   assert.equal(format("see «docs» now", "link"), "see [docs](«url») now");
-  assert.equal(format("see [docs](«url») now", "link"), "see «docs» now");
-  assert.equal(format("see «[docs](https://a.b)» now", "link"), "see «docs» now");
-  assert.equal(format("see [do‸cs](https://a.b) now", "link"), "see «docs» now");
+});
+
+test("link inside an existing link selects its url", () => {
+  assert.equal(format("see [docs](«url») now", "link"), "see [docs](«url») now");
+  assert.equal(format("see «[docs](https://a.b)» now", "link"), "see [docs](«https://a.b») now");
+  assert.equal(format("see [do‸cs](https://a.b) now", "link"), "see [docs](«https://a.b») now");
+  assert.equal(format("see [docs](https://‸a.b) now", "link"), "see [docs](«https://a.b») now");
+});
+
+test("link keeps whitespace and line breaks at the selection edges outside the link", () => {
+  assert.equal(format("«line one\n»next", "link"), "[line one](«url»)\nnext");
+  assert.equal(format("a «word »b", "link"), "a [word](«url») b");
+  assert.equal(format("«\n»next", "link"), render(getMarkdownTemplateEdit("\nnext", 0, 0, "link")));
 });
 
 test("link with an empty selection inserts the link template", () => {
@@ -96,6 +122,16 @@ test("heading sets, changes and removes the level", () => {
   assert.equal(format("# «title»", "heading-3"), "### «title»");
   assert.equal(format("x\n‸title", "heading-6"), "x\n###### ‸title");
   assert.equal(format("> ‸quoted", "heading-1"), "> # ‸quoted");
+});
+
+test("heading on a list line goes after the list marker", () => {
+  assert.equal(format("- ‸item", "heading-2"), "- ## ‸item");
+  assert.equal(format("- ## ‸item", "heading-2"), "- ‸item");
+  assert.equal(format("- # ‸item", "heading-3"), "- ### ‸item");
+  assert.equal(format("- ## ‸item", "paragraph"), "- ‸item");
+  assert.equal(format("- [ ] ‸task", "heading-1"), "- [ ] # ‸task");
+  assert.equal(format("1. ‸x", "heading-3"), "1. ### ‸x");
+  assert.equal(format("> - ‸q", "heading-1"), "> - # ‸q");
 });
 
 test("heading applies per line across a selection and skips blank lines", () => {
@@ -159,9 +195,21 @@ test("code block wraps the selected lines in a fence and unwraps it", () => {
   assert.equal(format("«a\n```js\nb\n```»", "code-block"), "````\n«a\n```js\nb\n```»\n````");
 });
 
+test("code block inside an existing fence does nothing", () => {
+  assert.equal(format("x\n```\n«a»\nb\nc\n```\ny", "code-block"), null);
+  assert.equal(format("```\na‸\nb\n```", "code-block"), null);
+});
+
 test("table inserts the table template", () => {
   const expected = getMarkdownTemplateEdit("x", 1, 1, "table");
   assert.equal(format("x‸", "table"), render(expected));
+});
+
+test("table and horizontal rule insert after the selected lines and keep the selection text", () => {
+  const value = "a\nkeep this\nnext";
+  assert.equal(format("a\n«keep» this\nnext", "table"), render(getMarkdownTemplateEdit(value, 11, 11, "table")));
+  assert.equal(format("«keep» this", "horizontal-rule"), "keep this\n\n---\n‸");
+  assert.equal(format("«a\nb»\nc", "horizontal-rule"), "a\nb\n\n---\n‸\nc");
 });
 
 test("horizontal rule sits on its own paragraph so it never makes a heading", () => {
@@ -173,12 +221,11 @@ test("horizontal rule sits on its own paragraph so it never makes a heading", ()
 });
 
 const roundTrips = [
-  ["bold", ["a «word» b", "say hel‸lo", "a ‸", "«**x**»"]],
+  ["bold", ["a «word» b", "say hel‸lo", "a ‸", "«**x**»", "«line one\n»next", "hello‸ world"]],
   ["italic", ["a «word» b", "say hel‸lo", "a ‸", "**«x»**"]],
   ["strikethrough", ["a «word» b", "say hel‸lo", "a ‸"]],
   ["code", ["a «word» b", "say hel‸lo", "a ‸"]],
-  ["link", ["see «docs» now"]],
-  ...[1, 2, 3, 4, 5, 6].map(level => [`heading-${level}`, ["‸title", "«one\n\n  two»", "> ‸q"]]),
+  ...[1, 2, 3, 4, 5, 6].map(level => [`heading-${level}`, ["‸title", "«one\n\n  two»", "> ‸q", "- ‸item"]]),
   ["bullet-list", ["‸a", "«one\n\n  two\nthree»", "> ‸q"]],
   ["numbered-list", ["‸a", "«one\n\n  two\nthree»"]],
   ["task-list", ["‸a", "«one\n\n  two\nthree»"]],
