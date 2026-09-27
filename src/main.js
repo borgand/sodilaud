@@ -3835,6 +3835,7 @@ function scheduleNoteComparisonRefresh() {
   if (noteComparisonMatches(leftText, rightText)) {
     cancelScheduledNoteComparison();
     syncCompareControl();
+    renderComparisonDecorations();
     return;
   }
 

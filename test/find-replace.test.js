@@ -71,3 +71,50 @@ test("Replace and Replace All preserve offsets and undo in one step", async () =
   assert.equal(app.editorText(), ORIGINAL_CONTENT);
   assert.equal(document.getElementById("find-count").textContent, "1 of 2");
 });
+
+test("each Replace is its own undo step, even right after typing or another Replace", async () => {
+  const app = await bootApp({
+    instance: 2,
+    storage: {
+      sodilaud_notes: [{
+        id: "note-one",
+        title: "Travel",
+        content: "Book it",
+        updatedAt: 1,
+        isTitleLocked: true
+      }]
+    },
+    handlers: { load_workspace_preference: () => null }
+  });
+  const { document, Event, KeyboardEvent } = app.dom.window;
+  const view = app.editor();
+
+  document.dispatchEvent(new KeyboardEvent("keydown", { key: "f", ctrlKey: true, bubbles: true }));
+  document.getElementById("find-toggle-replace").click();
+  const findInput = document.getElementById("find-input");
+  findInput.value = "now";
+  findInput.dispatchEvent(new Event("input", { bubbles: true }));
+  document.getElementById("replace-input").value = "later";
+
+  view.dispatch({ changes: { from: view.state.doc.length, insert: " now" }, userEvent: "input.type" });
+  assert.equal(app.editorText(), "Book it now");
+  assert.equal(document.getElementById("find-count").textContent, "1 of 1");
+  document.getElementById("replace-one-btn").click();
+  assert.equal(app.editorText(), "Book it later");
+
+  findInput.value = "o";
+  findInput.dispatchEvent(new Event("input", { bubbles: true }));
+  document.getElementById("replace-input").value = "0";
+  document.getElementById("replace-one-btn").click();
+  document.getElementById("replace-one-btn").click();
+  assert.equal(app.editorText(), "B00k it later");
+
+  assert.equal(undo(view), true);
+  assert.equal(app.editorText(), "B0ok it later");
+  assert.equal(undo(view), true);
+  assert.equal(app.editorText(), "Book it later");
+  assert.equal(undo(view), true);
+  assert.equal(app.editorText(), "Book it now");
+  assert.equal(undo(view), true);
+  assert.equal(app.editorText(), "Book it");
+});

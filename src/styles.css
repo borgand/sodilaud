@@ -1294,9 +1294,13 @@ button.view-setting-value:hover {
   border-left-color: var(--editor-text);
 }
 
-/* Compare keeps the gutter as a change rail while line numbers are off, so
-   only the rail shows, not the numbers. */
+/* Compare keeps the gutter as a change rail while line numbers are off. The
+   digits collapse (the gutter sizes itself from them) so only a narrow rail
+   shows and the text barely moves when compare turns on. */
 html:not(.editor-line-numbers-enabled) .app-container.compare-mode .editor-host .cm-editor .cm-lineNumbers .cm-gutterElement {
+  min-width: 0;
+  padding: 0 0 0 4px;
+  font-size: 0;
   color: transparent;
 }
 

@@ -270,3 +270,36 @@ test("closing compare cancels a pending comparison", async () => {
   assert.equal(document.querySelectorAll(".diff-line-removed, .diff-line-added").length, 0);
   assert.equal(document.querySelectorAll(".cm-diff-line-removed, .cm-diff-line-added").length, 0);
 });
+
+test("reverting an edit inside the compare debounce restores the diff marks", async () => {
+  const app = await bootApp({
+    instance: 8,
+    storage: {
+      sodilaud_notes: [
+        { ...NOTES[0], content: "Shared\nLeft wording" },
+        { ...NOTES[1], content: "Shared\nRight wording" }
+      ]
+    },
+    handlers: { load_workspace_preference: () => null }
+  });
+  const { document } = app.dom.window;
+  const primary = document.getElementById("editor-host");
+  const secondary = document.getElementById("secondary-editor-host");
+  const count = document.getElementById("compare-notes-count");
+
+  document.getElementById("split-note-btn").click();
+  document.getElementById("compare-notes-btn").click();
+  assert.equal(count.textContent, "1 changed line");
+  assert.ok(primary.querySelectorAll(".diff-line-removed").length > 0);
+
+  typeInto(app, "primary", "Shared\nLeft wordingX");
+  assert.equal(count.textContent, "Updating comparison…");
+  typeInto(app, "primary", "Shared\nLeft wording");
+  await settle(180);
+
+  assert.equal(count.textContent, "1 changed line");
+  assert.ok(primary.querySelectorAll(".diff-line-removed").length > 0);
+  assert.ok(secondary.querySelectorAll(".diff-line-added").length > 0);
+  assert.deepEqual(texts(primary, ".cm-gutterElement.cm-diff-line-removed"), ["2"]);
+  assert.deepEqual(texts(secondary, ".cm-gutterElement.cm-diff-line-added"), ["2"]);
+});
