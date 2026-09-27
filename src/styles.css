@@ -737,7 +737,7 @@ body {
   align-items: center;
   gap: 12px;
   flex: 1;
-  min-width: 120px;
+  min-width: 226px;
   max-width: 40%;
 }
 
@@ -774,22 +774,18 @@ body {
   gap: 8px;
   flex: 0 1 auto;
   min-width: 0;
-  margin: 0 12px;
+  margin: 0 8px;
 }
 
-/* One visible row: buttons that do not fit wrap onto a clipped second row
-   instead of overlapping the title or the mode buttons. */
+/* Shrinks before the title does; main.js moves buttons that do not fit into
+   the More formatting menu, and overflow: hidden only covers a resize in flight. */
 .format-controls {
   box-sizing: border-box;
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  align-content: flex-start;
-  row-gap: 12px;
   column-gap: 1px;
   flex: 0 1 auto;
   min-width: 0;
-  height: 38px;
   overflow: hidden;
   background-color: var(--bg-input);
   padding: 3px;
@@ -812,6 +808,11 @@ body {
   font-family: var(--font-sans);
   cursor: pointer;
   transition: background-color 0.15s, color 0.15s;
+}
+
+.format-btn[hidden],
+.format-separator[hidden] {
+  display: none;
 }
 
 .format-btn:hover:not(:disabled) {
@@ -865,10 +866,12 @@ body {
   background-color: var(--border-color);
 }
 
-.format-heading-menu {
+.format-menu {
   position: absolute;
   top: 100%;
   margin-top: 6px;
+  max-height: calc(100vh - var(--topbar-height) - 16px);
+  overflow-y: auto;
   min-width: 170px;
   padding: 4px;
   font-family: var(--font-sans);
@@ -879,8 +882,23 @@ body {
   z-index: 100;
 }
 
-.format-heading-menu[hidden] {
+.format-menu[hidden] {
   display: none;
+}
+
+.format-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  min-height: 32px;
+  padding: 4px 12px;
+  white-space: nowrap;
+}
+
+.format-menu-shortcut {
+  color: var(--text-muted);
+  font-size: 0.76rem;
 }
 
 .format-heading-item {
@@ -915,11 +933,19 @@ body {
   font-family: var(--font-sans);
   font-size: 0.85rem;
   font-weight: 500;
-  padding: 6px 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 9px;
   border-radius: 6px;
   cursor: pointer;
   color: var(--text-secondary);
   transition: background-color 0.15s, color 0.15s;
+}
+
+.layout-btn svg {
+  width: 17px;
+  height: 17px;
 }
 
 .layout-btn:hover {
@@ -1248,6 +1274,12 @@ button.view-setting-value:hover {
 
 .app-container.dual-note-active .layout-controls {
   display: none;
+}
+
+/* The title lives in the pane header in split view, so the top bar only keeps the sidebar button. */
+.app-container.dual-note-active .topbar-left {
+  flex: 0 0 auto;
+  min-width: 0;
 }
 
 /* Split Drop Overlay */
@@ -3100,7 +3132,7 @@ kbd {
 }
 
 :root[data-theme-style="windows-classic"] .dropdown-content,
-:root[data-theme-style="windows-classic"] .format-heading-menu,
+:root[data-theme-style="windows-classic"] .format-menu,
 :root[data-theme-style="windows-classic"] .custom-context-menu,
 :root[data-theme-style="windows-classic"] .help-modal {
   border: 2px solid;

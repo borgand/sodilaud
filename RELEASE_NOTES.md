@@ -25,8 +25,9 @@ This release adds clipboard history on macOS and completes the rename from Scrat
   `Cmd/Ctrl+Shift+7`, `8`, and `9` numbered, bullet, and task lists, `Cmd/Ctrl+Shift+.` quote, and
   `Cmd/Ctrl+Alt+C` code block. Marks, headings, lists, and quotes toggle off when applied again.
 - Adds a formatting button group left of the Live, Source, and Reading buttons, with a heading menu
-  and table and horizontal-rule buttons. It acts on the pane you last worked in and is unavailable
-  in Reading mode.
+  and table and horizontal-rule buttons. Buttons that do not fit move into a "»" menu. It acts on
+  the pane you last worked in and is unavailable in Reading mode. The Live, Source, and Reading
+  buttons are now compact icons.
 - **Changed shortcut:** Toggle Sidebar moves from `Cmd/Ctrl+B` to `Ctrl+Cmd+S` on macOS
   (`Ctrl+Alt+S` on Windows and Linux), because `Cmd/Ctrl+B` now makes text bold.
 
