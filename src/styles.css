@@ -737,6 +737,7 @@ body {
   align-items: center;
   gap: 12px;
   flex: 1;
+  min-width: 120px;
   max-width: 40%;
 }
 
@@ -762,8 +763,146 @@ body {
   border-bottom-color: var(--accent-color);
 }
 
+.topbar-left .note-title-input {
+  min-width: 0;
+}
+
+.topbar-center {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 1 auto;
+  min-width: 0;
+  margin: 0 12px;
+}
+
+/* One visible row: buttons that do not fit wrap onto a clipped second row
+   instead of overlapping the title or the mode buttons. */
+.format-controls {
+  box-sizing: border-box;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  align-content: flex-start;
+  row-gap: 12px;
+  column-gap: 1px;
+  flex: 0 1 auto;
+  min-width: 0;
+  height: 38px;
+  overflow: hidden;
+  background-color: var(--bg-input);
+  padding: 3px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+}
+
+.format-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  min-width: 28px;
+  height: 30px;
+  padding: 0 4px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.format-btn:hover:not(:disabled) {
+  background-color: var(--bg-sidebar);
+  color: var(--text-primary);
+}
+
+.format-btn:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.format-btn svg {
+  width: 17px;
+  height: 17px;
+}
+
+.format-glyph {
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.format-glyph-bold {
+  font-weight: 700;
+}
+
+.format-glyph-italic {
+  font-family: Georgia, "Times New Roman", serif;
+  font-style: italic;
+  font-weight: 600;
+}
+
+.format-glyph-strike {
+  text-decoration: line-through;
+}
+
+.format-heading-btn {
+  gap: 1px;
+}
+
+.format-heading-btn .format-caret {
+  width: 11px;
+  height: 11px;
+}
+
+.format-separator {
+  flex-shrink: 0;
+  width: 1px;
+  height: 18px;
+  margin: 0 4px;
+  background-color: var(--border-color);
+}
+
+.format-heading-menu {
+  position: absolute;
+  top: 100%;
+  margin-top: 6px;
+  min-width: 170px;
+  padding: 4px;
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  background-color: var(--dropdown-bg);
+  border-radius: 8px;
+  box-shadow: var(--dropdown-shadow);
+  z-index: 100;
+}
+
+.format-heading-menu[hidden] {
+  display: none;
+}
+
+.format-heading-item {
+  display: block;
+  min-height: 32px;
+  padding: 4px 12px;
+}
+
+.format-heading-sample {
+  font-weight: 600;
+}
+
+.format-heading-sample-1 { font-size: 1.3rem; }
+.format-heading-sample-2 { font-size: 1.15rem; }
+.format-heading-sample-3 { font-size: 1.02rem; }
+.format-heading-sample-4 { font-size: 0.92rem; }
+.format-heading-sample-5 { font-size: 0.85rem; }
+.format-heading-sample-6 { font-size: 0.8rem; color: var(--text-secondary); }
+
 .layout-controls {
   display: flex;
+  flex-shrink: 0;
   background-color: var(--bg-input);
   padding: 3px;
   border-radius: 8px;
@@ -2920,6 +3059,7 @@ kbd {
 }
 
 :root[data-theme-style="windows-classic"] .layout-controls,
+:root[data-theme-style="windows-classic"] .format-controls,
 :root[data-theme-style="windows-classic"] .topbar .icon-btn,
 :root[data-theme-style="windows-classic"] .find-btn,
 :root[data-theme-style="windows-classic"] .find-action-btn,
@@ -2932,7 +3072,8 @@ kbd {
   box-shadow: none;
 }
 
-:root[data-theme-style="windows-classic"] .layout-btn {
+:root[data-theme-style="windows-classic"] .layout-btn,
+:root[data-theme-style="windows-classic"] .format-btn {
   color: #000000;
   border-radius: 0;
 }
@@ -2959,6 +3100,7 @@ kbd {
 }
 
 :root[data-theme-style="windows-classic"] .dropdown-content,
+:root[data-theme-style="windows-classic"] .format-heading-menu,
 :root[data-theme-style="windows-classic"] .custom-context-menu,
 :root[data-theme-style="windows-classic"] .help-modal {
   border: 2px solid;
@@ -2998,6 +3140,7 @@ kbd {
 }
 
 :root[data-theme-style="mac-os-9"] .layout-controls,
+:root[data-theme-style="mac-os-9"] .format-controls,
 :root[data-theme-style="mac-os-9"] .icon-btn,
 :root[data-theme-style="mac-os-9"] .find-btn,
 :root[data-theme-style="mac-os-9"] .find-action-btn,

@@ -123,7 +123,7 @@ The app displays `Cmd` on macOS and `Ctrl` on Windows or Linux.
 | `Cmd/Ctrl + N` | Create a scratchpad |
 | `⌘⇧V` (macOS, configurable) | Open the clipboard history popup |
 | `⌘↵` (macOS, clipboard popup) | Paste the focused entry into the previous app |
-| `Cmd/Ctrl + B` | Toggle the sidebar |
+| `Ctrl + Cmd + S` (`Ctrl + Alt + S` off macOS) | Toggle the sidebar |
 | `Cmd/Ctrl + \` | Toggle two-note side-by-side editing |
 | `Alt + ↑` / `Alt + ↓` | Move a list branch, or the active sidebar note outside a list |
 | `Cmd/Ctrl + F` | Open or close Find |
@@ -138,6 +138,13 @@ The app displays `Cmd` on macOS and `Ctrl` on Windows or Linux.
 | `Cmd/Ctrl + +` / `Cmd/Ctrl + -` | Zoom the editor in or out |
 | `Cmd/Ctrl + 0` | Reset editor zoom to 100% |
 | `Cmd/Ctrl + Shift + F` | Toggle Focus Mode |
+| `Cmd/Ctrl + B` / `I` / `E` | Toggle bold, italic, or inline code |
+| `Cmd/Ctrl + Shift + X` | Toggle strikethrough |
+| `Cmd/Ctrl + K` | Make the selection a link, or insert a link |
+| `Cmd/Ctrl + Alt + 1` to `6` | Set heading level 1 to 6; the same level again removes it |
+| `Cmd/Ctrl + Shift + 7` / `8` / `9` | Toggle a numbered, bullet, or task list |
+| `Cmd/Ctrl + Shift + .` | Toggle a blockquote |
+| `Cmd/Ctrl + Alt + C` | Insert a code block, or fence the selected lines |
 | `Cmd/Ctrl + /` or `F1` | Open or close Help and Reference |
 | `Tab` / `Shift + Tab` | Switch topics while Help is open |
 | `Escape` | Close the active modal or Find bar, or leave Focus Mode |
@@ -154,6 +161,7 @@ Sodilaud keeps its Markdown assistance lightweight and works directly in the nat
 - Parentheses, brackets, braces, quotes, and inline backticks pair automatically. Typing an existing closing character advances past it, and Backspace removes an empty pair. Selecting text before typing `*`, `_`, <code>`</code>, or `~` wraps the selection.
 - Finishing a table header creates its separator and first row. `Enter` in the final cell or `Tab` past it adds a row; `Enter` or Backspace on an empty generated row exits the table.
 - Pasting a URL over selected text makes a Markdown link. Pasting a rectangular tab-separated spreadsheet range makes a Markdown table; ragged or uniformly indented tab-separated text stays literal.
+- The formatting buttons to the left of **Live**, **Source**, and **Reading** apply bold, italic, strikethrough, inline code, links, headings (from a menu, including **Paragraph** to remove one), bullet, numbered, and task lists, quotes, code blocks, tables, and horizontal rules to the pane you last worked in. Marks, headings, lists, and quotes toggle: applying one again removes it. Hover a button to see its shortcut. The buttons are unavailable in Reading mode.
 - Right-click in either editor and choose **Insert** for a starter table, task list, fenced code block, inline link, or reference-style link. The first useful placeholder is selected so typing replaces it immediately.
 
 Syntax highlighting is enabled by default. Open **Sodilaud menu → Appearance → Syntax highlighting** to toggle both the editor’s Markdown coloring and language-aware highlighting in Reading mode. Reading mode code highlighting requires a supported language after the opening fence, such as <code>```javascript</code>; unknown and unlabeled fences remain plain code.

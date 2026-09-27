@@ -18,6 +18,18 @@ This release adds clipboard history on macOS and completes the rename from Scrat
 - Compare mode now renders differences as CodeMirror decorations instead of a highlight layer
   behind the text area.
 
+## Unreleased: Formatting shortcuts and toolbar
+
+- Adds Markdown formatting shortcuts: `Cmd/Ctrl+B` bold, `Cmd/Ctrl+I` italic, `Cmd/Ctrl+Shift+X`
+  strikethrough, `Cmd/Ctrl+E` inline code, `Cmd/Ctrl+K` link, `Cmd/Ctrl+Alt+1` to `6` headings,
+  `Cmd/Ctrl+Shift+7`, `8`, and `9` numbered, bullet, and task lists, `Cmd/Ctrl+Shift+.` quote, and
+  `Cmd/Ctrl+Alt+C` code block. Marks, headings, lists, and quotes toggle off when applied again.
+- Adds a formatting button group left of the Live, Source, and Reading buttons, with a heading menu
+  and table and horizontal-rule buttons. It acts on the pane you last worked in and is unavailable
+  in Reading mode.
+- **Changed shortcut:** Toggle Sidebar moves from `Cmd/Ctrl+B` to `Ctrl+Cmd+S` on macOS
+  (`Ctrl+Alt+S` on Windows and Linux), because `Cmd/Ctrl+B` now makes text bold.
+
 ## Highlights
 
 - **Clipboard history (macOS).** Press `⌘⇧V` in any app to open a small popup with your recent text copies, then pick one with a number key, the arrow keys, `j`/`k`, or the mouse. The history lives in memory only and entries expire on their own.

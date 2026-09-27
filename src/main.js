@@ -20,7 +20,7 @@ import { PRESET_THEMES } from "./preset-themes.js";
 import { compareNoteText, emptyNoteComparison } from "./note-compare.js";
 import { findTextMatches } from "./find.js";
 import { createMarkdownEditor } from "./editor-view.js";
-import { markdownEditingCommands } from "./editor-commands.js";
+import { markdownEditingCommands, runFormatAction } from "./editor-commands.js";
 import { livePreview } from "./editor-live-preview.js";
 import { getMarkdownTemplateEdit } from "./markdown-insert.js";
 import { escapeHTML, highlightPreviewCode } from "./syntax-highlighting.js";
@@ -111,6 +111,9 @@ const splitNoteBtn = document.getElementById("split-note-btn");
 const compareNotesBtn = document.getElementById("compare-notes-btn");
 const compareNotesCount = document.getElementById("compare-notes-count");
 const topbarLeft = document.getElementById("topbar-left");
+const formatControls = document.getElementById("format-controls");
+const formatHeadingBtn = document.getElementById("format-heading-btn");
+const formatHeadingMenu = document.getElementById("format-heading-menu");
 
 const layoutModeButtons = {
   live: document.getElementById("mode-live"),
@@ -568,15 +571,24 @@ function createAppEditor(host, { ariaLabel, pane }) {
   return editor;
 }
 
-function applyPlatformShortcutLabels() {
+function isMacLikePlatform() {
   const platform = navigator.userAgentData?.platform || navigator.platform || navigator.userAgent || "";
-  if (/mac|iphone|ipad|ipod/i.test(platform)) return;
+  return /mac|iphone|ipad|ipod/i.test(platform);
+}
+
+// Ctrl+Cmd off macOS would read Ctrl+Ctrl, so those chords use Ctrl+Alt there.
+function applyPlatformShortcutLabels() {
+  if (isMacLikePlatform()) return;
 
   document.querySelectorAll("[title]").forEach((element) => {
     const title = element.getAttribute("title");
     if (title?.includes("Cmd")) {
-      element.setAttribute("title", title.replaceAll("Cmd", "Ctrl"));
+      element.setAttribute("title", title.replaceAll("Ctrl+Cmd", "Ctrl+Alt").replaceAll("Cmd", "Ctrl"));
     }
+  });
+
+  document.querySelectorAll("kbd[data-shortcut-off-mac]").forEach((element) => {
+    element.textContent = element.dataset.shortcutOffMac;
   });
 
   document.querySelectorAll("kbd, .shortcut-hint").forEach((element) => {
@@ -1714,9 +1726,47 @@ function setLayoutMode(value, { persist = true } = {}) {
 
   primaryEditor.setMode(editorModeFor(mode));
   secondaryEditor.setMode(editorModeFor(mode));
+  setFormatControlsEnabled(mode !== "reading");
   if (mode === "reading") updateMarkdownPreview();
 
   if (persist) localStorage.setItem("sodilaud_layout_mode", mode);
+}
+
+// ----------------------------------------------------
+// Formatting toolbar
+// ----------------------------------------------------
+function setFormatControlsEnabled(enabled) {
+  formatControls.setAttribute("aria-disabled", String(!enabled));
+  formatControls.querySelectorAll("button").forEach((button) => { button.disabled = !enabled; });
+  if (!enabled) toggleFormatHeadingMenu(false);
+}
+
+function toggleFormatHeadingMenu(show = formatHeadingMenu.hidden) {
+  if (show) formatHeadingMenu.style.left = `${formatHeadingBtn.offsetLeft}px`;
+  formatHeadingMenu.hidden = !show;
+  formatHeadingBtn.setAttribute("aria-expanded", String(show));
+}
+
+function applyToolbarFormat(actionId) {
+  if (currentLayoutMode === "reading") return;
+  const editor = isSplitNoteMode && activePane === "secondary" ? secondaryEditor : primaryEditor;
+  runFormatAction(editor.view, actionId);
+  editor.focus();
+}
+
+function handleFormatControlClick(event) {
+  const button = event.target.closest("button");
+  if (!button || button.disabled) return;
+  event.stopPropagation();
+  if (button === formatHeadingBtn) {
+    toggleActionsDropdown(false);
+    toggleFormatHeadingMenu();
+    if (event.detail === 0 && !formatHeadingMenu.hidden) formatHeadingMenu.querySelector("button").focus();
+    return;
+  }
+  if (!button.dataset.format) return;
+  toggleFormatHeadingMenu(false);
+  applyToolbarFormat(button.dataset.format);
 }
 
 function applyEditorZoom(value, { persist = true } = {}) {
@@ -1809,6 +1859,17 @@ function loadViewPreferences() {
     localStorage.getItem("sodilaud_editor_line_numbers") ?? DEFAULT_EDITOR_LINE_NUMBERS,
     { persist: false }
   );
+}
+
+// Ctrl+Cmd+S on macOS; Ctrl+Alt+S elsewhere, since Ctrl is already Mod there.
+// Off macOS only event.key is trusted: AltGr reports Ctrl+Alt, and AltGr+S types
+// a character on some layouts.
+function isSidebarShortcut(event) {
+  if (!event.ctrlKey || event.shiftKey) return false;
+  if (isMacLikePlatform()) {
+    return event.metaKey && !event.altKey && (event.code === "KeyS" || event.key.toLowerCase() === "s");
+  }
+  return event.altKey && !event.metaKey && event.key.toLowerCase() === "s";
 }
 
 function toggleSidebar() {
@@ -2330,6 +2391,26 @@ function attachEventListeners() {
 
   document.addEventListener("click", () => {
     toggleActionsDropdown(false);
+    toggleFormatHeadingMenu(false);
+  });
+
+  // Keeping focus in the editor on mousedown keeps its selection for the click.
+  for (const container of [formatControls, formatHeadingMenu]) {
+    container.addEventListener("mousedown", (event) => {
+      if (event.target.closest("button")) event.preventDefault();
+    });
+    container.addEventListener("click", handleFormatControlClick);
+  }
+  formatHeadingMenu.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    event.stopPropagation();
+    toggleFormatHeadingMenu(false);
+    formatHeadingBtn.focus();
+  });
+  formatHeadingBtn.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || formatHeadingMenu.hidden) return;
+    event.stopPropagation();
+    toggleFormatHeadingMenu(false);
   });
 
   viewSettings.addEventListener("click", (e) => e.stopPropagation());
@@ -2592,7 +2673,7 @@ function attachEventListeners() {
       e.preventDefault();
     }
 
-    if (isMeta && e.key === "b") {
+    if (isSidebarShortcut(e)) {
       e.preventDefault();
       toggleSidebar();
     }
