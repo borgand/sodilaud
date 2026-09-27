@@ -79,42 +79,54 @@ function setPlatform(t, platform) {
   Object.defineProperty(t.env.window.navigator, "platform", { value: platform, configurable: true });
 }
 
-// Unfocused, so a click that CodeMirror turns into a caret move cannot reveal
-// the link line and remove the link element before the next click.
+// Each click starts from a fresh render with the caret on another line, so the
+// link is still rendered (not revealed as raw Markdown) when it is clicked.
+async function clickLink(t, init = {}) {
+  await t.caret(t.editor.getText().length);
+  const link = t.view.contentDOM.querySelector(".cm-lp-link");
+  assert.ok(link, "the link renders while the caret is on another line");
+  return t.mousedown(link, init);
+}
+
+const caretLine = t => t.view.state.doc.lineAt(t.view.state.selection.main.head).number;
+const selectionStartLine = t => t.view.state.doc.lineAt(t.view.state.selection.main.from).number;
+
 test("Cmd-mousedown on a link opens it, a plain mousedown does not", async () => {
-  const t = await setup("[l](https://x.y)\nother", { focused: false });
+  const t = await setup("[l](https://x.y)\nother");
   setPlatform(t, "MacIntel");
   try {
-    await t.caret(t.editor.getText().length);
-    const link = t.view.contentDOM.querySelector(".cm-lp-link");
-    t.mousedown(link);
-    assert.deepEqual(t.opened, []);
-    const event = t.mousedown(t.view.contentDOM.querySelector(".cm-lp-link"), { metaKey: true });
+    assert.equal(t.view.hasFocus, true);
+    const open = await clickLink(t, { metaKey: true });
     assert.deepEqual(t.opened, ["https://x.y"]);
-    assert.equal(event.defaultPrevented, true);
+    assert.equal(open.defaultPrevented, true);
+    assert.equal(caretLine(t), 2, "opening a link leaves the caret where it was");
+
+    await clickLink(t);
+    assert.deepEqual(t.opened, ["https://x.y"], "a plain mousedown never opens the link");
+    // jsdom has no layout, so CodeMirror maps the click to an approximate range;
+    // what matters is that the selection now reaches into the link line.
+    assert.equal(selectionStartLine(t), 1, "a plain mousedown moves the selection into the link line");
   } finally { t.done(); }
 });
 
 test("on macOS Ctrl-click is a right-click, so only Cmd opens links", async () => {
-  const t = await setup("[l](https://x.y)\nother", { focused: false });
+  const t = await setup("[l](https://x.y)\nother");
   setPlatform(t, "MacIntel");
   try {
-    await t.caret(t.editor.getText().length);
-    t.mousedown(t.view.contentDOM.querySelector(".cm-lp-link"), { ctrlKey: true });
+    await clickLink(t, { ctrlKey: true });
     assert.deepEqual(t.opened, []);
   } finally { t.done(); }
 });
 
 test("off macOS Ctrl-click opens links and Meta-click does not", async () => {
-  const t = await setup("[l](https://x.y)\nother", { focused: false });
+  const t = await setup("[l](https://x.y)\nother");
   setPlatform(t, "Win32");
   try {
-    await t.caret(t.editor.getText().length);
-    t.mousedown(t.view.contentDOM.querySelector(".cm-lp-link"), { metaKey: true });
+    await clickLink(t, { metaKey: true });
     assert.deepEqual(t.opened, []);
-    const event = t.mousedown(t.view.contentDOM.querySelector(".cm-lp-link"), { ctrlKey: true });
+    const open = await clickLink(t, { ctrlKey: true });
     assert.deepEqual(t.opened, ["https://x.y"]);
-    assert.equal(event.defaultPrevented, true);
+    assert.equal(open.defaultPrevented, true);
   } finally { t.done(); }
 });
 
