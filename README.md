@@ -140,7 +140,7 @@ The app displays `Cmd` on macOS and `Ctrl` on Windows or Linux.
 | `Cmd/Ctrl + Shift + F` | Toggle Focus Mode |
 | `Cmd/Ctrl + B` / `I` / `E` | Toggle bold, italic, or inline code |
 | `Cmd/Ctrl + Shift + X` | Toggle strikethrough |
-| `Cmd/Ctrl + K` | Make the selection a link, or insert a link |
+| `Cmd/Ctrl + K` | Make the selection a link, or insert a link; inside an existing link, select its URL |
 | `Cmd/Ctrl + Alt + 1` to `6` | Set heading level 1 to 6; the same level again removes it |
 | `Cmd/Ctrl + Shift + 7` / `8` / `9` | Toggle a numbered, bullet, or task list |
 | `Cmd/Ctrl + Shift + .` | Toggle a blockquote |
@@ -151,7 +151,7 @@ The app displays `Cmd` on macOS and `Ctrl` on Windows or Linux.
 
 ## Markdown editing
 
-Sodilaud has three editing modes, chosen from the toolbar: **Live** (default), **Source**, and **Reading**. Live renders Markdown inline - headings, emphasis, links, task checkboxes, and tables display formatted - while the line your cursor or selection touches shows its raw Markdown. In Live mode, `Cmd`-click a link (`Ctrl`-click off macOS) to open it; a plain click just places the cursor. In Reading mode a plain click opens a link. Tables render as a formatted table until you click into one, which reveals the raw pipe source. Source mode shows raw Markdown in a monospace font with the same editing features as Live. Reading mode is a read-only rendered view. Remote images never load in any mode; only `data:` images render.
+Sodilaud has three editing modes, chosen with the mode buttons in the toolbar (icons; hover one to see its name): **Live** (default), **Source**, and **Reading**. Live renders Markdown inline - headings, emphasis, links, task checkboxes, and tables display formatted - while the line your cursor or selection touches shows its raw Markdown. In Live mode, `Cmd`-click a link (`Ctrl`-click off macOS) to open it; a plain click just places the cursor. In Reading mode a plain click opens a link. Tables render as a formatted table until you click into one, which reveals the raw pipe source. Source mode shows raw Markdown in a monospace font with the same editing features as Live. Reading mode is a read-only rendered view. Remote images never load in any mode; only `data:` images render.
 
 Sodilaud keeps its Markdown assistance lightweight and works directly in the native text editor:
 
@@ -161,7 +161,7 @@ Sodilaud keeps its Markdown assistance lightweight and works directly in the nat
 - Parentheses, brackets, braces, quotes, and inline backticks pair automatically. Typing an existing closing character advances past it, and Backspace removes an empty pair. Selecting text before typing `*`, `_`, <code>`</code>, or `~` wraps the selection.
 - Finishing a table header creates its separator and first row. `Enter` in the final cell or `Tab` past it adds a row; `Enter` or Backspace on an empty generated row exits the table.
 - Pasting a URL over selected text makes a Markdown link. Pasting a rectangular tab-separated spreadsheet range makes a Markdown table; ragged or uniformly indented tab-separated text stays literal.
-- The formatting buttons to the left of **Live**, **Source**, and **Reading** apply bold, italic, strikethrough, inline code, links, headings (from a menu, including **Paragraph** to remove one), bullet, numbered, and task lists, quotes, code blocks, tables, and horizontal rules to the pane you last worked in. Marks, headings, lists, and quotes toggle: applying one again removes it. Hover a button to see its shortcut. Buttons that do not fit the window move into the **»** (More formatting) menu. The buttons are unavailable in Reading mode.
+- The formatting buttons to the left of the mode buttons apply bold, italic, strikethrough, inline code, links, headings (from a menu, including **Paragraph** to remove one), bullet, numbered, and task lists, quotes, code blocks, tables, and horizontal rules to the pane you last worked in. Marks, headings, lists, and quotes toggle: applying one again removes it. Link inside an existing link selects its URL. Hover a button to see its shortcut. Buttons that do not fit the window move into the **»** (More formatting) menu. The buttons are unavailable in Reading mode.
 - Right-click in either editor and choose **Insert** for a starter table, task list, fenced code block, inline link, or reference-style link. The first useful placeholder is selected so typing replaces it immediately.
 
 Syntax highlighting is enabled by default. Open **Sodilaud menu → Appearance → Syntax highlighting** to toggle both the editor’s Markdown coloring and language-aware highlighting in Reading mode. Reading mode code highlighting requires a supported language after the opening fence, such as <code>```javascript</code>; unknown and unlabeled fences remain plain code.
