@@ -133,6 +133,7 @@ class TableWidget extends WidgetType {
     wrapper.className = "cm-lp-table markdown-preview";
     wrapper.innerHTML = tableHtml(this.source);
     wrapper.addEventListener("mousedown", event => {
+      if (!isPrimaryClick(event, view)) return;
       event.preventDefault();
       const anchor = view.posAtDOM(wrapper);
       view.dispatch({ selection: EditorSelection.cursor(anchor) });
@@ -156,7 +157,13 @@ for (const name of ["h1", "h2", "h3", "h4", "h5", "h6", "quote", "codeblock", "h
   lineClasses[name] = Decoration.line({ class: `cm-lp-${name}` });
 }
 
-const linkMark = href => Decoration.mark({ class: "cm-lp-link", attributes: { "data-href": href } });
+const linkMark = href => Decoration.mark({ class: "cm-lp-link", attributes: { "data-href": linkDestination(href) } });
+
+function linkDestination(raw) {
+  const trimmed = raw.trim();
+  const unwrapped = trimmed.startsWith("<") && trimmed.endsWith(">") ? trimmed.slice(1, -1) : trimmed;
+  return unwrapped.replace(/\\([!-/:-@[-`{-~])/g, "$1");
+}
 
 function headingLevel(name) {
   const match = /^(?:ATX|Setext)Heading(\d)$/.exec(name);
@@ -416,9 +423,16 @@ function isMacNavigator(nav) {
 }
 
 // macOS turns Ctrl-click into a right-click, so the link modifier is Cmd there.
+function isMacView(view) {
+  return isMacNavigator(view.dom.ownerDocument.defaultView?.navigator ?? globalThis.navigator);
+}
+
 function isOpenLinkClick(event, view) {
-  const nav = view.dom.ownerDocument.defaultView?.navigator ?? globalThis.navigator;
-  return isMacNavigator(nav) ? event.metaKey : event.ctrlKey;
+  return isMacView(view) ? event.metaKey : event.ctrlKey;
+}
+
+function isPrimaryClick(event, view) {
+  return event.button === 0 && !(event.ctrlKey && isMacView(view));
 }
 
 /**
@@ -438,6 +452,7 @@ export function livePreview({ onOpenLink } = {}) {
 
       const task = element.closest(".cm-lp-task");
       if (task) {
+        if (!isPrimaryClick(event, view)) return false;
         const from = view.posAtDOM(task);
         const marker = view.state.doc.sliceString(from, from + 3);
         if (/^\[[ xX]\]$/.test(marker)) {

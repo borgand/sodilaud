@@ -75,6 +75,19 @@ test("emphasis and links render with a data-href on the link text", async () => 
   } finally { t.done(); }
 });
 
+for (const [source, href] of [
+  ["[a](<https://x.y/a b>)", "https://x.y/a b"],
+  ["[c](https://x.y/\\(p\\))", "https://x.y/(p)"]
+]) {
+  test(`link data-href is the destination URL for ${source}`, async () => {
+    const t = await setup(`${source}\nother`);
+    try {
+      await t.caret(t.editor.getText().length);
+      assert.equal(t.view.contentDOM.querySelector(".cm-lp-link").getAttribute("data-href"), href);
+    } finally { t.done(); }
+  });
+}
+
 function setPlatform(t, platform) {
   Object.defineProperty(t.env.window.navigator, "platform", { value: platform, configurable: true });
 }
@@ -142,6 +155,39 @@ test("task markers become checkboxes that toggle the Markdown", async () => {
     assert.equal(t.editor.getText(), "- [x] t\nother");
     assert.deepEqual(t.changes, ["- [x] t\nother"]);
     assert.equal(t.view.contentDOM.querySelector("input.cm-lp-task").checked, true);
+  } finally { t.done(); }
+});
+
+for (const [label, platform, init] of [
+  ["a right-click", "Win32", { button: 2 }],
+  ["a middle-click", "Win32", { button: 1 }],
+  ["a macOS Ctrl-click", "MacIntel", { ctrlKey: true }]
+]) {
+  test(`${label} leaves task checkboxes and table widgets alone`, async () => {
+    const t = await setup("- [ ] t\n\n| a |\n|---|\n| 1 |\n\nother");
+    setPlatform(t, platform);
+    try {
+      await t.caret(t.editor.getText().length);
+      t.mousedown(t.view.contentDOM.querySelector("input.cm-lp-task"), init);
+      assert.equal(t.editor.getText(), "- [ ] t\n\n| a |\n|---|\n| 1 |\n\nother");
+      assert.deepEqual(t.changes, []);
+
+      const caret = t.editor.getSelection().start;
+      t.mousedown(t.view.contentDOM.querySelector(".cm-lp-table"), init);
+      await settle();
+      assert.equal(t.editor.getSelection().start, caret);
+      assert.ok(t.view.contentDOM.querySelector(".cm-lp-table"));
+    } finally { t.done(); }
+  });
+}
+
+test("off macOS a Ctrl-click still toggles a task checkbox", async () => {
+  const t = await setup("- [ ] t\nother");
+  setPlatform(t, "Win32");
+  try {
+    await t.caret(t.editor.getText().length);
+    t.mousedown(t.view.contentDOM.querySelector("input.cm-lp-task"), { ctrlKey: true });
+    assert.equal(t.editor.getText(), "- [x] t\nother");
   } finally { t.done(); }
 });
 
