@@ -2,6 +2,21 @@
 
 This release adds clipboard history on macOS and completes the rename from Scratchpad to Sodilaud.
 
+## Unreleased: Live, Source, and Reading editor modes
+
+- Replaces the Edit / Split / Preview layout with three modes, chosen from the toolbar: **Live**
+  (default, Obsidian-style live preview - Markdown syntax shows only on the line you're editing,
+  and headings, emphasis, links, task checkboxes, and tables render inline), **Source** (raw
+  Markdown in a monospace editor), and **Reading** (rendered, read-only). The synced split preview
+  is gone.
+- Tables render as a formatted table until you click into one, then show the raw pipe source; no
+  cell-grid editing.
+- `Cmd/Ctrl`-click a link to open it through the existing confirmation dialog; a plain click just
+  places the cursor. Remote images never load in any mode.
+- Compare mode, two-note split view, find and replace, and smart editing keys (lists, tables,
+  pair completion, and more) all still work the same as before.
+- Compare mode now renders differences as CodeMirror decorations instead of a separate diff pane.
+
 ## Highlights
 
 - **Clipboard history (macOS).** Press `⌘⇧V` in any app to open a small popup with your recent text copies, then pick one with a number key, the arrow keys, `j`/`k`, or the mouse. The history lives in memory only and entries expire on their own.

@@ -44,8 +44,8 @@ Clipboard history is off by default. Turn it on in **Sodilaud menu → Clipboard
 - Clipboard history on macOS: press `⌘⇧V` in any app to pick from your recent copies, with secrets masked, entries kept in memory only, and automatic expiry
 - Optional local MCP agent access with five read tools, eight individually enabled write tools, and a live listening indicator
 - Multiple scratchpads with automatic saving, titles derived from the first line, and quick creation by double-clicking empty sidebar space
-- Edit, synchronized edit/preview, and full Markdown preview layouts
-- Optional Markdown editor coloring and language-aware fenced-code highlighting in previews
+- Live, Source, and Reading editing modes, with inline Markdown rendering and per-line raw source in Live mode
+- Optional Markdown editor coloring and language-aware fenced-code highlighting in Reading mode
 - Optional, theme-aware source line numbers in either editor pane
 - Markdown-aware continuation for lists, task lists, blockquotes, code fences, and tables
 - Pair completion, selection wrapping, and smart URL or spreadsheet paste
@@ -71,7 +71,7 @@ Local notes and workspace notes are two separate collections, each with its own 
 
 Pending workspace changes are flushed before the desktop window closes; if that save fails, Sodilaud cancels the close and reports the error. If a workspace cannot be opened at start-up, Sodilaud reports it and falls back to your local notes, leaving the workspace file untouched.
 
-Sodilaud has no analytics, advertising, accounts, or sync service. Markdown is parsed on-device, preview HTML is sanitized, and remote images are blocked so merely previewing a note does not contact an image host. Links in the preview open in your default browser rather than inside the app; following one is an explicit network action and may contact that destination.
+Sodilaud has no analytics, advertising, accounts, or sync service. Markdown is parsed on-device, rendered HTML is sanitized, and remote images never load, so viewing a note does not contact an image host. Rendered links open in your default browser rather than inside the app, after a confirmation dialog; following one is an explicit network action and may contact that destination.
 
 This fork contains no update check and makes no outbound request of any kind: it links no HTTP client, and `npm run check:egress` fails the build if network capability reappears. New versions are published as releases in this repository; download them yourself when you choose to.
 
@@ -144,6 +144,8 @@ The app displays `Cmd` on macOS and `Ctrl` on Windows or Linux.
 
 ## Markdown editing
 
+Sodilaud has three editing modes, chosen from the toolbar: **Live** (default), **Source**, and **Reading**. Live renders Markdown inline - headings, emphasis, links, task checkboxes, and tables display formatted - while the line your cursor or selection touches shows its raw Markdown. `Cmd/Ctrl`-click a link in Live or Reading mode to open it; a plain click just places the cursor. Tables render as a formatted table until you click into one, which reveals the raw pipe source. Source mode shows raw Markdown in a monospace font with the same editing features as Live. Reading mode is a read-only rendered view. Remote images never load in any mode; only local and `data:` images render.
+
 Sodilaud keeps its Markdown assistance lightweight and works directly in the native text editor:
 
 - `Enter` preserves the marker and spacing of bullet lists, advances ordered-list numbering, and creates unchecked task items. An empty item outdents or exits its list.
@@ -154,7 +156,7 @@ Sodilaud keeps its Markdown assistance lightweight and works directly in the nat
 - Pasting a URL over selected text makes a Markdown link. Pasting a rectangular tab-separated spreadsheet range makes a Markdown table; ragged or uniformly indented tab-separated text stays literal.
 - Right-click in either editor and choose **Insert** for a starter table, task list, fenced code block, inline link, or reference-style link. The first useful placeholder is selected so typing replaces it immediately.
 
-Syntax highlighting is enabled by default. Open **Sodilaud menu → Appearance → Syntax highlighting** to toggle both the editor’s Markdown coloring and language-aware Preview highlighting. Preview code highlighting requires a supported language after the opening fence, such as <code>```javascript</code>; unknown and unlabeled fences remain plain code.
+Syntax highlighting is enabled by default. Open **Sodilaud menu → Appearance → Syntax highlighting** to toggle both the editor’s Markdown coloring and language-aware highlighting in Reading mode. Reading mode code highlighting requires a supported language after the opening fence, such as <code>```javascript</code>; unknown and unlabeled fences remain plain code.
 
 Source line numbers are off by default. Open **Sodilaud menu → Appearance → Line numbers** to show a subtle, theme-aware gutter in both editor panes; the preference is remembered between launches.
 

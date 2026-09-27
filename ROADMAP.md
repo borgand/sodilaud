@@ -8,7 +8,7 @@ Design: [`docs/superpowers/specs/2026-09-27-editor-surface-design.md`](docs/supe
 
 ## 1. Editor swap: CodeMirror 6 live preview
 
-Status: designed, spike next
+Status: implemented on `feat/cm6-editor`, pending manual verification
 
 Replace the textarea and the separate preview pane with a CM6 live-preview editor on today's
 window-owned model. Collab comes with item 2. Doing the swap first means the registry only
@@ -25,8 +25,8 @@ Decided 2026-09-27:
 - Tables: a rendered HTML table widget when the cursor is outside it, with the raw pipe source
   when entered, where the existing table Tab/Enter/Backspace handling still works. No cell-grid
   editing.
-- Compare mode uses `@codemirror/merge` with live preview off. Split-note mode becomes a second
-  view.
+- Compare mode keeps `note-compare.js`, rendered as CM6 decorations (no `@codemirror/merge`).
+  Split-note mode becomes a second view.
 - `renderMarkdown` stays the only HTML path (Reading, export, copy-as-HTML).
 - Typography: proportional body text in Live (sized headings, monospace code); Source stays
   monospace.
