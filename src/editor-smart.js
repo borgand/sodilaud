@@ -110,7 +110,7 @@ export function getSmartKeyEdit(value, selectionStart, selectionEnd, key) {
   return getPairEdit(value, selectionStart, selectionEnd, key);
 }
 
-function getHomePosition(value, selectionStart, selectionEnd) {
+export function getHomePosition(value, selectionStart, selectionEnd) {
   if (
     selectionStart !== selectionEnd ||
     isInsideFencedCode(value, selectionStart) ||

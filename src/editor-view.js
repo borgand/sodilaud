@@ -30,6 +30,7 @@ import {
   tags
 } from "./vendor/codemirror.js";
 import { getChangedRange } from "./editor-edit.js";
+import { applyPureEdit } from "./editor-commands.js";
 
 export const markdownLanguage = new Language(
   defineLanguageFacet(),
@@ -278,21 +279,7 @@ export function createMarkdownEditor(options) {
   }
 
   function applyEdit(edit) {
-    if (!edit) return false;
-    if ("moveTo" in edit) {
-      view.dispatch({ selection: EditorSelection.cursor(clamp(edit.moveTo)), scrollIntoView: true });
-      return true;
-    }
-    const change = getChangedRange(getText(), edit.value);
-    const length = edit.value.length;
-    const bound = position => Math.max(0, Math.min(position, length));
-    view.dispatch({
-      changes: { from: change.start, to: change.previousEnd, insert: change.replacement },
-      selection: EditorSelection.single(bound(edit.selectionStart), bound(edit.selectionEnd)),
-      userEvent: "input",
-      scrollIntoView: true
-    });
-    return true;
+    return applyPureEdit(view, edit);
   }
 
   function replaceRange(from, to, insert, selection) {
