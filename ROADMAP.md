@@ -33,7 +33,7 @@ Decided 2026-09-27:
 - Rollout: a hard switch once the spike passes. No classic-editor setting; rollback means
   installing the previous release.
 - Links: a click places the cursor. `⌘`-click opens through the existing URL confirmation.
-- Images: only `data:` and local images render. Remote images show as links (zero egress, CSP
+- Images: only `data:` images render. Remote images show as links (zero egress, CSP
   `img-src`).
 
 - Spike (~1 day): vendor-bundle CM6, mount it in the secondary pane, port `getSmartKeyEdit`,
