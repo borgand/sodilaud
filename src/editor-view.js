@@ -73,8 +73,9 @@ const diffLineMarkers = {
 const emptyLineMarkers = new RangeSetBuilder().finish();
 
 // Alt+Up/Down belongs to the app (note move); editor-commands handles list moves.
-const appOwnedKeys = new Set(["Alt-ArrowUp", "Alt-ArrowDown", "Shift-Alt-ArrowUp", "Shift-Alt-ArrowDown"]);
-const baseKeymap = defaultKeymap.filter(binding => !appOwnedKeys.has(binding.key));
+// Mod-i (selectParentSyntax) is the italic shortcut in editor-commands.
+const reservedKeys = new Set(["Alt-ArrowUp", "Alt-ArrowDown", "Shift-Alt-ArrowUp", "Shift-Alt-ArrowDown", "Mod-i"]);
+const baseKeymap = defaultKeymap.filter(binding => !reservedKeys.has(binding.key));
 const findMatchMark = Decoration.mark({ class: "cm-find-match" });
 const findActiveMark = Decoration.mark({ class: "cm-find-match cm-find-active" });
 

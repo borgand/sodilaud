@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { EditorSelection, EditorView, Prec } from "./vendor/codemirror.js";
+import { EditorSelection, EditorView, Prec, isolateHistory, keymap } from "./vendor/codemirror.js";
 import { getChangedRange } from "./editor-edit.js";
 import { getIndentEdit } from "./editor-indent.js";
 import { getMarkdownAutocompleteEdit } from "./editor-autocomplete.js";
+import { getFormatEdit } from "./markdown-format.js";
 import {
   getHomePosition,
   getListMoveEdit,
@@ -78,7 +79,7 @@ function paste(event, view) {
   return applyPureEdit(view, edit);
 }
 
-export function applyPureEdit(view, edit) {
+export function applyPureEdit(view, edit, { isolate = false } = {}) {
   if (!edit) return false;
 
   if ("moveTo" in edit) {
@@ -94,11 +95,45 @@ export function applyPureEdit(view, edit) {
     changes: { from: change.start, to: change.previousEnd, insert: change.replacement },
     selection: EditorSelection.single(bound(edit.selectionStart), bound(edit.selectionEnd)),
     userEvent: "input",
+    annotations: isolate ? isolateHistory.of("full") : [],
     scrollIntoView: true
   });
   return true;
 }
 
+export function runFormatAction(view, actionId) {
+  if (view.composing || view.state.selection.ranges.length > 1) return false;
+  const { from, to } = view.state.selection.main;
+  const edit = getFormatEdit(view.state.doc.toString(), from, to, actionId);
+  return applyPureEdit(view, edit, { isolate: true });
+}
+
+const FORMAT_KEYS = [
+  ["Mod-b", "bold"],
+  ["Mod-i", "italic"],
+  ["Mod-k", "link"],
+  ["Shift-Mod-x", "strikethrough"],
+  ["Mod-e", "code"],
+  ...[1, 2, 3, 4, 5, 6].map(level => [`Alt-Mod-${level}`, `heading-${level}`]),
+  ["Shift-Mod-7", "numbered-list"],
+  ["Shift-Mod-8", "bullet-list"],
+  ["Shift-Mod-9", "task-list"],
+  ["Shift-Mod-.", "quote"],
+  ["Alt-Mod-c", "code-block"]
+];
+
+// CodeMirror falls back to the physical key when Shift or Alt changes event.key
+// (Shift-Cmd-8 is "*", Alt-Cmd-1 is "¡" on macOS), so these match by keyCode too.
+// Handled shortcuts stop propagating so app-level shortcuts such as Cmd-B never see them.
+export function markdownFormattingKeymap() {
+  return Prec.high(keymap.of(FORMAT_KEYS.map(([key, actionId]) => ({
+    key,
+    run: view => runFormatAction(view, actionId),
+    preventDefault: true,
+    stopPropagation: true
+  }))));
+}
+
 export function markdownEditingCommands() {
-  return Prec.high(EditorView.domEventHandlers({ keydown, paste }));
+  return [Prec.high(EditorView.domEventHandlers({ keydown, paste })), markdownFormattingKeymap()];
 }

@@ -295,3 +295,35 @@ test("undo after Enter-continuation restores the original text in one step", asy
     );
   } finally { t.done(); }
 });
+
+test("off macOS the formatting shortcuts use Ctrl", async () => {
+  const t = await setup();
+  try {
+    t.editor.loadText("one two");
+    t.editor.setSelection(4, 7);
+    const bold = dispatchKey(t, { key: "b", keyCode: 66, ctrlKey: true });
+    assert.equal(bold.defaultPrevented, true);
+    assert.equal(t.editor.getText(), "one **two**");
+
+    dispatchKey(t, { key: "1", keyCode: 49, ctrlKey: true, altKey: true });
+    assert.equal(t.editor.getText(), "# one **two**");
+
+    dispatchKey(t, { key: "*", keyCode: 56, ctrlKey: true, shiftKey: true });
+    assert.equal(t.editor.getText(), "- # one **two**");
+  } finally { t.done(); }
+});
+
+test("runFormatAction applies a formatting action to the view", async () => {
+  const t = await setup();
+  try {
+    const { runFormatAction } = await import("../src/editor-commands.js");
+    t.editor.loadText("a\nb");
+    t.editor.setSelection(0, 3);
+    assert.equal(runFormatAction(t.editor.view, "quote"), true);
+    assert.equal(t.editor.getText(), "> a\n> b");
+    assert.equal(runFormatAction(t.editor.view, "unknown"), false);
+    assert.equal(t.editor.getText(), "> a\n> b");
+    assert.equal(t.undo(t.editor.view), true);
+    assert.equal(t.editor.getText(), "a\nb");
+  } finally { t.done(); }
+});
