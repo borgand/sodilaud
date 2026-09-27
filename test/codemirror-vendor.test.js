@@ -24,7 +24,7 @@ test("a markdown editor mounts in jsdom and parses GFM tables and tasks", async 
       parent: env.document.getElementById("host")
     });
     const names = new Set();
-    cm.ensureSyntaxTree(view.state, view.state.doc.length, 1000).iterate({ enter: node => { names.add(node.name); } });
+    cm.syntaxTree(view.state).iterate({ enter: node => { names.add(node.name); } });
     assert.ok(names.has("Table") && names.has("TaskMarker"));
     view.destroy();
   } finally { env.cleanup(); }

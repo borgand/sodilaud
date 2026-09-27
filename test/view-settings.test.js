@@ -65,7 +65,6 @@ test("editor and sidebar view settings are adjustable and persistent", async () 
   assert.equal(document.getElementById("preview-lines-value").textContent, "2");
   assert.equal(document.getElementById("syntax-highlighting-toggle").textContent, "On");
   assert.equal(document.getElementById("syntax-highlighting-toggle").getAttribute("aria-pressed"), "true");
-  assert.equal(root.classList.contains("syntax-highlighting-enabled"), true);
   assert.ok(document.querySelector("#editor-host .cm-content .syntax-heading"), "headings are highlighted");
   assert.equal(document.getElementById("line-numbers-toggle").textContent, "On");
   assert.equal(document.getElementById("line-numbers-toggle").getAttribute("aria-pressed"), "true");
@@ -96,7 +95,6 @@ test("editor and sidebar view settings are adjustable and persistent", async () 
   assert.equal(app.storage.getItem("sodilaud_note_preview_lines"), "3");
   assert.equal(app.storage.getItem("sodilaud_syntax_highlighting"), "false");
   assert.equal(app.storage.getItem("sodilaud_editor_line_numbers"), "false");
-  assert.equal(root.classList.contains("syntax-highlighting-enabled"), false);
   assert.equal(document.getElementById("syntax-highlighting-toggle").textContent, "Off");
   assert.equal(document.getElementById("line-numbers-toggle").textContent, "Off");
   assert.equal(root.classList.contains("editor-line-numbers-enabled"), false);

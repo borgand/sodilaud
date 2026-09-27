@@ -134,9 +134,13 @@ Sodilaud includes [CodeMirror 6](https://codemirror.net/) (`@codemirror/state`,
 `@codemirror/view`, `@codemirror/language`, `@codemirror/commands`) and
 [Lezer](https://lezer.codemirror.net/) (`@lezer/markdown`, `@lezer/highlight`,
 and their dependencies `@lezer/common`, `@lezer/lr`, `style-mod`,
-`w3c-keyname`, and `crelt`), under the MIT License:
+`w3c-keyname`, `crelt`, and `@marijn/find-cluster-break`), under the MIT
+License:
 
 Copyright (C) 2018-2021 by Marijn Haverbeke <marijn@haverbeke.berlin> and others
+
+`@marijn/find-cluster-break`: Copyright (C) 2024 by Marijn Haverbeke
+<marijn@haverbeke.berlin>
 
 > Permission is hereby granted, free of charge, to any person obtaining a copy
 > of this software and associated documentation files (the "Software"), to deal

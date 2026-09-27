@@ -1775,7 +1775,6 @@ function applyEditorLineNumbers(value, { persist = true, render = true } = {}) {
 
 function applySyntaxHighlighting(value, { persist = true, render = true } = {}) {
   syntaxHighlightingEnabled = normalizeSyntaxHighlighting(value);
-  document.documentElement.classList.toggle("syntax-highlighting-enabled", syntaxHighlightingEnabled);
   syntaxHighlightingToggle.textContent = syntaxHighlightingEnabled ? "On" : "Off";
   syntaxHighlightingToggle.setAttribute("aria-pressed", String(syntaxHighlightingEnabled));
 
