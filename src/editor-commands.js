@@ -60,6 +60,9 @@ function keydown(event, view) {
   if (isGuarded(event, view)) return false;
   const edit = getKeydownEdit(event, view);
   if (!edit) return false;
+  if (event.altKey && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
+    event.stopPropagation();
+  }
   event.preventDefault();
   return applyPureEdit(view, edit);
 }

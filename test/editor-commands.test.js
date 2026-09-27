@@ -140,6 +140,74 @@ test("Alt-ArrowDown on the first of two list items moves it like getListMoveEdit
   } finally { t.done(); }
 });
 
+test("a list move stops the event from reaching document-level Alt+Arrow shortcuts", async () => {
+  const t = await setup();
+  try {
+    const text = "- first\n- second";
+    t.editor.loadText(text);
+    t.editor.setSelection(2, 2);
+
+    let seenByDocument = false;
+    const onDocumentKeydown = () => { seenByDocument = true; };
+    t.env.document.addEventListener("keydown", onDocumentKeydown);
+    try {
+      const event = dispatchKey(t, { key: "ArrowDown", altKey: true });
+      assert.equal(event.defaultPrevented, true);
+      assert.equal(seenByDocument, false);
+    } finally {
+      t.env.document.removeEventListener("keydown", onDocumentKeydown);
+    }
+  } finally { t.done(); }
+});
+
+test("Alt+Arrow that moves nothing still reaches document-level shortcuts", async () => {
+  const t = await setup();
+  try {
+    const text = "plain text";
+    t.editor.loadText(text);
+    t.editor.setSelection(3, 3);
+
+    let seenByDocument = false;
+    const onDocumentKeydown = () => { seenByDocument = true; };
+    t.env.document.addEventListener("keydown", onDocumentKeydown);
+    try {
+      const event = dispatchKey(t, { key: "ArrowDown", altKey: true });
+      assert.equal(event.defaultPrevented, false);
+      assert.equal(seenByDocument, true);
+    } finally {
+      t.env.document.removeEventListener("keydown", onDocumentKeydown);
+    }
+  } finally { t.done(); }
+});
+
+test("Home toggles between the list content start and the true line start like getHomePosition", async () => {
+  const t = await setup();
+  try {
+    const { getHomePosition } = await import("../src/editor-smart.js");
+    const text = "- a";
+    t.editor.loadText(text);
+    t.editor.setSelection(3, 3);
+
+    const expectedFirst = getHomePosition(text, 3, 3);
+    const firstEvent = dispatchKey(t, { key: "Home" });
+    assert.equal(firstEvent.defaultPrevented, true);
+    assert.equal(t.editor.getText(), text);
+    assert.deepEqual(
+      { start: t.editor.getSelection().start, end: t.editor.getSelection().end },
+      { start: expectedFirst, end: expectedFirst }
+    );
+
+    const expectedSecond = getHomePosition(text, expectedFirst, expectedFirst);
+    const secondEvent = dispatchKey(t, { key: "Home" });
+    assert.equal(secondEvent.defaultPrevented, true);
+    assert.equal(t.editor.getText(), text);
+    assert.deepEqual(
+      { start: t.editor.getSelection().start, end: t.editor.getSelection().end },
+      { start: expectedSecond, end: expectedSecond }
+    );
+  } finally { t.done(); }
+});
+
 test("pasting a URL over a selection wraps it like getMarkdownPasteEdit", async () => {
   const t = await setup();
   try {
