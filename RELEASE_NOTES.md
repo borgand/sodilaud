@@ -15,7 +15,8 @@ This release adds clipboard history on macOS and completes the rename from Scrat
   places the cursor. Remote images never load in any mode.
 - Compare mode, two-note split view, find and replace, and smart editing keys (lists, tables,
   pair completion, and more) all still work the same as before.
-- Compare mode now renders differences as CodeMirror decorations instead of a separate diff pane.
+- Compare mode now renders differences as CodeMirror decorations instead of a highlight layer
+  behind the text area.
 
 ## Highlights
 

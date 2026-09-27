@@ -144,7 +144,7 @@ The app displays `Cmd` on macOS and `Ctrl` on Windows or Linux.
 
 ## Markdown editing
 
-Sodilaud has three editing modes, chosen from the toolbar: **Live** (default), **Source**, and **Reading**. Live renders Markdown inline - headings, emphasis, links, task checkboxes, and tables display formatted - while the line your cursor or selection touches shows its raw Markdown. `Cmd/Ctrl`-click a link in Live or Reading mode to open it; a plain click just places the cursor. Tables render as a formatted table until you click into one, which reveals the raw pipe source. Source mode shows raw Markdown in a monospace font with the same editing features as Live. Reading mode is a read-only rendered view. Remote images never load in any mode; only `data:` images render.
+Sodilaud has three editing modes, chosen from the toolbar: **Live** (default), **Source**, and **Reading**. Live renders Markdown inline - headings, emphasis, links, task checkboxes, and tables display formatted - while the line your cursor or selection touches shows its raw Markdown. In Live mode, `Cmd`-click a link (`Ctrl`-click off macOS) to open it; a plain click just places the cursor. In Reading mode a plain click opens a link. Tables render as a formatted table until you click into one, which reveals the raw pipe source. Source mode shows raw Markdown in a monospace font with the same editing features as Live. Reading mode is a read-only rendered view. Remote images never load in any mode; only `data:` images render.
 
 Sodilaud keeps its Markdown assistance lightweight and works directly in the native text editor:
 
