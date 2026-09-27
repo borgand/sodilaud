@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-function getChangedRange(previousValue, nextValue) {
+export function getChangedRange(previousValue, nextValue) {
   let start = 0;
   while (
     start < previousValue.length &&
