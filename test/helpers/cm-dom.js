@@ -15,7 +15,7 @@ export function installEditorDom(html = "<!doctype html><div id=host></div>") {
   const dom = new JSDOM(html, { url: "http://localhost/", pretendToBeVisual: true });
   polyfillLayout(dom.window);
   const saved = {};
-  for (const name of ["window", "document", "MutationObserver", "requestAnimationFrame", "cancelAnimationFrame", "getComputedStyle", "KeyboardEvent", "ClipboardEvent", "Event", "MouseEvent"]) {
+  for (const name of ["window", "document", "MutationObserver", "requestAnimationFrame", "cancelAnimationFrame", "getComputedStyle", "Window", "KeyboardEvent", "ClipboardEvent", "Event", "MouseEvent"]) {
     saved[name] = globalThis[name];
     globalThis[name] = name === "window" ? dom.window : name === "document" ? dom.window.document : dom.window[name];
   }

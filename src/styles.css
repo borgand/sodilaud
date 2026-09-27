@@ -1285,9 +1285,10 @@ button.view-setting-value:hover {
   color: var(--text-muted);
 }
 
-.editor-host .cm-editor .cm-selectionBackground,
-.editor-host .cm-editor.cm-focused .cm-selectionBackground {
-  background-color: rgba(139, 92, 246, 0.35);
+/* CodeMirror's light base theme paints the focused selection with a
+   six-class selector; the host ids outrank it in both states. */
+:is(#editor-host, #secondary-editor-host) .cm-selectionBackground {
+  background-color: color-mix(in srgb, var(--accent-color) 35%, transparent);
 }
 
 .editor-host .cm-editor .cm-cursor {

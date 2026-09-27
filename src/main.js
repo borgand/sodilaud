@@ -19,7 +19,6 @@ import { createCssColorResolver, createOpaqueColorParser, isColorDark } from "./
 import { PRESET_THEMES } from "./preset-themes.js";
 import { compareNoteText, emptyNoteComparison } from "./note-compare.js";
 import { findTextMatches } from "./find.js";
-import { getCursorPosition } from "./editor-position.js";
 import { createMarkdownEditor } from "./editor-view.js";
 import { markdownEditingCommands } from "./editor-commands.js";
 import { livePreview } from "./editor-live-preview.js";
@@ -535,6 +534,19 @@ let mcpConnectionInfo = null;
 let mcpSnapshotTimer = null;
 const mcpNoteSnapshotTimers = new Map();
 
+const WORD_COUNT_DEBOUNCE_MS = 150;
+let wordCountTimer = null;
+
+// Counting words walks the whole document, so it trails typing; the cursor
+// position stays immediate.
+function scheduleWordCharCount(pane, editor) {
+  clearTimeout(wordCountTimer);
+  wordCountTimer = setTimeout(() => {
+    wordCountTimer = null;
+    if (activePane === pane) updateWordCharCountForText(editor);
+  }, WORD_COUNT_DEBOUNCE_MS);
+}
+
 const editorModeFor = mode => mode === "source" ? "source" : "live";
 
 function createAppEditor(host, { ariaLabel, pane }) {
@@ -548,7 +560,9 @@ function createAppEditor(host, { ariaLabel, pane }) {
     extensions: [markdownEditingCommands(), livePreview({ onOpenLink: openExternalHref })],
     onChange: pane === "primary" ? handleEditorInput : handleSecondaryEditorInput,
     onSelectionChange: () => {
-      if (activePane === pane) updateWordCharCountForText(editor);
+      if (activePane !== pane) return;
+      updateCursorPositionForText(editor);
+      scheduleWordCharCount(pane, editor);
     },
     onFocus: () => setActivePane(pane)
   });
@@ -3541,6 +3555,7 @@ function populateMoveFolderMenu(note) {
 function showContextMenu(e, noteId = null, folderId = null) {
   e.preventDefault();
   let hasInsertMenu = false;
+  contextMenuEditor = null;
   contextMenuFolderId = folderId;
   setFolderContextVisibility(Boolean(folderId));
   ctxDeleteNoteBtn.style.display = noteId ? "flex" : "none";
@@ -4098,12 +4113,14 @@ function setActivePane(pane) {
 }
 
 function updateWordCharCountForText(editor) {
+  clearTimeout(wordCountTimer);
+  wordCountTimer = null;
   const text = editor.getText();
   const totalWords = text.trim() ? text.trim().split(/\s+/).filter(Boolean).length : 0;
   const totalChars = text.length;
   
   wordCharCount.textContent = `${totalWords} word${totalWords !== 1 ? 's' : ''} • ${totalChars} character${totalChars !== 1 ? 's' : ''}`;
-  updateCursorPositionForText(editor, text);
+  updateCursorPositionForText(editor);
 
   const { start, end } = editor.getSelection();
   
@@ -4119,9 +4136,11 @@ function updateWordCharCountForText(editor) {
   }
 }
 
-function updateCursorPositionForText(editor, text = editor.getText()) {
-  const { start, end, direction } = editor.getSelection();
-  const position = getCursorPosition(text, start, end, direction);
+function updateCursorPositionForText(editor) {
+  const { state } = editor.view;
+  const head = state.selection.main.head;
+  const line = state.doc.lineAt(head);
+  const position = { line: line.number, column: head - line.from + 1 };
 
   cursorPosition.textContent = `Ln ${position.line}, Col ${position.column}`;
   cursorPosition.title = `Line ${position.line}, column ${position.column}`;
