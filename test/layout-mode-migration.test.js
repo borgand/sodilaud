@@ -17,8 +17,7 @@ const { document } = app.dom.window;
 
 test("a legacy split layout boots as live and is rewritten in storage", () => {
   const container = document.getElementById("app");
-  assert.equal(container.classList.contains("mode-live"), true);
-  assert.equal(container.classList.contains("mode-split"), false);
+  assert.deepEqual([...container.classList].filter((name) => name.startsWith("mode-")), ["mode-live"]);
   assert.equal(document.getElementById("mode-live").getAttribute("aria-pressed"), "true");
   assert.equal(app.storage.getItem("sodilaud_layout_mode"), "live");
 });

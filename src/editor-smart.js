@@ -8,7 +8,6 @@ import {
   isInsideInlineCode,
   parseListLine
 } from "./editor-context.js";
-import { applyEditorEdit } from "./editor-edit.js";
 import { getTableBackspaceEdit } from "./editor-tables.js";
 
 const PAIRS = {
@@ -300,68 +299,4 @@ export function getMarkdownPasteEdit(value, selectionStart, selectionEnd, text) 
   }
 
   return null;
-}
-
-export function handleEditorSmartKeydown(event) {
-  if (event.isComposing || event.metaKey || event.ctrlKey) return;
-  const textarea = event.currentTarget;
-
-  if (event.altKey && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
-    const edit = getListMoveEdit(
-      textarea.value,
-      textarea.selectionStart,
-      textarea.selectionEnd,
-      event.key === "ArrowUp" ? -1 : 1
-    );
-    if (!edit) return;
-    event.preventDefault();
-    event.stopPropagation();
-    applyEditorEdit(textarea, edit);
-    return;
-  }
-  if (event.altKey) return;
-
-  if (event.key === "Home" && !event.shiftKey) {
-    const position = getHomePosition(
-      textarea.value,
-      textarea.selectionStart,
-      textarea.selectionEnd
-    );
-    if (position === null) return;
-    event.preventDefault();
-    textarea.setSelectionRange(position, position);
-    return;
-  }
-
-  const edit = getSmartKeyEdit(
-    textarea.value,
-    textarea.selectionStart,
-    textarea.selectionEnd,
-    event.key
-  );
-  if (!edit) return;
-
-  event.preventDefault();
-  if (edit.moveTo !== undefined) {
-    textarea.setSelectionRange(edit.moveTo, edit.moveTo);
-  } else {
-    applyEditorEdit(textarea, edit);
-  }
-}
-
-export function handleMarkdownPaste(event) {
-  const text = event.clipboardData?.getData("text/plain");
-  if (!text) return;
-
-  const textarea = event.currentTarget;
-  const edit = getMarkdownPasteEdit(
-    textarea.value,
-    textarea.selectionStart,
-    textarea.selectionEnd,
-    text
-  );
-  if (!edit) return;
-
-  event.preventDefault();
-  applyEditorEdit(textarea, edit);
 }

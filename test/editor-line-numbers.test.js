@@ -3,25 +3,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { renderEditorLineNumbers } from "../src/editor-line-numbers.js";
 import { bootApp } from "./helpers/app-harness.js";
 
-test("line number rows preserve source lines and escape their mirror text", () => {
-  const html = renderEditorLineNumbers("first\n\n<b>third</b>\n", {
-    changedLines: [1, 2],
-    changeType: "removed"
-  });
+function lineNumbers(document, hostId) {
+  return [...document.querySelectorAll(`#${hostId} .cm-lineNumbers .cm-gutterElement`)]
+    .filter((element) => element.style.visibility !== "hidden")
+    .map((element) => element.textContent);
+}
 
-  assert.equal((html.match(/editor-line-number-row/g) ?? []).length, 4);
-  assert.match(html, /data-line-number="1">first/);
-  assert.match(html, /data-line-number="2">&#8203;/);
-  assert.match(html, /data-line-number="3">&lt;b&gt;third&lt;\/b&gt;/);
-  assert.match(html, /data-line-number="4">&#8203;/);
-  assert.equal((html.match(/editor-line-number-diff-removed/g) ?? []).length, 2);
-  assert.doesNotMatch(html, /<b>third<\/b>/);
-});
-
-test("primary and secondary line-number gutters update and follow editor scrolling", async () => {
+test("primary and secondary line-number gutters follow the note text", async () => {
   const app = await bootApp({
     storage: {
       sodilaud_editor_line_numbers: "true",
@@ -43,44 +33,26 @@ test("primary and secondary line-number gutters update and follow editor scrolli
       ]
     }
   });
+  const { document } = app.dom.window;
 
-  const editor = document.getElementById("editor-textarea");
-  const gutter = document.getElementById("editor-line-numbers");
-  assert.equal(gutter.children.length, 2);
+  assert.equal(document.documentElement.classList.contains("editor-line-numbers-enabled"), true);
+  assert.equal(document.getElementById("line-numbers-toggle").textContent, "On");
+  assert.deepEqual(lineNumbers(document, "editor-host"), ["1", "2"]);
 
-  editor.value += "\nthree";
-  editor.dispatchEvent(new app.dom.window.Event("input", { bubbles: true }));
-  await app.settle(30);
-  assert.equal(gutter.children.length, 3);
-  assert.equal(
-    document.getElementById("editor-wrapper").style.getPropertyValue("--editor-line-number-gutter"),
-    "calc(1ch + 1.5em)"
+  await app.type("one\ntwo\nthree");
+  assert.deepEqual(lineNumbers(document, "editor-host"), ["1", "2", "3"]);
+
+  await app.type(Array.from({ length: 10 }, (_, index) => `line ${index + 1}`).join("\n"));
+  assert.deepEqual(
+    lineNumbers(document, "editor-host"),
+    Array.from({ length: 10 }, (_, index) => String(index + 1))
   );
-
-  editor.value = Array.from({ length: 10 }, (_, index) => `line ${index + 1}`).join("\n");
-  editor.dispatchEvent(new app.dom.window.Event("input", { bubbles: true }));
-  await app.settle(30);
-  assert.equal(gutter.children.length, 10);
-  assert.equal(
-    document.getElementById("editor-wrapper").style.getPropertyValue("--editor-line-number-gutter"),
-    "calc(2ch + 1.5em)"
-  );
-
-  editor.scrollTop = 48;
-  editor.dispatchEvent(new app.dom.window.Event("scroll"));
-  assert.equal(gutter.scrollTop, 48);
 
   document.getElementById("split-note-btn").click();
-  const secondaryEditor = document.getElementById("secondary-editor-textarea");
-  const secondaryGutter = document.getElementById("secondary-editor-line-numbers");
-  assert.equal(secondaryGutter.children.length, 3);
-
-  secondaryEditor.scrollTop = 32;
-  secondaryEditor.dispatchEvent(new app.dom.window.Event("scroll"));
-  assert.equal(secondaryGutter.scrollTop, 32);
+  assert.deepEqual(lineNumbers(document, "secondary-editor-host"), ["1", "2", "3"]);
 });
 
-test("line numbers are off by default and their hidden gutters stay empty", async () => {
+test("line numbers are off by default and the toggle shows and persists them", async () => {
   const app = await bootApp({
     instance: 2,
     storage: {
@@ -93,23 +65,25 @@ test("line numbers are off by default and their hidden gutters stay empty", asyn
       }]
     }
   });
+  const { document } = app.dom.window;
+  const toggle = document.getElementById("line-numbers-toggle");
 
   assert.equal(document.documentElement.classList.contains("editor-line-numbers-enabled"), false);
-  assert.equal(document.getElementById("line-numbers-toggle").textContent, "Off");
-  assert.equal(document.getElementById("line-numbers-toggle").getAttribute("aria-pressed"), "false");
-  const editor = document.getElementById("editor-textarea");
-  const gutter = document.getElementById("editor-line-numbers");
-  const secondaryGutter = document.getElementById("secondary-editor-line-numbers");
-  assert.equal(gutter.childNodes.length, 0);
-  assert.equal(secondaryGutter.childNodes.length, 0);
+  assert.equal(toggle.textContent, "Off");
+  assert.equal(toggle.getAttribute("aria-pressed"), "false");
+  assert.equal(document.querySelectorAll(".cm-lineNumbers").length, 0);
 
-  editor.value = "one\ntwo\nthree";
-  editor.dispatchEvent(new app.dom.window.Event("input", { bubbles: true }));
-  await app.settle(30);
-  assert.equal(gutter.childNodes.length, 0);
+  await app.type("one\ntwo\nthree");
+  assert.equal(document.querySelectorAll(".cm-lineNumbers").length, 0);
 
-  document.getElementById("line-numbers-toggle").click();
-  assert.equal(gutter.children.length, 3);
-  document.getElementById("line-numbers-toggle").click();
-  assert.equal(gutter.childNodes.length, 0);
+  toggle.click();
+  assert.equal(toggle.getAttribute("aria-pressed"), "true");
+  assert.equal(app.storage.getItem("sodilaud_editor_line_numbers"), "true");
+  assert.deepEqual(lineNumbers(document, "editor-host"), ["1", "2", "3"]);
+  assert.equal(document.querySelectorAll("#secondary-editor-host .cm-lineNumbers").length, 1);
+
+  toggle.click();
+  assert.equal(toggle.getAttribute("aria-pressed"), "false");
+  assert.equal(app.storage.getItem("sodilaud_editor_line_numbers"), "false");
+  assert.equal(document.querySelectorAll(".cm-lineNumbers").length, 0);
 });

@@ -30,32 +30,18 @@ const NOTES = [
 ];
 
 test("Find All lists live matches and jumps to the selected result", async () => {
-  let nativeResizeHandler = null;
   const app = await bootApp({
     storage: { sodilaud_notes: NOTES },
-    handlers: { load_workspace_preference: () => null },
-    windowApi: {
-      getCurrentWindow: () => ({
-        onCloseRequested: async () => () => {},
-        onResized: async (handler) => {
-          nativeResizeHandler = handler;
-          return () => {};
-        }
-      })
-    }
+    handlers: { load_workspace_preference: () => null }
   });
   const { document, Event, KeyboardEvent } = app.dom.window;
   app.dom.window.marked = marked;
   let scrolledPreviewMatch = null;
+  const activeEditorMark = () => {
+    const marks = [...document.querySelectorAll("#editor-host .cm-find-active")];
+    return marks.map((mark) => mark.textContent).join("");
+  };
 
-  // jsdom does not perform layout; provide a visual position for the active
-  // backdrop mark so navigation can still verify the real scroll path.
-  Object.defineProperty(app.dom.window.HTMLElement.prototype, "offsetTop", {
-    configurable: true,
-    get() {
-      return this.matches?.("mark.active-match") ? 480 : 0;
-    }
-  });
   app.dom.window.HTMLElement.prototype.scrollIntoView = function () {
     if (this.matches?.("mark.find-preview-match")) {
       scrolledPreviewMatch = this.dataset.findIndex;
@@ -71,6 +57,8 @@ test("Find All lists live matches and jumps to the selected result", async () =>
   const findInput = document.getElementById("find-input");
   findInput.value = "alpha";
   findInput.dispatchEvent(new Event("input", { bubbles: true }));
+  assert.equal(document.querySelectorAll("#editor-host .cm-find-match").length, 3);
+  assert.equal(document.querySelectorAll("#editor-host .cm-find-active").length, 1);
 
   const caseToggle = document.getElementById("find-case-toggle");
   caseToggle.click();
@@ -86,6 +74,7 @@ test("Find All lists live matches and jumps to the selected result", async () =>
   exactToggle.click();
   assert.equal(exactToggle.getAttribute("aria-pressed"), "true");
   assert.equal(document.getElementById("find-count").textContent, "0 of 0");
+  assert.equal(document.querySelectorAll("#editor-host .cm-find-match").length, 0);
   exactToggle.click();
   findInput.value = "alpha";
   findInput.dispatchEvent(new Event("input", { bubbles: true }));
@@ -112,33 +101,30 @@ test("Find All lists live matches and jumps to the selected result", async () =>
   );
 
   document.querySelector('[data-note-id="note-three"]').click();
-  assert.equal(document.getElementById("editor-textarea").value, "Remote alpha");
-  assert.equal(document.getElementById("editor-textarea").selectionStart, 7);
+  assert.equal(app.editorText(), "Remote alpha");
+  assert.equal(app.editor().state.selection.main.from, 7);
+  assert.equal(app.editor().state.selection.main.to, 12);
+  assert.equal(activeEditorMark(), "alpha");
   assert.ok(document.querySelector('[data-id="note-three"]').classList.contains("active"));
 
   document.querySelector('[data-note-id="note-one"][data-match-start="0"]').click();
   allNotesToggle.click();
   assert.equal(document.getElementById("find-results-summary").textContent, "3 matches");
+  assert.equal(app.editorText(), NOTES[0].content);
+  assert.equal(activeEditorMark(), "Alpha");
 
-  const highlightBeforeResize = document.querySelector("#editor-backdrop mark.active-match");
-  app.dom.window.dispatchEvent(new Event("resize"));
-  await app.settle(150);
-  assert.notEqual(
-    document.querySelector("#editor-backdrop mark.active-match"),
-    highlightBeforeResize,
-    "resizing redraws the editor highlights"
-  );
+  const view = app.editor();
+  const scrollTargets = [];
+  const dispatch = view.dispatch.bind(view);
+  view.dispatch = (...specs) => {
+    for (const spec of specs) {
+      for (const effect of [spec?.effects ?? []].flat()) {
+        if (effect?.value?.range && effect.value.y === "center") scrollTargets.push(effect.value.range);
+      }
+    }
+    return dispatch(...specs);
+  };
 
-  const highlightBeforeNativeResize = document.querySelector("#editor-backdrop mark.active-match");
-  nativeResizeHandler();
-  await app.settle(150);
-  assert.notEqual(
-    document.querySelector("#editor-backdrop mark.active-match"),
-    highlightBeforeNativeResize,
-    "a packaged Tauri window resize redraws the editor highlights"
-  );
-
-  const editor = document.getElementById("editor-textarea");
   const firstResult = document.querySelector('[data-match-index="0"]');
   firstResult.focus();
   firstResult.dispatchEvent(new KeyboardEvent("keydown", {
@@ -147,22 +133,23 @@ test("Find All lists live matches and jumps to the selected result", async () =>
   }));
   assert.equal(document.activeElement.dataset.matchIndex, "1");
 
+  scrollTargets.length = 0;
   document.activeElement.click();
-  assert.equal(editor.selectionStart, 19);
-  assert.equal(editor.selectionEnd, 24);
-  assert.equal(editor.scrollTop, 480);
+  assert.equal(view.state.selection.main.from, 19);
+  assert.equal(view.state.selection.main.to, 24);
+  assert.deepEqual(
+    scrollTargets.map((range) => [range.from, range.to]),
+    [[19, 24]],
+    "the selected match is scrolled into the centre of the editor"
+  );
+  assert.equal(activeEditorMark(), "alpha");
+  assert.equal(document.querySelector("#editor-host .cm-find-active").closest(".cm-line").textContent, "second alpha here");
   assert.equal(document.getElementById("cursor-position").textContent, "Ln 2, Col 13");
-  assert.equal(document.activeElement, editor);
+  assert.ok(document.activeElement === view.contentDOM, "focus is on view.contentDOM");
   assert.equal(document.querySelector(".find-result-button.active").dataset.matchIndex, "1");
 
-  const highlightBeforeModeChange = document.querySelector("#editor-backdrop mark.active-match");
-  document.getElementById("mode-preview").click();
+  document.getElementById("mode-reading").click();
   await app.settle(80);
-  assert.notEqual(
-    document.querySelector("#editor-backdrop mark.active-match"),
-    highlightBeforeModeChange,
-    "changing layout mode redraws the editor highlights"
-  );
   assert.equal(document.querySelectorAll("mark.find-preview-match").length, 3);
   assert.equal(
     document.querySelector("mark.find-preview-match.active-match").dataset.findIndex,
@@ -176,16 +163,20 @@ test("Find All lists live matches and jumps to the selected result", async () =>
   );
   assert.equal(scrolledPreviewMatch, "2");
 
-  editor.value = "alpha only";
-  editor.dispatchEvent(new Event("input", { bubbles: true }));
+  view.dispatch({
+    changes: { from: 0, to: view.state.doc.length, insert: "alpha only" },
+    userEvent: "input.type"
+  });
   await app.settle(200);
   assert.equal(document.querySelectorAll(".find-result-button").length, 1);
   assert.equal(document.querySelectorAll("mark.find-preview-match").length, 1);
   assert.equal(document.getElementById("find-results-summary").textContent, "1 match");
+  assert.equal(document.querySelectorAll("#editor-host .cm-find-match").length, 1);
 
   document.querySelector('[data-id="note-two"]').click();
   assert.equal(document.querySelectorAll(".find-result-button").length, 0);
   assert.match(document.querySelector(".find-results-empty").textContent, /No matches/);
+  assert.equal(document.querySelectorAll("#editor-host .cm-find-match").length, 0);
 
   document.querySelector('[data-id="note-one"]').click();
   assert.equal(document.querySelectorAll(".find-result-button").length, 1);
@@ -197,4 +188,7 @@ test("Find All lists live matches and jumps to the selected result", async () =>
   resultsToggle.click();
   assert.equal(resultsPane.style.display, "flex");
   assert.equal(document.getElementById("secondary-pane-wrapper").style.display, "none");
+
+  document.getElementById("find-close").click();
+  assert.equal(document.querySelectorAll("#editor-host .cm-find-match").length, 0);
 });

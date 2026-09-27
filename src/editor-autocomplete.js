@@ -9,7 +9,6 @@ import {
   parseListLine,
   removeIndentLevel
 } from "./editor-context.js";
-import { applyEditorEdit } from "./editor-edit.js";
 import { getTableEnterEdit } from "./editor-tables.js";
 
 function applyTextEdits(value, edits) {
@@ -196,27 +195,4 @@ export function getMarkdownAutocompleteEdit(value, selectionStart, selectionEnd)
   return getListContinuationEdit(value, selectionStart) ||
     getBlockquoteEdit(value, selectionStart) ||
     getTableEnterEdit(value, selectionStart, selectionEnd);
-}
-
-export function handleMarkdownAutocomplete(event) {
-  if (
-    event.key !== "Enter" ||
-    event.shiftKey ||
-    event.metaKey ||
-    event.ctrlKey ||
-    event.altKey ||
-    event.isComposing
-  ) return;
-
-  const textarea = event.currentTarget;
-  const edit = getMarkdownAutocompleteEdit(
-    textarea.value,
-    textarea.selectionStart,
-    textarea.selectionEnd
-  );
-
-  if (!edit) return;
-
-  event.preventDefault();
-  applyEditorEdit(textarea, edit);
 }

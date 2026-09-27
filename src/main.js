@@ -352,11 +352,10 @@ const mcpWriter = createMcpWriter({
         if (operation === "rename_note") noteTitleInput.value = note.title;
         updateMarkdownPreview();
         updateWordCharCountForText(primaryEditor);
-        if (!isFindBarOpen) updateHighlights();
       }
-      if (secondaryNoteId === note.id) {
-        updateSecondaryMarkdownPreview();
-        updateSecondaryEditorBackdrop();
+      if (secondaryNoteId === note.id) updateSecondaryMarkdownPreview();
+      if (isCompareMode && (activeNoteId === note.id || secondaryNoteId === note.id)) {
+        applyComparisonDecorations();
       }
       populateSecondaryNoteSelect();
       if (isFindResultsOpen && isFindAllNotesMode) renderFindResults();
@@ -824,13 +823,12 @@ function loadActiveNote() {
   updateWordCharCountForText(primaryEditor);
   updateMarkdownPreview();
   markdownPreview.scrollTop = 0;
-  const compareStopped = syncCompareControl();
+  applyComparisonDecorations();
   if (isFindBarOpen) {
     runFind({ selectActive: false });
   } else {
-    updateHighlights();
+    updateFindHighlights();
   }
-  if (compareStopped) renderSecondaryEditorBackdrop();
 }
 
 function createNoteListItem(note) {
@@ -1758,22 +1756,6 @@ function applyNotePreviewLines(value, { persist = true, render = true } = {}) {
   if (render) {
     renderNoteList(searchInput.value);
   }
-}
-
-function updateSecondaryEditorBackdrop() {
-  if (isCompareMode) {
-    redrawComparisonBackdrops();
-    return;
-  }
-
-  renderSecondaryEditorBackdrop();
-}
-
-function renderSecondaryEditorBackdrop() {
-  const comparison = visibleNoteComparison();
-  secondaryEditor.setDiff(isCompareMode
-    ? { decorations: comparison.rightDecorations, changedLines: comparison.rightChangedLines }
-    : null);
 }
 
 function applyEditorLineNumbers(value, { persist = true, render = true } = {}) {
@@ -3039,7 +3021,7 @@ function hideFindBar() {
   replaceInput.value = "";
   toggleReplace(false);
   updateFindCount();
-  updateHighlights();
+  updateFindHighlights();
   primaryEditor.focus();
 }
 
@@ -3096,7 +3078,7 @@ function runFind({ preserveActive = false, selectActive = true } = {}) {
     findInput.classList.add("invalid-regex");
     updateFindCount("Invalid");
     updateFindResultsToggle();
-    updateHighlights();
+    updateFindHighlights();
     renderFindResults();
     return;
   }
@@ -3110,13 +3092,13 @@ function runFind({ preserveActive = false, selectActive = true } = {}) {
       selectMatch(activeMatchIndex, false); // Do not steal focus from search input
     } else {
       updateFindCount();
-      updateHighlights();
+      updateFindHighlights();
       renderFindResults();
     }
   } else {
     activeMatchIndex = -1;
     updateFindCount();
-    updateHighlights();
+    updateFindHighlights();
     renderFindResults();
   }
 
@@ -3136,7 +3118,7 @@ function selectMatch(index, focusEditor = false) {
   updateCursorPositionForText(primaryEditor);
 
   updateFindCount();
-  updateHighlights();
+  updateFindHighlights();
   scrollActiveMatchIntoView(match);
   renderFindResults();
 }
@@ -3502,22 +3484,9 @@ function updatePreviewHighlights() {
   });
 }
 
-function updateHighlights() {
-  if (isCompareMode) {
-    redrawComparisonBackdrops();
-    return;
-  }
-
-  renderPrimaryEditorBackdrop();
-}
-
-function renderPrimaryEditorBackdrop() {
-  const comparison = visibleNoteComparison();
+function updateFindHighlights() {
   updatePreviewHighlights();
   primaryEditor.setFindMatches(isFindBarOpen && findInput.value ? findMatches : [], activeMatchIndex);
-  primaryEditor.setDiff(isCompareMode
-    ? { decorations: comparison.leftDecorations, changedLines: comparison.leftChangedLines }
-    : null);
 }
 
 // ----------------------------------------------------
@@ -3872,16 +3841,28 @@ function scheduleNoteComparisonRefresh() {
   if (noteComparisonRefreshTimer !== null) {
     clearTimeout(noteComparisonRefreshTimer);
   }
+  const wasPending = isNoteComparisonPending;
   isNoteComparisonPending = true;
   syncCompareControl();
+  if (!wasPending) renderComparisonDecorations();
   noteComparisonRefreshTimer = setTimeout(() => {
     noteComparisonRefreshTimer = null;
     isNoteComparisonPending = false;
-    if (isCompareMode) redrawComparisonBackdrops({ forceComparison: true });
+    if (isCompareMode) applyComparisonDecorations({ forceComparison: true });
   }, NOTE_COMPARISON_DEBOUNCE_MS);
 }
 
-function redrawComparisonBackdrops({ forceComparison = false } = {}) {
+function renderComparisonDecorations() {
+  const comparison = visibleNoteComparison();
+  primaryEditor.setDiff(isCompareMode
+    ? { decorations: comparison.leftDecorations, changedLines: comparison.leftChangedLines }
+    : null);
+  secondaryEditor.setDiff(isCompareMode
+    ? { decorations: comparison.rightDecorations, changedLines: comparison.rightChangedLines }
+    : null);
+}
+
+function applyComparisonDecorations({ forceComparison = false } = {}) {
   syncCompareControl();
   if (isCompareMode) {
     const leftText = primaryEditor.getText();
@@ -3896,8 +3877,7 @@ function redrawComparisonBackdrops({ forceComparison = false } = {}) {
     syncCompareControl();
   }
 
-  renderPrimaryEditorBackdrop();
-  renderSecondaryEditorBackdrop();
+  renderComparisonDecorations();
 }
 
 function setCompareMode(forceState, { render = true } = {}) {
@@ -3911,7 +3891,7 @@ function setCompareMode(forceState, { render = true } = {}) {
   if (!isCompareMode) resetNoteComparison();
   syncCompareControl();
 
-  if (render) redrawComparisonBackdrops();
+  if (render) applyComparisonDecorations();
 }
 
 function setDualPaneHeaderLayout(enabled) {
@@ -4031,9 +4011,7 @@ function loadSecondaryNote() {
   secondaryNoteTitle.value = note.title;
   secondaryEditor.loadText(note.content);
 
-  const compareStopped = syncCompareControl();
-  updateSecondaryEditorBackdrop();
-  if (compareStopped) renderPrimaryEditorBackdrop();
+  applyComparisonDecorations();
   updateSecondaryMarkdownPreview();
   if (secondaryNoteSelect.value !== note.id) {
     secondaryNoteSelect.value = note.id;
