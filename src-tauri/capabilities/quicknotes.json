@@ -1,0 +1,39 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "quicknotes",
+  "description": "The Quick Notes panel, which owns the notes collection: local and workspace storage, import and export, and the MCP snapshot and agent writes. qn_close and qn_start_drag hide and move only this window.",
+  "windows": [
+    "quicknotes"
+  ],
+  "permissions": [
+    "core:default",
+    "allow-confirm-and-open-url",
+    "allow-load-workspace-preference",
+    "allow-set-last-workspace",
+    "allow-save-file-native",
+    "allow-import-file-native",
+    "allow-select-db-file",
+    "allow-vacuum-workspace",
+    "allow-load-db-notes",
+    "allow-load-db-folders",
+    "allow-load-db-trash",
+    "allow-save-note-db",
+    "allow-save-notes-db",
+    "allow-save-folders-db",
+    "allow-save-workspace-db",
+    "allow-show-alert-dialog",
+    "allow-update-mcp-snapshot",
+    "allow-update-mcp-note",
+    "allow-get-mcp-connection-info",
+    "allow-start-mcp-server",
+    "allow-set-mcp-permissions",
+    "allow-complete-mcp-write",
+    "allow-stop-mcp-server",
+    "allow-quit-handler-ready",
+    "allow-quit-window-done",
+    "allow-qn-close",
+    "allow-qn-start-drag",
+    "allow-qn-get-config",
+    "allow-show-main-window"
+  ]
+}

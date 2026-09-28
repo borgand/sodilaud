@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { bootApp } from "./helpers/app-harness.js";
+import { bootMainWindow } from "./helpers/app-harness.js";
 import { contrastRatio, parseColor } from "../src/theme-colors.js";
 import { createCssColorResolver, createOpaqueColorParser } from "../src/css-color.js";
 
@@ -48,7 +48,7 @@ const srgbLight = {
   isCustom: true
 };
 
-const app = await bootApp({
+const app = await bootMainWindow({
   // jsdom ships no CSS object, so the importer would reject every non-hex
   // colour before the classification under test ever ran.
   globals: { CSS: { supports: () => true } },

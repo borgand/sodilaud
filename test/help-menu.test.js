@@ -3,10 +3,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { bootApp } from "./helpers/app-harness.js";
+import { bootMainWindow } from "./helpers/app-harness.js";
 
 test("the Sodilaud menu opens Help and About dialogs and returns focus", async () => {
-  const app = await bootApp();
+  const app = await bootMainWindow();
   const actionsButton = document.getElementById("actions-btn");
   const actionsDropdown = document.getElementById("actions-dropdown-content");
   const helpMenuButton = document.getElementById("help-menu-btn");

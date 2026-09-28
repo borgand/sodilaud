@@ -45,7 +45,6 @@ pub struct ClipboardRuntime {
     /// is still registered.
     popup_destroying: AtomicBool,
     create_popup_after_destroy: AtomicBool,
-    quit_handler_ready: AtomicBool,
     /// The main window's colours for the popup, memory only. Never persisted.
     theme: Mutex<PopupTheme>,
 }
@@ -55,6 +54,11 @@ fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 }
 
 impl ClipboardRuntime {
+    /// The clipboard hotkey actually registered, which Quick Notes must not take.
+    pub fn registered_hotkey(&self) -> Option<String> {
+        lock(&self.registered).clone()
+    }
+
     pub fn config(&self) -> ClipConfig {
         lock(&self.config).clone()
     }
@@ -266,14 +270,6 @@ impl ClipboardRuntime {
 
     pub fn take_paste_on_close(&self) -> bool {
         self.paste_on_close.swap(false, Ordering::SeqCst)
-    }
-
-    pub fn mark_quit_handler_ready(&self) {
-        self.quit_handler_ready.store(true, Ordering::SeqCst);
-    }
-
-    pub fn quit_handler_ready(&self) -> bool {
-        self.quit_handler_ready.load(Ordering::SeqCst)
     }
 
     /// Called on quit: stop polling, wipe, clear the pasteboard if it holds an entry.

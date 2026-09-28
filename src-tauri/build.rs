@@ -37,10 +37,16 @@ fn main() {
             "clip_start_drag",
             "clip_set_config",
             "clip_set_theme",
-            "hide_main_window",
-            "quit_app",
             "quit_handler_ready",
+            "quit_window_done",
             "open_accessibility_settings",
+            "qn_close",
+            "qn_start_drag",
+            "qn_get_config",
+            "qn_set_hotkey",
+            "qn_dismiss_intro",
+            "qn_show",
+            "show_main_window",
         ]),
     ))
     .expect("failed to run tauri-build");

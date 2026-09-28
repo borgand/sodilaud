@@ -28,9 +28,9 @@ test("folders-only local state seeds an empty remembered workspace", () => {
   assert.deepEqual(workspaceWrites[0].folders, LOCAL_FOLDERS);
   assert.deepEqual(
     workspaceWrites[0].notes.map(({ title }) => title),
-    ["Welcome to Sodilaud!"]
+    ["Welcome to Quick Notes"]
   );
-  assert.deepEqual(app.sidebarTitles(), ["Welcome to Sodilaud!"]);
+  assert.deepEqual(app.sidebarTitles(), ["Welcome to Quick Notes"]);
   assert.deepEqual(
     [...document.querySelectorAll(".note-folder-name")].map((element) => element.textContent),
     ["Local Folder"]

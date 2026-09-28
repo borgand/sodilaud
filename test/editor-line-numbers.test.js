@@ -36,7 +36,6 @@ test("primary and secondary line-number gutters follow the note text", async () 
   const { document } = app.dom.window;
 
   assert.equal(document.documentElement.classList.contains("editor-line-numbers-enabled"), true);
-  assert.equal(document.getElementById("line-numbers-toggle").textContent, "On");
   assert.deepEqual(lineNumbers(document, "editor-host"), ["1", "2"]);
 
   await app.type("one\ntwo\nthree");
@@ -52,7 +51,7 @@ test("primary and secondary line-number gutters follow the note text", async () 
   assert.deepEqual(lineNumbers(document, "secondary-editor-host"), ["1", "2", "3"]);
 });
 
-test("line numbers are off by default and the toggle shows and persists them", async () => {
+test("line numbers are off by default and follow the main window's toggle", async () => {
   const app = await bootApp({
     instance: 2,
     storage: {
@@ -66,24 +65,22 @@ test("line numbers are off by default and the toggle shows and persists them", a
     }
   });
   const { document } = app.dom.window;
-  const toggle = document.getElementById("line-numbers-toggle");
+  const toggle = async (enabled) => {
+    app.storage.setItem("sodilaud_editor_line_numbers", String(enabled));
+    await app.emit("prefs-changed", { key: "sodilaud_editor_line_numbers", source: "main" });
+  };
 
   assert.equal(document.documentElement.classList.contains("editor-line-numbers-enabled"), false);
-  assert.equal(toggle.textContent, "Off");
-  assert.equal(toggle.getAttribute("aria-pressed"), "false");
+  assert.equal(document.getElementById("line-numbers-toggle"), null, "the toggle lives in the main window");
   assert.equal(document.querySelectorAll(".cm-lineNumbers").length, 0);
 
   await app.type("one\ntwo\nthree");
   assert.equal(document.querySelectorAll(".cm-lineNumbers").length, 0);
 
-  toggle.click();
-  assert.equal(toggle.getAttribute("aria-pressed"), "true");
-  assert.equal(app.storage.getItem("sodilaud_editor_line_numbers"), "true");
+  await toggle(true);
   assert.deepEqual(lineNumbers(document, "editor-host"), ["1", "2", "3"]);
   assert.equal(document.querySelectorAll("#secondary-editor-host .cm-lineNumbers").length, 1);
 
-  toggle.click();
-  assert.equal(toggle.getAttribute("aria-pressed"), "false");
-  assert.equal(app.storage.getItem("sodilaud_editor_line_numbers"), "false");
+  await toggle(false);
   assert.equal(document.querySelectorAll(".cm-lineNumbers").length, 0);
 });

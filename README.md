@@ -4,7 +4,7 @@
 [![Latest release](https://img.shields.io/github/v/release/borgand/sodilaud?include_prereleases)](https://github.com/borgand/sodilaud/releases)
 [![License: GPL v3 or later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 
-Sodilaud is a lightweight, open-source, local-first desktop editor for notes, snippets, and Markdown. It runs on macOS, Windows, and Linux with no account, cloud service, or telemetry. On macOS it also keeps an in-memory clipboard history one hotkey away.
+Sodilaud is a lightweight, open-source, local-first desktop editor for notes, snippets, and Markdown. Your notes live in **Quick Notes**, a floating panel one hotkey away that stays on top while you work in other apps. It runs on macOS, Windows, and Linux with no account, cloud service, or telemetry. On macOS it also keeps an in-memory clipboard history one hotkey away.
 
 [Visit the Sodilaud website](https://borgand.github.io/sodilaud/) for an OS-aware download and SHA-256 checksums.
 
@@ -24,6 +24,17 @@ Packages are not yet production-signed. macOS and Windows may show a security wa
 
 See [release notes](RELEASE_NOTES.md) for highlights and compatibility details.
 
+## Quick Notes
+
+New in v0.10: press `⌘⇧N` (`Ctrl+Shift+N` on Windows and Linux) in any app to show or hide Quick Notes, a floating panel with your whole notes collection: the sidebar with folders, pins, search, and trash, the formatting toolbar, find and replace, and side-by-side compare.
+
+- **Stays in view.** The panel floats above other windows and stays open when you click another app, so a running list is always visible. Hide it with the hotkey, `Cmd/Ctrl+W`, or its **×** button.
+- **Stays out of the way.** On macOS it opens over full-screen apps without bringing Sodilaud to the front or changing your `⌘Tab` order.
+- **Picks up where you left off.** It reopens at its last size and position, on the note you had open, with the sidebar collapsed until you need it.
+- **Separate from your files.** Notes are stored in local storage or a portable workspace file you choose, never mixed with the files you edit in the main window.
+
+The main Sodilaud window opens on a start page that explains both halves of the app and links the Quick Notes Welcome note. Change the hotkey in **Sodilaud menu → Quick Notes**. See [Quick Notes](docs/quick-notes.md) for the details.
+
 ## Clipboard history (macOS)
 
 New in v0.8: press `⌘⇧V` in any app to open your recent text copies, newest first. Pick one with `1`-`9`/`0`, the arrow keys, `j`/`k`, or the mouse to put it back on the clipboard. Press `⌘↵` to paste it into the app you came from, or turn on auto-paste to make every pick paste.
@@ -41,9 +52,10 @@ Clipboard history is off by default. Turn it on in **Sodilaud menu → Clipboard
 
 ## Features
 
+- Quick Notes: a floating, always-on-top notes panel on a global hotkey that stays open while you work in other apps
 - Clipboard history on macOS: press `⌘⇧V` in any app to pick from your recent copies, with secrets masked, entries kept in memory only, and automatic expiry
 - Optional local MCP agent access with five read tools, eight individually enabled write tools, and a live listening indicator
-- Multiple scratchpads with automatic saving, titles derived from the first line, and quick creation by double-clicking empty sidebar space
+- Multiple notes with automatic saving, titles derived from the first line, and quick creation by double-clicking empty sidebar space
 - Live, Source, and Reading editing modes, with inline Markdown rendering and per-line raw source in Live mode
 - Optional Markdown editor coloring and language-aware fenced-code highlighting in Reading mode
 - Optional, theme-aware source line numbers in either editor pane
@@ -65,11 +77,11 @@ Clipboard history is off by default. Turn it on in **Sodilaud menu → Clipboard
 
 Sodilaud keeps its state under the app identifier `io.github.borgand.sodilaud`. Development builds (`npm run tauri dev`) use `io.github.borgand.sodilaud.dev` and appear as "Sodilaud Dev", so they never touch the data of an installed release. Workspace files and preferences are kept owner-only (`0600`), and deleted note bodies are overwritten in workspace files.
 
-By default, notes, folders, and trash stay in the desktop webview's local storage. Sodilaud also supports optional portable workspace files for a durable collection of notes, folders, trash, pinned state, and sidebar order. Workspace files use SQLite internally and may have a `.db` or `.sqlite` extension. Notes without a folder remain at the top level of the sidebar; deleting a folder from the sidebar returns its notes there rather than deleting them. Agent folder deletion requires an empty folder.
+Quick Notes owns the notes collection. By default, notes, folders, and trash stay in the desktop webview's local storage. The Quick Notes panel's size, position, and hotkey, and which windows were open at quit, are kept in `quicknotes.json` in the app's config directory. Sodilaud also supports optional portable workspace files for a durable collection of notes, folders, trash, pinned state, and sidebar order. Workspace files use SQLite internally and may have a `.db` or `.sqlite` extension. Notes without a folder remain at the top level of the sidebar; deleting a folder from the sidebar returns its notes there rather than deleting them. Agent folder deletion requires an empty folder.
 
 Local notes and workspace notes are two separate collections, each with its own trash. While a workspace is connected, changes are written to that workspace and the local collection is left exactly as it was, so disconnecting returns the notes and trash you had before. Connecting an empty workspace seeds it with the active notes and folders already available in the app; local trash stays local. A workspace with existing notes, folders, or trash opens its own collection.
 
-Pending workspace changes are flushed before the desktop window closes; if that save fails, Sodilaud cancels the close and reports the error. If a workspace cannot be opened at start-up, Sodilaud reports it and falls back to your local notes, leaving the workspace file untouched.
+Hiding Quick Notes never interrupts saving: the panel keeps running while it is hidden. Pending changes are flushed before Sodilaud quits; if that save fails, Sodilaud cancels the quit and shows Quick Notes with the error. If a workspace cannot be opened at start-up, Sodilaud reports it and falls back to your local notes, leaving the workspace file untouched.
 
 Sodilaud has no analytics, advertising, accounts, or sync service. Markdown is parsed on-device, rendered HTML is sanitized, and remote images never load, so viewing a note does not contact an image host. Rendered links open in your default browser rather than inside the app, after a confirmation dialog; following one is an explicit network action and may contact that destination.
 
@@ -95,7 +107,7 @@ manual test checklist.
 
 ## Agent access (MCP)
 
-Open **Sodilaud menu → Agent access** and turn access **On**. Choose **MCP Configuration** to copy the executable path, `--mcp-stdio` argument, or generic JSON example into a client that supports local stdio MCP servers. Configuration stays available while access is off. Sodilaud must remain open; the accent-colored **MCP listening** indicator appears beside the save status while access is enabled.
+Agents work with your Quick Notes, so access is set there: open Quick Notes, open its menu (top right), and turn **Agent access** **On**. The main window's **Sodilaud menu → Agent access…** takes you there. Choose **MCP Configuration** to copy the executable path, `--mcp-stdio` argument, or generic JSON example into a client that supports local stdio MCP servers. Configuration stays available while access is off. Sodilaud must remain open, but the Quick Notes panel does not need to be visible; the accent-colored **MCP listening** indicator appears beside its save status while access is enabled.
 
 Each time access starts, all five read permissions are on and all eight write permissions are off. Use the **Read** and **Write** checkboxes to choose individual functions or select all in a section. Changes apply to connected clients immediately and reset when access is restarted.
 
@@ -120,7 +132,9 @@ The app displays `Cmd` on macOS and `Ctrl` on Windows or Linux.
 
 | Shortcut | Action |
 | --- | --- |
-| `Cmd/Ctrl + N` | Create a scratchpad |
+| `⌘⇧N` (`Ctrl + Shift + N` off macOS, configurable) | Show or hide Quick Notes from any app |
+| `Cmd/Ctrl + W` (Quick Notes) | Hide Quick Notes |
+| `Cmd/Ctrl + N` (Quick Notes) | Create a note |
 | `⌘⇧V` (macOS, configurable) | Open the clipboard history popup |
 | `⌘↵` (macOS, clipboard popup) | Paste the focused entry into the previous app |
 | `Ctrl + Cmd + S` (`Ctrl + Alt + S` off macOS) | Toggle the sidebar |
@@ -147,7 +161,7 @@ The app displays `Cmd` on macOS and `Ctrl` on Windows or Linux.
 | `Cmd/Ctrl + Alt + C` | Insert a code block, or fence the selected lines |
 | `Cmd/Ctrl + /` or `F1` | Open or close Help and Reference |
 | `Tab` / `Shift + Tab` | Switch topics while Help is open |
-| `Escape` | Close the active modal or Find bar, or leave Focus Mode |
+| `Escape` | Close the active modal or Find bar, or leave Focus Mode; it never hides Quick Notes |
 
 ## Markdown editing
 

@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Quick Notes</title>
+  <link rel="stylesheet" href="styles.css" />
+  <!-- Offline-ready Markdown Parser -->
+  <script src="vendor/marked.umd.js"></script>
+  <!-- Offline-ready fenced-code syntax highlighter -->
+  <script src="vendor/highlight.min.js"></script>
+  <!-- Offline-ready note comparison engine -->
+  <script src="vendor/diff.min.js"></script>
+  <script type="module" src="notes.js" defer></script>
+</head>
+<body class="quicknotes-page">
+  <div class="quicknotes-header" id="quicknotes-header">
+    <span class="quicknotes-header-title">Quick Notes</span>
+    <button class="quicknotes-close-btn" id="quicknotes-close-btn" type="button" title="Hide Quick Notes (Cmd+W)" aria-label="Hide Quick Notes">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+      </svg>
+    </button>
+  </div>
+  <div class="app-container" id="app">
+    <!-- Sidebar for Drafts -->
+    <aside class="sidebar collapsed" id="sidebar">
+      <div class="sidebar-header">
+        <div class="brand">
+          <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span>Sodilaud</span>
+        </div>
+        <div class="sidebar-header-actions">
+          <button class="icon-btn" id="new-folder-btn" title="Create folder" aria-label="Create folder">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M3 6.75A1.75 1.75 0 014.75 5h4l2 2h8.5A1.75 1.75 0 0121 8.75v8.5A1.75 1.75 0 0119.25 19H4.75A1.75 1.75 0 013 17.25V6.75z" />
+              <path stroke-linecap="round" d="M12 10v6m-3-3h6" />
+            </svg>
+          </button>
+          <button class="icon-btn" id="new-note-btn" title="Create new scratch (Cmd+N)" aria-label="Create new scratch">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="search-box">
+        <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+        </svg>
+        <input type="text" id="search-input" aria-label="Search scratchpads" placeholder="Search scratchpads..." autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" />
+      </div>
+
+      <div class="note-list-container" id="note-list-container">
+        <ul class="note-list" id="note-list">
+          <!-- Dynamic note items inserted here -->
+        </ul>
+      </div>
+
+    </aside>
+
+    <!-- Main Workspace -->
+    <main class="workspace" id="workspace">
+      <!-- Top Bar / Header -->
+      <header class="topbar">
+        <div class="topbar-left" id="topbar-left">
+          <button class="icon-btn toggle-sidebar-btn" id="toggle-sidebar" title="Toggle Sidebar (Ctrl+Cmd+S)" aria-label="Toggle sidebar" aria-expanded="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h7" />
+            </svg>
+          </button>
+          <input type="text" class="note-title-input" id="note-title" aria-label="scratchpad title" placeholder="Untitled Scratchpad" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" />
+        </div>
+
+        <div class="topbar-center">
+          <!-- Formatting -->
+          <div class="format-controls" id="format-controls" role="group" aria-label="Formatting" aria-disabled="false">
+            <button class="format-btn" id="format-bold" data-format="bold" type="button" title="Bold (Cmd+B)" aria-label="Bold"><span class="format-glyph format-glyph-bold" aria-hidden="true">B</span></button>
+            <button class="format-btn" id="format-italic" data-format="italic" type="button" title="Italic (Cmd+I)" aria-label="Italic"><span class="format-glyph format-glyph-italic" aria-hidden="true">I</span></button>
+            <button class="format-btn" id="format-strikethrough" data-format="strikethrough" type="button" title="Strikethrough (Cmd+Shift+X)" aria-label="Strikethrough"><span class="format-glyph format-glyph-strike" aria-hidden="true">S</span></button>
+            <button class="format-btn" id="format-code" data-format="code" type="button" title="Inline code (Cmd+E)" aria-label="Inline code"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 8l-4 4 4 4M15 8l4 4-4 4" /></svg></button>
+            <button class="format-btn" id="format-link" data-format="link" type="button" title="Link (Cmd+K)" aria-label="Link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1" /><path d="M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1" /></svg></button>
+            <span class="format-separator" aria-hidden="true"></span>
+            <button class="format-btn format-heading-btn" id="format-heading-btn" type="button" title="Heading (Cmd+Alt+1 to 6)" aria-label="Heading level" aria-haspopup="menu" aria-expanded="false" aria-controls="format-heading-menu"><span class="format-glyph format-glyph-bold" aria-hidden="true">H</span><svg class="format-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10l5 5 5-5" /></svg></button>
+            <button class="format-btn" id="format-bullet-list" data-format="bullet-list" type="button" title="Bullet list (Cmd+Shift+8)" aria-label="Bullet list"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11" /><circle cx="4.5" cy="6" r="1" fill="currentColor" /><circle cx="4.5" cy="12" r="1" fill="currentColor" /><circle cx="4.5" cy="18" r="1" fill="currentColor" /></svg></button>
+            <button class="format-btn" id="format-numbered-list" data-format="numbered-list" type="button" title="Numbered list (Cmd+Shift+7)" aria-label="Numbered list"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 6h10M10 12h10M10 18h10" /><path d="M4 4.5l1.5-.5v4M3.5 10.5a1.5 1.5 0 0 1 2.5 1c0 1-2.5 2-2.5 3h2.5" stroke-width="1.5" /><path d="M3.5 17h2.5l-1.25 1.5a1.25 1.25 0 1 1-1.25 1.75" stroke-width="1.5" /></svg></button>
+            <button class="format-btn" id="format-task-list" data-format="task-list" type="button" title="Task list (Cmd+Shift+9)" aria-label="Task list"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="6" height="6" rx="1" /><path d="M4.5 16.5l1.5 1.5 3-3.5M13 7h8M13 17h8" /></svg></button>
+            <button class="format-btn" id="format-quote" data-format="quote" type="button" title="Quote (Cmd+Shift+.)" aria-label="Quote"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 5v14M10 8h10M10 12h10M10 16h7" /></svg></button>
+            <span class="format-separator" aria-hidden="true"></span>
+            <button class="format-btn" id="format-code-block" data-format="code-block" type="button" title="Code block (Cmd+Alt+C)" aria-label="Code block"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M10 9.5L7.5 12l2.5 2.5M14 9.5l2.5 2.5-2.5 2.5" /></svg></button>
+            <button class="format-btn" id="format-table" data-format="table" type="button" title="Insert table" aria-label="Insert table"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 10h18M3 15h18M10 4v16" /></svg></button>
+            <button class="format-btn" id="format-horizontal-rule" data-format="horizontal-rule" type="button" title="Horizontal rule" aria-label="Horizontal rule"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h18" /><path d="M7 6h10M7 18h10" stroke-width="1.5" opacity="0.45" /></svg></button>
+            <button class="format-btn format-more-btn" id="format-more-btn" type="button" title="More formatting" aria-label="More formatting" aria-haspopup="menu" aria-expanded="false" aria-controls="format-more-menu" hidden><span class="format-glyph" aria-hidden="true">&raquo;</span></button>
+          </div>
+          <!-- Mode Selectors -->
+          <div class="layout-controls">
+            <button class="layout-btn active" id="mode-live" data-mode="live" title="Live: editing with inline formatting" aria-label="Live mode" aria-pressed="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" /></svg></button>
+            <button class="layout-btn" id="mode-source" data-mode="source" title="Source: plain Markdown" aria-label="Source mode" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 8l-4 4 4 4M16 8l4 4-4 4M13.5 5l-3 14" /></svg></button>
+            <button class="layout-btn" id="mode-reading" data-mode="reading" title="Reading: read-only rendered view" aria-label="Reading mode" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 5h6a4 4 0 0 1 4 4v11a3 3 0 0 0-3-3H2zM22 5h-6a4 4 0 0 0-4 4v11a3 3 0 0 1 3-3h7z" /></svg></button>
+          </div>
+          <div class="format-menu format-heading-menu" id="format-heading-menu" role="menu" aria-label="Heading level" hidden>
+            <button class="dropdown-item format-heading-item" id="format-heading-1" data-format="heading-1" type="button" role="menuitem" tabindex="-1" title="Heading 1 (Cmd+Alt+1)"><span class="format-heading-sample format-heading-sample-1">Heading 1</span></button>
+            <button class="dropdown-item format-heading-item" id="format-heading-2" data-format="heading-2" type="button" role="menuitem" tabindex="-1" title="Heading 2 (Cmd+Alt+2)"><span class="format-heading-sample format-heading-sample-2">Heading 2</span></button>
+            <button class="dropdown-item format-heading-item" id="format-heading-3" data-format="heading-3" type="button" role="menuitem" tabindex="-1" title="Heading 3 (Cmd+Alt+3)"><span class="format-heading-sample format-heading-sample-3">Heading 3</span></button>
+            <button class="dropdown-item format-heading-item" id="format-heading-4" data-format="heading-4" type="button" role="menuitem" tabindex="-1" title="Heading 4 (Cmd+Alt+4)"><span class="format-heading-sample format-heading-sample-4">Heading 4</span></button>
+            <button class="dropdown-item format-heading-item" id="format-heading-5" data-format="heading-5" type="button" role="menuitem" tabindex="-1" title="Heading 5 (Cmd+Alt+5)"><span class="format-heading-sample format-heading-sample-5">Heading 5</span></button>
+            <button class="dropdown-item format-heading-item" id="format-heading-6" data-format="heading-6" type="button" role="menuitem" tabindex="-1" title="Heading 6 (Cmd+Alt+6)"><span class="format-heading-sample format-heading-sample-6">Heading 6</span></button>
+            <button class="dropdown-item format-heading-item" id="format-paragraph" data-format="paragraph" type="button" role="menuitem" tabindex="-1" title="Paragraph (remove heading)">Paragraph</button>
+          </div>
+          <div class="format-menu format-more-menu" id="format-more-menu" role="menu" aria-label="More formatting" hidden></div>
+        </div>
+
+        <div class="topbar-right">
+          <button class="icon-btn compare-notes-btn" id="compare-notes-btn" title="Compare note contents" aria-label="Compare note contents" aria-pressed="false" hidden>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M8 7h11M5 7h.01M8 12h8M5 12h.01M8 17h11M5 17h.01" />
+            </svg>
+            <span>Compare</span>
+            <span class="compare-notes-count" id="compare-notes-count" aria-live="polite" hidden></span>
+          </button>
+
+          <!-- Split Note View Toggle -->
+          <button class="icon-btn" id="split-note-btn" title="Toggle Dual Note Split View (Cmd+\)" aria-label="Toggle two-note split view" aria-pressed="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+              <line x1="12" y1="3" x2="12" y2="21" />
+            </svg>
+          </button>
+
+          <!-- Focus Mode -->
+          <button class="icon-btn" id="focus-btn" title="Focus Mode (Cmd+Shift+F)" aria-label="Toggle focus mode" aria-pressed="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75v4.5m0-4.5h-4.5m4.5 0L15 9m5.25 11.25v-4.5m0 4.5h-4.5m4.5 0L15 15" />
+            </svg>
+          </button>
+
+          <!-- Help & Reference Modal -->
+          <button class="icon-btn" id="help-btn" title="Help & Reference (Cmd+/)" aria-label="Open help and reference" aria-haspopup="dialog" aria-expanded="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="9.5" />
+              <path d="M9.5 9a2.5 2.5 0 0 1 4.5 1.5c0 1.25-1.5 1.75-1.5 2.75v.5" />
+              <circle cx="12" cy="16.75" r="0.75" fill="currentColor" />
+            </svg>
+          </button>
+          
+          <!-- Sodilaud Menu -->
+          <div class="actions-dropdown">
+            <button class="icon-btn" id="actions-btn" title="Sodilaud Menu" aria-label="Open Sodilaud menu" aria-haspopup="true" aria-expanded="false" aria-controls="actions-dropdown-content">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="4" y1="6" x2="20" y2="6" stroke-linecap="round" stroke-linejoin="round" />
+                <line x1="4" y1="12" x2="20" y2="12" stroke-linecap="round" stroke-linejoin="round" />
+                <line x1="4" y1="18" x2="20" y2="18" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </button>
+            <div class="dropdown-content" id="actions-dropdown-content" aria-label="Sodilaud menu">
+              <div class="dropdown-section" id="workspace-menu-section">
+                <div class="dropdown-section-title">Workspace</div>
+                <div class="dropdown-status-row" aria-label="Current workspace">
+                  <span>Current</span>
+                  <span class="dropdown-item-value" id="workspace-menu-value">Local notes</span>
+                </div>
+                <button class="dropdown-item" id="db-connect-btn">Open workspace</button>
+                <button class="dropdown-item" id="db-disconnect-btn" style="display: none;">Return to local notes</button>
+              </div>
+              <div class="dropdown-divider"></div>
+              <div class="dropdown-section" id="note-menu-section">
+                <div class="dropdown-section-title">Note</div>
+                <button class="dropdown-item" id="copy-markdown">Copy Markdown</button>
+                <button class="dropdown-item" id="copy-html">Copy rendered HTML</button>
+                <button class="dropdown-item" id="import-btn">Import text file</button>
+                <button class="dropdown-item" id="export-btn">Export Markdown file</button>
+              </div>
+              <div class="dropdown-divider"></div>
+              <div class="dropdown-section" id="view-menu-section">
+                <div class="dropdown-section-title">Sidebar</div>
+                <div class="view-settings" id="view-settings" aria-label="Sidebar settings">
+                  <div class="view-setting-row">
+                    <span class="view-setting-label">Preview lines</span>
+                    <div class="view-setting-controls">
+                      <button class="view-setting-btn" id="preview-lines-decrease-btn" title="Show fewer note preview lines" aria-label="Show fewer note preview lines">−</button>
+                      <button class="view-setting-value" id="preview-lines-value" title="Reset note preview lines" aria-label="Reset note preview lines">2</button>
+                      <button class="view-setting-btn" id="preview-lines-increase-btn" title="Show more note preview lines" aria-label="Show more note preview lines">+</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="dropdown-divider"></div>
+              <div class="dropdown-section" id="agent-access-menu-section">
+                <div class="dropdown-section-title">Agent access</div>
+                <div class="view-setting-row">
+                  <span class="view-setting-label">Agent access</span>
+                  <button class="view-setting-toggle" id="agent-access-toggle-btn" type="button" aria-label="Toggle agent access" aria-pressed="false">Off</button>
+                </div>
+                <button class="dropdown-item" id="agent-access-config-btn" aria-haspopup="dialog">MCP Configuration</button>
+              </div>
+              <div class="dropdown-divider"></div>
+              <div class="dropdown-section" id="settings-menu-section">
+                <div class="dropdown-section-title">Sodilaud</div>
+                <button class="dropdown-item" id="settings-menu-btn">Settings…</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <!-- Panes Container -->
+      <div class="panes-container" id="panes-container">
+        <!-- Primary Pane -->
+        <div class="pane-wrapper active-pane" id="primary-pane-wrapper">
+          <div class="primary-pane-header" id="primary-pane-header" style="display: none;"></div>
+          <div class="editor-pane" id="editor-pane">
+            <!-- Find & Replace Bar -->
+            <div class="find-bar" id="find-bar">
+              <div class="find-row">
+                <button class="find-btn find-toggle-replace" id="find-toggle-replace" title="Toggle Replace (Cmd+H)" aria-label="Toggle replace controls" aria-expanded="false">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="9 18 15 12 9 6" />
+                  </svg>
+                </button>
+                <div class="find-input-wrapper">
+                  <input type="text" id="find-input" aria-label="Find in document" placeholder="Find in document..." autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" />
+                  <button class="find-option-btn find-case-toggle" id="find-case-toggle" title="Match Case (Alt+C)" aria-label="Toggle case-sensitive matching" aria-pressed="false">Aa</button>
+                  <button class="find-option-btn find-exact-toggle" id="find-exact-toggle" title="Exact Match (Alt+W)" aria-label="Toggle exact whole-word matching" aria-pressed="false">ab</button>
+                  <button class="find-option-btn" id="find-regex-toggle" title="Use Regular Expression (Alt+R)" aria-pressed="false">.*</button>
+                </div>
+                <span class="find-count" id="find-count">0 of 0</span>
+                <button class="find-btn" id="find-results-toggle" title="Show All Matches" aria-label="Show all matches" aria-controls="find-results-pane" aria-expanded="false" disabled>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="8" y1="6" x2="20" y2="6" />
+                    <line x1="8" y1="12" x2="20" y2="12" />
+                    <line x1="8" y1="18" x2="20" y2="18" />
+                    <circle cx="4" cy="6" r="1" fill="currentColor" stroke="none" />
+                    <circle cx="4" cy="12" r="1" fill="currentColor" stroke="none" />
+                    <circle cx="4" cy="18" r="1" fill="currentColor" stroke="none" />
+                  </svg>
+                </button>
+                <button class="find-btn" id="find-prev" title="Previous Match (Shift+Enter)" aria-label="Previous match">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="18 15 12 9 6 15" />
+                  </svg>
+                </button>
+                <button class="find-btn" id="find-next" title="Next Match (Enter)" aria-label="Next match">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                </button>
+                <button class="find-btn find-close" id="find-close" title="Close (Esc)" aria-label="Close find controls">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              </div>
+              <div class="replace-row" id="replace-row" style="display: none;">
+                <div class="find-input-wrapper replace-input-wrapper">
+                  <input type="text" id="replace-input" aria-label="Replacement text" placeholder="Replace with..." autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" />
+                </div>
+                <button class="find-action-btn" id="replace-one-btn" title="Replace Current Match">Replace</button>
+                <button class="find-action-btn" id="replace-all-btn" title="Replace All Matches">Replace All</button>
+              </div>
+            </div>
+            <!-- Edit Area -->
+            <div class="editor-wrapper" id="editor-wrapper">
+              <div class="editor-host" id="editor-host"></div>
+            </div>
+
+            <!-- Preview Area -->
+            <div class="preview-wrapper" id="preview-wrapper">
+              <div class="markdown-preview" id="markdown-preview"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Find All Results -->
+        <aside class="find-results-pane" id="find-results-pane" role="region" aria-labelledby="find-results-title" style="display: none;">
+          <div class="find-results-header">
+            <div>
+              <h2 id="find-results-title">Find Results</h2>
+              <span id="find-results-summary" aria-live="polite">0 matches</span>
+            </div>
+            <div class="find-results-actions">
+              <button class="find-results-scope" id="find-all-notes-toggle" title="Search every scratchpad" aria-pressed="false">All notes</button>
+              <button class="icon-btn find-results-close" id="find-results-close" title="Close Find Results" aria-label="Close find results">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+          </div>
+          <ol class="find-results-list" id="find-results-list"></ol>
+        </aside>
+
+        <!-- Secondary Pane (Split Note View) -->
+        <div class="pane-wrapper secondary-pane-wrapper" id="secondary-pane-wrapper" style="display: none;">
+          <div class="secondary-pane-header">
+            <input type="text" class="note-title-input secondary-title-input" id="secondary-note-title" aria-label="Secondary scratchpad title" placeholder="Untitled Scratchpad" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" />
+            <select class="secondary-note-select" id="secondary-note-select" title="Switch Secondary Note" aria-label="Secondary scratchpad"></select>
+            <button class="icon-btn close-secondary-btn" id="close-secondary-btn" title="Close Split View (Cmd+\)" aria-label="Close split view">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+          <div class="editor-pane" id="secondary-editor-pane">
+            <div class="editor-wrapper" id="secondary-editor-wrapper">
+              <div class="editor-host" id="secondary-editor-host"></div>
+            </div>
+            <div class="preview-wrapper" id="secondary-preview-wrapper">
+              <div class="markdown-preview" id="secondary-markdown-preview"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Split Drop Overlay -->
+        <div class="split-drop-overlay" id="split-drop-overlay" style="display: none;">
+          <div class="split-drop-badge">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="28" height="28">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+              <line x1="12" y1="3" x2="12" y2="21" />
+            </svg>
+            <span>Drop to Open Side-by-Side</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Status Bar -->
+      <footer class="statusbar">
+        <div class="statusbar-left">
+          <span id="word-char-count">0 words • 0 characters</span>
+          <span id="cursor-position" class="cursor-position-text">Ln 1, Col 1</span>
+        </div>
+        <div class="statusbar-right">
+          <span id="selection-count" class="selection-count-text"></span>
+          <span id="mcp-status" role="status" aria-live="polite" title="MCP agent access is enabled and listening for connections" hidden>MCP listening</span>
+          <span id="save-status" role="status" aria-live="polite">Saved</span>
+          <button id="trash-btn" class="trash-status-btn" type="button" aria-label="Trash" title="Trash — click to restore, right-click to empty" aria-haspopup="dialog">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" width="16" height="16" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7" stroke-linecap="round" stroke-linejoin="round" /></svg>
+          </button>
+        </div>
+      </footer>
+    </main>
+  </div>
+
+  <div id="trash-context-menu" class="custom-context-menu" role="menu" aria-label="Trash actions" style="display: none;">
+    <button id="trash-menu-empty" class="context-menu-item danger" type="button" role="menuitem">Empty Trash…</button>
+  </div>
+  <div id="trash-modal-backdrop" class="help-modal-backdrop" style="display: none;" aria-hidden="true">
+    <div id="trash-modal" class="help-modal trash-modal" role="dialog" aria-modal="true" aria-labelledby="trash-heading" aria-describedby="trash-status" tabindex="-1">
+      <div class="help-modal-header">
+        <h3 id="trash-heading">Trash</h3>
+        <button id="close-trash-btn" class="close-help-btn" type="button" aria-label="Close trash" title="Close (Escape)">×</button>
+      </div>
+      <div class="help-modal-body trash-modal-body">
+        <p id="trash-status" role="status" aria-live="polite"></p>
+        <ul id="trash-list" class="trash-list"></ul>
+        <div id="trash-empty-confirmation" hidden>
+          <p>Empty the trash for this collection?</p>
+          <div class="trash-confirm-actions">
+            <button id="cancel-empty-trash-btn" type="button" class="mcp-config-copy-btn">Cancel</button>
+            <button id="confirm-empty-trash-btn" type="button" class="mcp-config-copy-btn trash-empty-btn">Empty Trash</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Custom Context Menu for Text Editing -->
+  <div class="custom-context-menu" id="custom-context-menu" role="menu" style="display: none;">
+    <button class="context-menu-item" id="ctx-cut" role="menuitem">
+      <span>Cut</span>
+      <span class="shortcut-hint">Cmd+X</span>
+    </button>
+    <button class="context-menu-item" id="ctx-copy" role="menuitem">
+      <span>Copy</span>
+      <span class="shortcut-hint">Cmd+C</span>
+    </button>
+    <button class="context-menu-item" id="ctx-paste" role="menuitem">
+      <span>Paste</span>
+      <span class="shortcut-hint">Cmd+V</span>
+    </button>
+    <div class="context-menu-divider" id="ctx-insert-divider" style="display: none;"></div>
+    <div class="context-menu-submenu" id="ctx-insert-group" style="display: none;">
+      <button class="context-menu-item" id="ctx-insert" role="menuitem" aria-haspopup="menu" aria-expanded="false">
+        <span>Insert</span>
+        <span class="context-menu-caret" aria-hidden="true">›</span>
+      </button>
+      <div class="context-menu-submenu-content" id="ctx-insert-menu" role="menu" aria-label="Insert Markdown">
+        <button class="context-menu-item" role="menuitem" data-markdown-template="table">Table</button>
+        <button class="context-menu-item" role="menuitem" data-markdown-template="task-list">Task list</button>
+        <button class="context-menu-item" role="menuitem" data-markdown-template="code-block">Code block</button>
+        <button class="context-menu-item" role="menuitem" data-markdown-template="link">Link</button>
+        <button class="context-menu-item" role="menuitem" data-markdown-template="reference-link">Reference link</button>
+      </div>
+    </div>
+    <div class="context-menu-divider"></div>
+    <button class="context-menu-item" id="ctx-select-all" role="menuitem">
+      <span>Select All</span>
+      <span class="shortcut-hint">Cmd+A</span>
+    </button>
+    <button class="context-menu-item" id="ctx-find" role="menuitem">
+      <span>Find in Note</span>
+      <span class="shortcut-hint">Cmd+F</span>
+    </button>
+    <button class="context-menu-item" id="ctx-open-side" role="menuitem" style="display: none;">
+      <span>Open to the Side</span>
+      <span class="shortcut-hint">Cmd+\</span>
+    </button>
+    <div class="context-menu-divider" id="ctx-sidebar-divider" style="display: none;"></div>
+    <button class="context-menu-item" id="ctx-pin-note" role="menuitem" style="display: none;">
+      <span>Pin to Top</span>
+    </button>
+    <button class="context-menu-item" id="ctx-move-up" role="menuitem" style="display: none;">
+      <span>Move Up</span>
+      <span class="shortcut-hint">Alt+↑</span>
+    </button>
+    <button class="context-menu-item" id="ctx-move-down" role="menuitem" style="display: none;">
+      <span>Move Down</span>
+      <span class="shortcut-hint">Alt+↓</span>
+    </button>
+    <div class="context-menu-submenu" id="ctx-move-folder-group" style="display: none;">
+      <button class="context-menu-item" id="ctx-move-folder" role="menuitem" aria-haspopup="menu" aria-expanded="false">
+        <span>Move to Folder</span>
+        <span class="context-menu-caret" aria-hidden="true">›</span>
+      </button>
+      <div class="context-menu-submenu-content" id="ctx-move-folder-menu" role="menu" aria-label="Move note to folder"></div>
+    </div>
+    <div class="context-menu-divider" id="ctx-delete-note-divider" style="display: none;"></div>
+    <button class="context-menu-item danger" id="ctx-delete-note" role="menuitem" style="display: none;">
+      <span>Delete Note</span>
+    </button>
+    <button class="context-menu-item" id="ctx-folder-new-note" role="menuitem" style="display: none;">
+      <span>New Note in Folder</span>
+    </button>
+    <button class="context-menu-item" id="ctx-folder-rename" role="menuitem" style="display: none;">
+      <span>Rename Folder</span>
+    </button>
+    <div class="context-menu-divider" id="ctx-folder-divider" style="display: none;"></div>
+    <button class="context-menu-item" id="ctx-folder-move-up" role="menuitem" style="display: none;">
+      <span>Move Folder Up</span>
+    </button>
+    <button class="context-menu-item" id="ctx-folder-move-down" role="menuitem" style="display: none;">
+      <span>Move Folder Down</span>
+    </button>
+    <button class="context-menu-item danger" id="ctx-folder-delete" role="menuitem" style="display: none;">
+      <span>Delete Folder</span>
+    </button>
+  </div>
+
+  <!-- MCP Configuration Modal -->
+  <div class="help-modal-backdrop" id="mcp-config-modal-backdrop" style="display: none;" aria-hidden="true">
+    <div class="help-modal mcp-config-modal" id="mcp-config-modal" role="dialog" aria-modal="true" aria-labelledby="mcp-config-modal-heading">
+      <div class="help-modal-header">
+        <div class="mcp-config-modal-title">
+          <svg class="mcp-config-modal-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <circle cx="12" cy="12" r="3" />
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v6m0 6v6M3 12h6m6 0h6" />
+          </svg>
+          <h3 id="mcp-config-modal-heading">MCP Configuration</h3>
+        </div>
+        <button class="close-help-btn" id="close-mcp-config-btn" title="Close (Escape)" aria-label="Close MCP configuration">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <div class="help-modal-body mcp-config-modal-body">
+        <p class="mcp-config-description">Use these values in an MCP client that supports local stdio servers. Sodilaud must remain open with agent access enabled. Choose which functions agents can use below.</p>
+
+        <div class="mcp-config-fields" aria-label="MCP connection values">
+          <div class="mcp-config-field">
+            <span class="mcp-config-label">Transport</span>
+            <code class="mcp-config-value">stdio</code>
+          </div>
+          <div class="mcp-config-field">
+            <label class="mcp-config-label" for="mcp-config-command">Command</label>
+            <div class="mcp-config-value-row">
+              <input class="mcp-config-input" id="mcp-config-command" type="text" readonly spellcheck="false" aria-label="Sodilaud executable path" />
+              <button class="mcp-config-copy-btn" id="copy-mcp-command-btn" type="button">Copy command</button>
+            </div>
+          </div>
+          <div class="mcp-config-field">
+            <label class="mcp-config-label" for="mcp-config-args">Argument</label>
+            <div class="mcp-config-value-row">
+              <input class="mcp-config-input" id="mcp-config-args" type="text" readonly spellcheck="false" aria-label="MCP command argument" />
+              <button class="mcp-config-copy-btn" id="copy-mcp-args-btn" type="button">Copy argument</button>
+            </div>
+          </div>
+        </div>
+
+        <section class="mcp-permissions" aria-labelledby="mcp-permissions-heading">
+          <h4 id="mcp-permissions-heading">Function permissions</h4>
+          <p class="mcp-permissions-description">Changes apply immediately. Each time agent access starts, all read functions are enabled and all write functions are off.</p>
+          <p class="mcp-permissions-summary" id="mcp-permissions-summary" role="status">Off</p>
+          <div class="mcp-permission-groups">
+            <fieldset class="mcp-permission-group">
+              <legend>Read</legend>
+              <label class="mcp-permission-all"><input type="checkbox" id="mcp-select-all-read" data-mcp-select-all="read" /> Select all read functions</label>
+              <label class="mcp-permission-option" for="mcp-permission-list_folders">
+                <input type="checkbox" id="mcp-permission-list_folders" data-mcp-tool="list_folders" checked />
+                <span><strong>List folders</strong><code>list_folders</code><small>Folder names, IDs, and note counts.</small></span>
+              </label>
+              <label class="mcp-permission-option" for="mcp-permission-list_notes">
+                <input type="checkbox" id="mcp-permission-list_notes" data-mcp-tool="list_notes" checked />
+                <span><strong>List notes</strong><code>list_notes</code><small>Note metadata and short previews.</small></span>
+              </label>
+              <label class="mcp-permission-option" for="mcp-permission-search_notes">
+                <input type="checkbox" id="mcp-permission-search_notes" data-mcp-tool="search_notes" checked />
+                <span><strong>Search notes</strong><code>search_notes</code><small>Search titles and note content.</small></span>
+              </label>
+              <label class="mcp-permission-option" for="mcp-permission-get_note">
+                <input type="checkbox" id="mcp-permission-get_note" data-mcp-tool="get_note" checked />
+                <span><strong>Get note</strong><code>get_note</code><small>Read content and its current revision.</small></span>
+              </label>
+              <label class="mcp-permission-option" for="mcp-permission-list_trash">
+                <input type="checkbox" id="mcp-permission-list_trash" data-mcp-tool="list_trash" checked />
+                <span><strong>List trash</strong><code>list_trash</code><small>Deleted-note titles, original folders, and deletion times.</small></span>
+              </label>
+            </fieldset>
+            <fieldset class="mcp-permission-group">
+              <legend>Write</legend>
+              <label class="mcp-permission-all"><input type="checkbox" id="mcp-select-all-write" data-mcp-select-all="write" /> Select all write functions</label>
+              <label class="mcp-permission-option" for="mcp-permission-create_note">
+                <input type="checkbox" id="mcp-permission-create_note" data-mcp-tool="create_note" />
+                <span><strong>Create note</strong><code>create_note</code><small>Add a note to the current collection.</small></span>
+              </label>
+              <label class="mcp-permission-option" for="mcp-permission-create_folder">
+                <input type="checkbox" id="mcp-permission-create_folder" data-mcp-tool="create_folder" />
+                <span><strong>Create folder</strong><code>create_folder</code><small>Add a folder to the current collection.</small></span>
+              </label>
+              <label class="mcp-permission-option" for="mcp-permission-append_to_note">
+                <input type="checkbox" id="mcp-permission-append_to_note" data-mcp-tool="append_to_note" />
+                <span><strong>Append to note</strong><code>append_to_note</code><small>Add text to an existing note with revision checking.</small></span>
+              </label>
+              <label class="mcp-permission-option" for="mcp-permission-rename_note">
+                <input type="checkbox" id="mcp-permission-rename_note" data-mcp-tool="rename_note" />
+                <span><strong>Rename note</strong><code>rename_note</code><small>Set and lock a note title with revision checking.</small></span>
+              </label>
+              <label class="mcp-permission-option" for="mcp-permission-move_note">
+                <input type="checkbox" id="mcp-permission-move_note" data-mcp-tool="move_note" />
+                <span><strong>Move note</strong><code>move_note</code><small>Move a note to a folder or the top level.</small></span>
+              </label>
+              <label class="mcp-permission-option" for="mcp-permission-rename_folder">
+                <input type="checkbox" id="mcp-permission-rename_folder" data-mcp-tool="rename_folder" />
+                <span><strong>Rename folder</strong><code>rename_folder</code><small>Rename a folder with revision checking.</small></span>
+              </label>
+              <label class="mcp-permission-option" for="mcp-permission-delete_note">
+                <input type="checkbox" id="mcp-permission-delete_note" data-mcp-tool="delete_note" />
+                <span><strong>Delete note</strong><code>delete_note</code><small>Move a note into recoverable trash.</small></span>
+              </label>
+              <label class="mcp-permission-option" for="mcp-permission-delete_folder">
+                <input type="checkbox" id="mcp-permission-delete_folder" data-mcp-tool="delete_folder" />
+                <span><strong>Delete empty folder</strong><code>delete_folder</code><small>Delete a folder only when it has no notes.</small></span>
+              </label>
+            </fieldset>
+          </div>
+          <p id="mcp-permission-status" class="mcp-permission-status" role="status" aria-live="polite"></p>
+        </section>
+
+        <div class="mcp-config-example">
+          <div class="mcp-config-example-header">
+            <div>
+              <h4>Generic configuration example</h4>
+              <p>Property names can vary by client, but this shows the connection values and their intended structure.</p>
+            </div>
+            <button class="mcp-config-copy-btn" id="copy-mcp-example-btn" type="button">Copy example</button>
+          </div>
+          <pre class="mcp-config-example-code" id="mcp-config-example-code" aria-label="Generic MCP configuration example"></pre>
+        </div>
+
+        <p class="mcp-config-security-note">Connected agents can read the current collection, including unsaved edits, and may send note contents to their model provider.</p>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

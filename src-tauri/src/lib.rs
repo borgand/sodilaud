@@ -12,10 +12,13 @@ use tauri::{
 
 mod clipboard;
 mod mcp;
+mod platform;
+mod quicknotes;
+mod quit;
 mod workspace;
 pub use mcp::run_mcp_stdio;
 
-const PREFERENCES_FILE_NAME: &str = "sodilaud-preferences.json";
+pub(crate) const PREFERENCES_FILE_NAME: &str = "sodilaud-preferences.json";
 
 #[cfg(target_os = "macos")]
 const NATIVE_ABOUT_MENU_ID: &str = "sodilaud-native-about";
@@ -141,7 +144,7 @@ pub(crate) struct TrashEntry {
 
 /// Restrict a file to its owner. SQLite creates databases 0644 minus umask, which
 /// leaves note content readable by every local user; a clipboard history must not be.
-fn restrict_to_owner(path: &Path) -> Result<(), String> {
+pub(crate) fn restrict_to_owner(path: &Path) -> Result<(), String> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -829,7 +832,7 @@ fn handle_macos_menu_event(app: &AppHandle<Wry>, event: tauri::menu::MenuEvent) 
         {
             clipboard::popup::hide(app);
         } else {
-            clipboard::tray::request_quit(app);
+            quit::request(app);
         }
         return;
     }
@@ -848,20 +851,38 @@ fn handle_macos_menu_event(app: &AppHandle<Wry>, event: tauri::menu::MenuEvent) 
     }
 }
 
+fn on_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
+    #[cfg(target_os = "macos")]
+    clipboard::popup::on_window_event(window, event);
+    quicknotes::window::on_window_event(window, event);
+    if window.label() == quicknotes::window::MAIN_LABEL {
+        if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+            // The main window is never destroyed: closing it hides it (macOS keeps
+            // running in the tray) or quits after every window has saved.
+            api.prevent_close();
+            #[cfg(target_os = "macos")]
+            clipboard::tray::hide_main(window.app_handle());
+            #[cfg(not(target_os = "macos"))]
+            quit::request(window.app_handle());
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run(context: tauri::Context<tauri::Wry>) {
     let builder = tauri::Builder::default()
         .manage(mcp::McpState::default())
-        .manage(workspace::Workspaces::default());
+        .manage(workspace::Workspaces::default())
+        .manage(quit::QuitState::default());
     #[cfg(target_os = "macos")]
     let builder = builder
         .menu(macos_menu)
         .on_menu_event(handle_macos_menu_event)
-        .manage(clipboard::runtime::ClipboardRuntime::default())
-        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .on_window_event(clipboard::popup::on_window_event);
+        .manage(clipboard::runtime::ClipboardRuntime::default());
 
     builder
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .on_window_event(on_window_event)
         // Only confirm_and_open_url uses the opener, from Rust; the webview has
         // no opener permission.
         .plugin(tauri_plugin_opener::init())
@@ -903,53 +924,54 @@ pub fn run(context: tauri::Context<tauri::Wry>) {
             clipboard::commands::clip_start_drag,
             clipboard::commands::clip_set_config,
             clipboard::commands::clip_set_theme,
-            clipboard::commands::hide_main_window,
-            clipboard::commands::quit_app,
-            clipboard::commands::quit_handler_ready,
-            clipboard::commands::open_accessibility_settings
+            quit::quit_handler_ready,
+            quit::quit_window_done,
+            clipboard::commands::open_accessibility_settings,
+            quicknotes::commands::qn_close,
+            quicknotes::commands::qn_start_drag,
+            quicknotes::commands::qn_get_config,
+            quicknotes::commands::qn_set_hotkey,
+            quicknotes::commands::qn_dismiss_intro,
+            quicknotes::commands::qn_show,
+            quicknotes::commands::show_main_window
         ])
-        .setup(|_app| {
+        .setup(|app| {
             #[cfg(target_os = "macos")]
-            clipboard::tray::install(_app.handle())?;
+            clipboard::tray::install(app.handle())?;
+            quicknotes::start(app.handle());
+            quicknotes::restore_windows(app.handle());
             Ok(())
         })
         .build(context)
         .expect("error while building tauri application")
-        .run(|_app, _event| {
-            #[cfg(target_os = "macos")]
-            match _event {
-                tauri::RunEvent::ExitRequested {
-                    code: None, api, ..
-                } => {
-                    // Tauri asks this when the last window is gone. If main still
-                    // exists, flush through it first; otherwise let the exit through.
-                    if _app.get_webview_window("main").is_some() {
-                        api.prevent_exit();
-                        clipboard::tray::request_quit(_app);
-                    } else {
-                        _app.state::<clipboard::runtime::ClipboardRuntime>()
-                            .shutdown();
-                    }
-                }
-                // Logout and the Dock's Quit terminate without an ExitRequested,
-                // so wipe here too; shutdown is idempotent.
-                tauri::RunEvent::Exit => {
-                    _app.state::<clipboard::runtime::ClipboardRuntime>()
-                        .shutdown();
-                    clipboard::popup::destroy(_app);
-                }
-                tauri::RunEvent::Reopen { .. } => clipboard::tray::show_main(_app),
-                // Tauri has unregistered the label by now, so a popup re-enabled while
-                // the old one was being destroyed can be created.
-                tauri::RunEvent::WindowEvent {
-                    label,
-                    event: tauri::WindowEvent::Destroyed,
-                    ..
-                } if label == clipboard::commands::POPUP_LABEL => {
-                    clipboard::popup::on_destroyed(_app)
-                }
-                _ => {}
+        .run(|app, event| match event {
+            // Tauri asks this when the last window is gone, which only happens if a
+            // window was destroyed from outside; save through every window first.
+            tauri::RunEvent::ExitRequested {
+                code: None, api, ..
+            } => {
+                api.prevent_exit();
+                quit::request(app);
             }
+            // Logout and the Dock's Quit terminate without an ExitRequested, so
+            // wipe here too; shutdown is idempotent.
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::Exit => {
+                app.state::<clipboard::runtime::ClipboardRuntime>()
+                    .shutdown();
+                clipboard::popup::destroy(app);
+            }
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::Reopen { .. } => clipboard::tray::show_main(app),
+            // Tauri has unregistered the label by now, so a popup re-enabled while
+            // the old one was being destroyed can be created.
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::WindowEvent {
+                label,
+                event: tauri::WindowEvent::Destroyed,
+                ..
+            } if label == clipboard::commands::POPUP_LABEL => clipboard::popup::on_destroyed(app),
+            _ => {}
         });
 }
 

@@ -200,38 +200,6 @@ pub fn clip_set_theme(app: AppHandle, theme: PopupTheme) -> Result<(), ClipError
 }
 
 #[tauri::command]
-pub fn hide_main_window(app: AppHandle) -> bool {
-    #[cfg(target_os = "macos")]
-    {
-        super::tray::hide_main(&app);
-        true
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = app;
-        false
-    }
-}
-
-#[tauri::command]
-pub fn quit_app(app: AppHandle) {
-    #[cfg(target_os = "macos")]
-    {
-        app.state::<ClipboardRuntime>().shutdown();
-        super::popup::destroy(&app);
-    }
-    app.exit(0);
-}
-
-#[tauri::command]
-pub fn quit_handler_ready(app: AppHandle) {
-    #[cfg(target_os = "macos")]
-    app.state::<ClipboardRuntime>().mark_quit_handler_ready();
-    #[cfg(not(target_os = "macos"))]
-    let _ = app;
-}
-
-#[tauri::command]
 pub fn open_accessibility_settings(app: AppHandle) -> Result<(), ClipError> {
     #[cfg(target_os = "macos")]
     {

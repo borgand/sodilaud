@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import assert from "node:assert/strict";
 import test from "node:test";
-import { bootApp, settle } from "./helpers/app-harness.js";
+import { bootMainWindow, settle } from "./helpers/app-harness.js";
 import { PRESET_THEMES } from "../src/preset-themes.js";
 import { deriveThemeSurfaceColors } from "../src/theme-colors.js";
 
@@ -11,7 +11,7 @@ const githubDark = PRESET_THEMES.find(theme => theme.id === "github-dark");
 const ok = (config) => ({ enabled: config.enabled, hotkey: config.enabled ? config.hotkey : "", hotkeyError: null, accessibilityTrusted: false });
 
 test("macOS shows the section, pushes stored settings at startup, and toggles", async () => {
-  const app = await bootApp({
+  const app = await bootMainWindow({
     platform: "MacIntel",
     storage: { "clipboardHistory.settings": { enabled: false, capacity: 99, ttlMinutes: 5, hotkey: "super+shift+KeyV", autoPaste: false } },
     handlers: { clip_set_config: ({ config }) => ok(config) }
@@ -29,7 +29,7 @@ test("macOS shows the section, pushes stored settings at startup, and toggles", 
 });
 
 test("a rejected hotkey keeps the previous one and shows an error", async () => {
-  const app = await bootApp({
+  const app = await bootMainWindow({
     instance: 2,
     platform: "MacIntel",
     storage: { "clipboardHistory.settings": { enabled: true, capacity: 10, ttlMinutes: 10, hotkey: "super+shift+KeyV", autoPaste: false } },
@@ -48,7 +48,7 @@ test("a rejected hotkey keeps the previous one and shows an error", async () => 
 });
 
 test("auto-paste without Accessibility shows the grant row", async () => {
-  const app = await bootApp({
+  const app = await bootMainWindow({
     instance: 3,
     platform: "MacIntel",
     handlers: { clip_set_config: ({ config }) => ok(config) }
@@ -63,7 +63,7 @@ test("auto-paste without Accessibility shows the grant row", async () => {
 });
 
 test("an unexpected stop turns the feature off and says so", async () => {
-  const app = await bootApp({
+  const app = await bootMainWindow({
     instance: 4,
     platform: "MacIntel",
     storage: { "clipboardHistory.settings": { enabled: true, capacity: 10, ttlMinutes: 10, hotkey: "super+shift+KeyV", autoPaste: false } },
@@ -76,14 +76,14 @@ test("an unexpected stop turns the feature off and says so", async () => {
 });
 
 test("other platforms hide the section and never call clipboard commands", async () => {
-  const app = await bootApp({ instance: 5, platform: "Linux x86_64" });
+  const app = await bootMainWindow({ instance: 5, platform: "Linux x86_64" });
   assert.equal(app.dom.window.document.getElementById("clipboard-history-menu-section").hidden, true);
   assert.ok(!app.invocations.some(i => i.command === "clip_set_config"));
   assert.ok(!app.invocations.some(i => i.command === "clip_set_theme"));
 });
 
 test("macOS sends the active theme's colours to the popup at setup and on every theme change", async () => {
-  const app = await bootApp({
+  const app = await bootMainWindow({
     instance: 13,
     platform: "MacIntel",
     storage: { sodilaud_active_theme: "github-dark" },
@@ -105,7 +105,7 @@ test("macOS sends the active theme's colours to the popup at setup and on every 
 });
 
 test("other platforms never call clip_set_theme even with a saved theme", async () => {
-  const app = await bootApp({
+  const app = await bootMainWindow({
     instance: 14,
     platform: "Linux x86_64",
     storage: { sodilaud_active_theme: "github-dark" }
@@ -114,7 +114,7 @@ test("other platforms never call clip_set_theme even with a saved theme", async 
 });
 
 test("Escape closes the settings modal", async () => {
-  const app = await bootApp({
+  const app = await bootMainWindow({
     instance: 6,
     platform: "MacIntel",
     handlers: { clip_set_config: ({ config }) => ok(config) }
@@ -130,7 +130,7 @@ test("Escape closes the settings modal", async () => {
 });
 
 test("clicking the backdrop closes the settings modal", async () => {
-  const app = await bootApp({
+  const app = await bootMainWindow({
     instance: 7,
     platform: "MacIntel",
     handlers: { clip_set_config: ({ config }) => ok(config) }
@@ -145,22 +145,21 @@ test("clicking the backdrop closes the settings modal", async () => {
 });
 
 test("a global shortcut keydown does not reach the app while the settings modal is open", async () => {
-  const app = await bootApp({
+  const app = await bootMainWindow({
     instance: 8,
     platform: "MacIntel",
     handlers: { clip_set_config: ({ config }) => ok(config) }
   });
   const { document, KeyboardEvent } = app.dom.window;
   app.click("clipboard-settings-btn");
-  const sidebar = document.getElementById("sidebar");
-  assert.equal(sidebar.classList.contains("collapsed"), false);
-  document.dispatchEvent(new KeyboardEvent("keydown", { key: "s", code: "KeyS", ctrlKey: true, metaKey: true, bubbles: true }));
+  const help = document.getElementById("help-modal-backdrop");
+  document.dispatchEvent(new KeyboardEvent("keydown", { key: "/", code: "Slash", metaKey: true, bubbles: true }));
   await settle();
-  assert.equal(sidebar.classList.contains("collapsed"), false);
+  assert.equal(help.style.display, "none", "Cmd+/ must not open help behind the settings modal");
 });
 
 test("blurring the hotkey button while capturing restores the formatted label", async () => {
-  const app = await bootApp({
+  const app = await bootMainWindow({
     instance: 9,
     platform: "MacIntel",
     handlers: { clip_set_config: ({ config }) => ok(config) }
@@ -176,7 +175,7 @@ test("blurring the hotkey button while capturing restores the formatted label", 
 });
 
 test("a hotkey that never registered says none is active and keeps the request for a retry", async () => {
-  const app = await bootApp({
+  const app = await bootMainWindow({
     instance: 10,
     platform: "MacIntel",
     storage: { "clipboardHistory.settings": { enabled: true, capacity: 10, ttlMinutes: 10, hotkey: "ctrl+alt+Digit1", autoPaste: false } },
@@ -196,7 +195,7 @@ test("a hotkey that never registered says none is active and keeps the request f
 });
 
 test("turning the feature off keeps the chosen hotkey", async () => {
-  const app = await bootApp({
+  const app = await bootMainWindow({
     instance: 11,
     platform: "MacIntel",
     storage: { "clipboardHistory.settings": { enabled: false, capacity: 10, ttlMinutes: 10, hotkey: "ctrl+alt+Digit1", autoPaste: false } },
@@ -207,7 +206,7 @@ test("turning the feature off keeps the chosen hotkey", async () => {
 });
 
 test("clearing a number field restores it instead of applying a minimum", async () => {
-  const app = await bootApp({
+  const app = await bootMainWindow({
     instance: 12,
     platform: "MacIntel",
     storage: { "clipboardHistory.settings": { enabled: true, capacity: 10, ttlMinutes: 15, hotkey: "super+shift+KeyV", autoPaste: false } },

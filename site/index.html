@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Sodilaud is a lightweight, open-source, local-first Markdown scratchpad for macOS, Windows, and Linux, with a private clipboard history on macOS.">
+  <meta name="description" content="Sodilaud is a lightweight, open-source, local-first Markdown scratchpad for macOS, Windows, and Linux, with floating Quick Notes on a hotkey and a private clipboard history on macOS.">
   <meta name="theme-color" content="#090d16">
   <meta property="og:title" content="Sodilaud — thoughts at the speed of typing">
   <meta property="og:description" content="A lightweight, open-source, local-first Markdown scratchpad for the desktop.">
@@ -25,6 +25,7 @@
       <span>Sodilaud</span>
     </a>
     <nav aria-label="Primary navigation">
+      <a href="#quick-notes">Quick Notes</a>
       <a href="#clipboard">Clipboard</a>
       <a href="#features">Features</a>
       <a href="#downloads">Downloads</a>
@@ -56,6 +57,20 @@
       <div class="hero-visual" aria-label="Sodilaud application preview">
         <div class="preview-glow"></div>
         <img src="./assets/preview.png" alt="Sodilaud displaying a Markdown note in its dark theme" width="1233" height="950">
+      </div>
+    </section>
+
+    <section class="spotlight spotlight-text-only" id="quick-notes" aria-labelledby="quick-notes-title">
+      <div class="spotlight-copy">
+        <span class="section-kicker">New in v0.10</span>
+        <h2 id="quick-notes-title">Your notes, floating over whatever you are doing.</h2>
+        <p>Press <kbd>⌘⇧N</kbd> (<kbd>Ctrl+Shift+N</kbd> on Windows and Linux) in any app to show Quick Notes: every note, folder, and pin, with the full Markdown editor, in a panel that stays on top.</p>
+        <ul class="spotlight-points">
+          <li><strong>Stays in view.</strong> Clicking another app leaves the panel open, so a running list of actions is always there. Hide it with the hotkey or <kbd>⌘W</kbd>.</li>
+          <li><strong>Stays out of the way.</strong> On macOS it opens over full-screen apps without bringing Sodilaud to the front or changing your <kbd>⌘⇥</kbd> order.</li>
+          <li><strong>Picks up where you left off.</strong> Same size, same place, same note.</li>
+          <li><strong>Separate from your files.</strong> Notes keep their own storage, apart from the Markdown files you open in the main window.</li>
+        </ul>
       </div>
     </section>
 

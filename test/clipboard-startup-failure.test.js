@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import assert from "node:assert/strict";
 import test from "node:test";
-import { bootApp } from "./helpers/app-harness.js";
+import { bootMainWindow as bootApp } from "./helpers/app-harness.js";
 
 const SETTINGS_KEY = "clipboardHistory.settings";
 
 function assertNotesLoaded(app) {
-  assert.ok(app.sidebarTitles().length > 0, "the note list renders");
-  assert.notEqual(app.dom.window.document.getElementById("save-status").textContent, "Startup error");
+  assert.equal(app.dom.window.document.getElementById("start-page").hidden, false, "the start page renders");
+  assert.equal(app.dom.window.document.getElementById("quicknotes-hotkey-label").textContent.length > 0, true);
 }
 
 test("a full storage neither stops the app from starting nor breaks the settings", async () => {

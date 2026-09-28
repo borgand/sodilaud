@@ -5,7 +5,7 @@ import { readFile } from "node:fs/promises";
 
 test("the renderer never opens a url without a native confirmation", async () => {
   const [main, capability] = await Promise.all([
-    readFile("src/main.js", "utf8"),
+    readFile("src/notes.js", "utf8"),
     readFile("src-tauri/capabilities/default.json", "utf8")
   ]);
   assert.doesNotMatch(main, /plugin:opener\|open_url/);

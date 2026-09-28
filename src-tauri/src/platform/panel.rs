@@ -2,7 +2,8 @@
 
 // Turns a Tauri window into a non-activating floating panel: it takes keyboard
 // focus without activating Sodilaud, so the frontmost app, the Cmd-Tab order, and
-// full-screen Spaces stay as they were.
+// full-screen Spaces stay as they were. The clipboard popup and Quick Notes both
+// use it, with different levels and lifetimes (`PanelStyle`).
 
 use std::ffi::CStr;
 use std::ptr;
@@ -12,8 +13,8 @@ use objc2::rc::Retained;
 use objc2::runtime::{AnyClass, AnyObject, Bool, ClassBuilder, NSObjectProtocol, Sel};
 use objc2::{msg_send, sel, ClassType, MainThreadMarker};
 use objc2_app_kit::{
-    NSEvent, NSEventType, NSPanel, NSPopUpMenuWindowLevel, NSWindow, NSWindowCollectionBehavior,
-    NSWindowStyleMask,
+    NSEvent, NSEventType, NSFloatingWindowLevel, NSPanel, NSPopUpMenuWindowLevel, NSWindow,
+    NSWindowCollectionBehavior, NSWindowLevel, NSWindowStyleMask,
 };
 use tauri::WebviewWindow;
 
@@ -31,14 +32,45 @@ pub enum PanelRefusal {
     UnknownWindowClass,
 }
 
+/// How a converted window sits among other windows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PanelStyle {
+    /// Short-lived and above everything, menus included; leaves with its Space.
+    Popup,
+    /// Long-lived and resizable: above ordinary windows of every app, but below
+    /// menus and system alerts, and it follows the user across Spaces.
+    Floating,
+}
+
+/// The level, collection behavior and extra style bits for `style`.
+pub fn level_and_behavior(
+    style: PanelStyle,
+) -> (NSWindowLevel, NSWindowCollectionBehavior, NSWindowStyleMask) {
+    let shared = NSWindowCollectionBehavior::CanJoinAllSpaces
+        | NSWindowCollectionBehavior::FullScreenAuxiliary
+        | NSWindowCollectionBehavior::IgnoresCycle;
+    match style {
+        PanelStyle::Popup => (
+            NSPopUpMenuWindowLevel,
+            shared | NSWindowCollectionBehavior::Transient,
+            NSWindowStyleMask::empty(),
+        ),
+        PanelStyle::Floating => (
+            NSFloatingWindowLevel,
+            shared,
+            NSWindowStyleMask::Resizable,
+        ),
+    }
+}
+
 /// Each converted window's class before the swap, keyed by the window's address,
 /// so `restore_window_class` can put back the exact (often KVO) class.
 static ORIGINAL_CLASSES: Mutex<Vec<(usize, &'static AnyClass)>> = Mutex::new(Vec::new());
 
 /// Converts `window` in place. On refusal the window is untouched and the caller
 /// shows it as an ordinary window. Call `restore_window_class` before destroying it.
-pub fn make_floating_panel(window: &WebviewWindow) -> Result<(), PanelRefusal> {
-    convert(&*ns_window(window)?)
+pub fn make_floating_panel(window: &WebviewWindow, style: PanelStyle) -> Result<(), PanelRefusal> {
+    convert(&*ns_window(window)?, style)
 }
 
 /// Orders the window in front but fully transparent, click-through, and not key,
@@ -68,6 +100,16 @@ pub fn present(window: &WebviewWindow) -> bool {
     is_panel
 }
 
+/// Orders the window in, opaque and clickable, and makes it key the way `present`
+/// does. Returns false when it is not a panel.
+pub fn order_front_key(window: &WebviewWindow) -> bool {
+    let Ok(ns_window) = ns_window(window) else {
+        return false;
+    };
+    ns_window.orderFrontRegardless();
+    present(window)
+}
+
 /// Takes the panel off the screen visually at once while it stays ordered in, so
 /// WebKit still paints the page (the emptied DOM) before `order_out`.
 pub fn conceal(window: &WebviewWindow) {
@@ -92,7 +134,7 @@ pub fn restore_window_class(window: &WebviewWindow) {
     }
 }
 
-fn convert(ns_window: &NSWindow) -> Result<(), PanelRefusal> {
+fn convert(ns_window: &NSWindow, style: PanelStyle) -> Result<(), PanelRefusal> {
     let panel_class = panel_class().ok_or(PanelRefusal::PanelClassUnavailable)?;
     if !ns_window.isKindOfClass(panel_class) {
         let current = AnyObject::class(ns_window);
@@ -119,17 +161,13 @@ fn convert(ns_window: &NSWindow) -> Result<(), PanelRefusal> {
     };
     // The panel class is swapped in after NSWindow's initializer ran, so NSPanel's
     // own defaults were never applied; set every property the popup relies on.
-    panel.setStyleMask(panel.styleMask() | NSWindowStyleMask::NonactivatingPanel);
+    let (level, behavior, extra_style) = level_and_behavior(style);
+    panel.setStyleMask(panel.styleMask() | NSWindowStyleMask::NonactivatingPanel | extra_style);
     panel.setFloatingPanel(true);
     panel.setHidesOnDeactivate(false);
     panel.setBecomesKeyOnlyIfNeeded(false);
-    panel.setLevel(NSPopUpMenuWindowLevel);
-    panel.setCollectionBehavior(
-        NSWindowCollectionBehavior::CanJoinAllSpaces
-            | NSWindowCollectionBehavior::FullScreenAuxiliary
-            | NSWindowCollectionBehavior::Transient
-            | NSWindowCollectionBehavior::IgnoresCycle,
-    );
+    panel.setLevel(level);
+    panel.setCollectionBehavior(behavior);
     Ok(())
 }
 
@@ -303,6 +341,29 @@ mod tests {
     }
 
     #[test]
+    fn the_popup_leaves_with_its_space_and_sits_above_menus() {
+        let (level, behavior, extra) = level_and_behavior(PanelStyle::Popup);
+        assert_eq!(level, NSPopUpMenuWindowLevel);
+        assert!(behavior.contains(NSWindowCollectionBehavior::Transient));
+        assert!(!extra.contains(NSWindowStyleMask::Resizable));
+    }
+
+    #[test]
+    fn floating_style_is_resizable_and_not_transient() {
+        let (level, behavior, extra) = level_and_behavior(PanelStyle::Floating);
+        assert_eq!(level, NSFloatingWindowLevel);
+        assert!(!behavior.contains(NSWindowCollectionBehavior::Transient));
+        for kept in [
+            NSWindowCollectionBehavior::CanJoinAllSpaces,
+            NSWindowCollectionBehavior::FullScreenAuxiliary,
+            NSWindowCollectionBehavior::IgnoresCycle,
+        ] {
+            assert!(behavior.contains(kept));
+        }
+        assert!(extra.contains(NSWindowStyleMask::Resizable));
+    }
+
+    #[test]
     fn panel_class_matches_the_tao_window_layout() {
         let tao = tao_like(c"PanelTestTaoWindow", |_| {});
         let panel = panel_class().expect("panel class registers");
@@ -462,7 +523,7 @@ mod tests {
             .to_bytes()
             .starts_with(KVO_PREFIX.as_bytes()));
 
-        assert_eq!(convert(&window), Ok(()));
+        assert_eq!(convert(&window, PanelStyle::Popup), Ok(()));
         let panel = panel_class().expect("panel class registers");
         assert!(ptr::eq(AnyObject::class(&window), panel));
         assert!(window.canBecomeKeyWindow());

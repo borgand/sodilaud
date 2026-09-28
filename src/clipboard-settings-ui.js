@@ -25,7 +25,7 @@ function hotkeyMessage(status) {
 // src/styles.css :root and PopupTheme in src-tauri/src/clipboard/service.rs).
 //
 // `surface` reads --bg-note-hover rather than --bg-input: a custom theme
-// (applyTheme in main.js) never sets --bg-input inline, only the built-in
+// (applyTheme in notes.js) never sets --bg-input inline, only the built-in
 // light/dark class rules define it, so the popup would always fall back to
 // the generic default under a custom theme. --bg-note-hover is the surface
 // tone the main window itself derives and sets inline for every measurable
@@ -64,7 +64,7 @@ function readPopupTheme(document) {
 }
 
 // Called at clipboard setup and again whenever the main window's theme
-// changes (see applyTheme in main.js). `isMac` is the same gate setup uses --
+// changes (see applyTheme in notes.js). `isMac` is the same gate setup uses --
 // on any other platform, or before setup ran, this is a silent no-op. Never
 // throws: a failure here must not break theme switching.
 export async function syncClipboardPopupTheme({ document, invoke, isMac } = {}) {
@@ -161,7 +161,7 @@ export async function setupClipboardHistory({ document, invoke, listen, storage,
   $("clipboard-autopaste-toggle-btn").addEventListener("click", () => apply({ ...settings, autoPaste: !settings.autoPaste }));
   $("clipboard-accessibility-open-btn").addEventListener("click", () => invoke("open_accessibility_settings").catch(() => {}));
 
-  // Capture phase, so this preempts main.js's bubble-phase global shortcut
+  // Capture phase, so this preempts notes.js's bubble-phase global shortcut
   // handler on document while the modal is open. A capturing keydown is
   // handled here too, since stopping propagation this early would otherwise
   // keep it from ever reaching a listener on the hotkey button itself.

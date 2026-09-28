@@ -5,7 +5,7 @@ import { readFile } from "node:fs/promises";
 import { JSDOM } from "jsdom";
 import { createTrashUi } from "../src/trash-ui.js";
 
-const html = await readFile(new URL("../src/index.html", import.meta.url), "utf8");
+const html = await readFile(new URL("../src/notes.html", import.meta.url), "utf8");
 test("trash confirmation captures its collection and entries and supports keyboard cancellation", async () => {
   const dom = new JSDOM(html, { pretendToBeVisual: true });
   globalThis.document = dom.window.document; globalThis.window = dom.window;
