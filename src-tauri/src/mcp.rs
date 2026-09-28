@@ -18,14 +18,16 @@ use rmcp::{
 };
 use serde::{Deserialize, Deserializer, Serialize};
 use subtle::ConstantTimeEq;
-use tauri::{Emitter, Manager};
+use tauri::Manager;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::{JoinHandle, JoinSet};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-use crate::{Folder, Note};
+use crate::docs::commands::SharedRegistry;
+use crate::docs::registry::Workspace;
+use crate::store::workspace::{Folder, Note};
 
 const MCP_PORT: u16 = 39_393;
 const MCP_TOKEN_FILE_NAME: &str = "sodilaud-mcp-token";
@@ -39,7 +41,7 @@ const PREVIEW_CHARS: usize = 240;
 const DEFAULT_CONTENT_CHARS: u32 = 20_000;
 const MAX_CONTENT_CHARS: u32 = 100_000;
 
-/// Everything an MCP agent can read.
+/// Everything an MCP agent can read, copied from the registry for one call.
 ///
 /// Clipboard items must never enter this snapshot. Agent access hands every field here to
 /// the connected client, which normally forwards it to a remote model provider, and
@@ -51,44 +53,55 @@ struct Snapshot {
     collection_id: String,
     note_revisions: HashMap<String, String>,
     folder_revisions: HashMap<String, String>,
-    writes: Arc<WriteBridge>,
     notes: Vec<Note>,
     folders: Vec<Folder>,
     trash: Vec<TrashSummary>,
 }
 
-impl Default for Snapshot {
-    fn default() -> Self {
-        Self {
-            collection_name: "Local notes".into(),
-            collection_id: String::new(),
-            note_revisions: HashMap::new(),
-            folder_revisions: HashMap::new(),
-            writes: Arc::new(WriteBridge::default()),
-            notes: Vec::new(),
-            folders: Vec::new(),
-            trash: Vec::new(),
-        }
+fn snapshot_of(workspace: &Workspace) -> Snapshot {
+    Snapshot {
+        collection_name: workspace.name(),
+        collection_id: workspace.id.clone(),
+        note_revisions: workspace
+            .notes
+            .iter()
+            .map(|entry| (entry.note.id.clone(), entry.rev.to_string()))
+            .collect(),
+        folder_revisions: workspace
+            .folders
+            .iter()
+            .map(|entry| (entry.folder.id.clone(), entry.rev.to_string()))
+            .collect(),
+        notes: workspace
+            .notes
+            .iter()
+            .map(|entry| entry.note.clone())
+            .collect(),
+        folders: workspace
+            .folders
+            .iter()
+            .map(|entry| entry.folder.clone())
+            .collect(),
+        trash: workspace
+            .trash
+            .iter()
+            .map(|entry| TrashSummary {
+                id: entry.id.clone(),
+                note_id: entry.note.id.clone(),
+                title: entry.note.title.clone(),
+                deleted_at: entry.deleted_at,
+                folder_id: entry.note.folder_id.clone(),
+                folder_name: entry.folder_name.clone(),
+            })
+            .collect(),
     }
 }
 
-type SharedSnapshot = Arc<RwLock<Snapshot>>;
+/// The functions an agent may call. Writes start disabled at every start.
+type Permissions = Arc<RwLock<HashSet<String>>>;
 
-// Requests go to the editor, which owns the live collection and persistence queue.
-// A response timeout is deliberately an unknown outcome: retry the same requestId.
-#[derive(Debug)]
-struct WriteBridge {
-    app: RwLock<Option<tauri::AppHandle>>,
-    permissions: RwLock<HashSet<String>>,
-    pending: std::sync::Mutex<HashMap<String, tokio::sync::oneshot::Sender<serde_json::Value>>>,
-}
-
-#[derive(Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct WriteEvent {
-    ticket: String,
-    operation: &'static str,
-    arguments: serde_json::Value,
+fn read_permissions() -> HashSet<String> {
+    READ_TOOLS.into_iter().map(String::from).collect()
 }
 
 const READ_TOOLS: [&str; 5] = [
@@ -109,16 +122,6 @@ const WRITE_TOOLS: [&str; 8] = [
     "delete_folder",
 ];
 
-impl Default for WriteBridge {
-    fn default() -> Self {
-        Self {
-            app: RwLock::new(None),
-            permissions: RwLock::new(READ_TOOLS.into_iter().map(String::from).collect()),
-            pending: std::sync::Mutex::new(HashMap::new()),
-        }
-    }
-}
-
 fn permission_set(tools: Vec<String>) -> Result<HashSet<String>, String> {
     if tools
         .iter()
@@ -134,32 +137,7 @@ pub(crate) fn set_mcp_permissions(
     state: tauri::State<'_, McpState>,
     tools: Vec<String>,
 ) -> Result<(), String> {
-    let permissions = permission_set(tools)?;
-    let snapshot = state.snapshot.read().map_err(|e| e.to_string())?;
-    *snapshot
-        .writes
-        .permissions
-        .write()
-        .map_err(|e| e.to_string())? = permissions;
-    Ok(())
-}
-
-#[tauri::command]
-pub(crate) fn complete_mcp_write(
-    state: tauri::State<'_, McpState>,
-    ticket: String,
-    result: serde_json::Value,
-) -> Result<(), String> {
-    let snapshot = state.snapshot.read().map_err(|e| e.to_string())?;
-    if let Some(sender) = snapshot
-        .writes
-        .pending
-        .lock()
-        .map_err(|e| e.to_string())?
-        .remove(&ticket)
-    {
-        let _ = sender.send(result);
-    }
+    *state.permissions.write().map_err(|e| e.to_string())? = permission_set(tools)?;
     Ok(())
 }
 
@@ -170,14 +148,14 @@ struct RunningServer {
 }
 
 pub(crate) struct McpState {
-    snapshot: SharedSnapshot,
+    permissions: Permissions,
     running: tokio::sync::Mutex<Option<RunningServer>>,
 }
 
 impl Default for McpState {
     fn default() -> Self {
         Self {
-            snapshot: Arc::new(RwLock::new(Snapshot::default())),
+            permissions: Arc::new(RwLock::new(read_permissions())),
             running: tokio::sync::Mutex::new(None),
         }
     }
@@ -188,65 +166,6 @@ impl Default for McpState {
 pub(crate) struct McpConnectionInfo {
     command: String,
     args: Vec<String>,
-}
-
-#[tauri::command]
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn update_mcp_snapshot(
-    state: tauri::State<'_, McpState>,
-    collection_name: String,
-    collection_id: String,
-    note_revisions: HashMap<String, String>,
-    folder_revisions: HashMap<String, String>,
-    notes: Vec<Note>,
-    folders: Vec<Folder>,
-    trash: Vec<TrashSummary>,
-) -> Result<(), String> {
-    let collection_name = collection_name.trim();
-    if collection_name.is_empty() {
-        return Err("The MCP collection name cannot be empty".into());
-    }
-
-    let mut snapshot = state
-        .snapshot
-        .write()
-        .map_err(|_| "The MCP note snapshot is unavailable".to_string())?;
-    *snapshot = Snapshot {
-        collection_id,
-        note_revisions,
-        folder_revisions,
-        writes: snapshot.writes.clone(),
-        collection_name: collection_name.chars().take(200).collect(),
-        notes,
-        folders,
-        trash,
-    };
-    Ok(())
-}
-
-#[tauri::command]
-pub(crate) fn update_mcp_note(
-    state: tauri::State<'_, McpState>,
-    note: Note,
-    revision: String,
-    collection_id: String,
-) -> Result<(), String> {
-    let mut snapshot = state
-        .snapshot
-        .write()
-        .map_err(|_| "The MCP note snapshot is unavailable".to_string())?;
-    if snapshot.collection_id != collection_id {
-        return Err("Collection changed".into());
-    }
-    let note_id = note.id.clone();
-    let existing = snapshot
-        .notes
-        .iter_mut()
-        .find(|existing| existing.id == note.id)
-        .ok_or_else(|| format!("The MCP snapshot has no note with id `{}`", note.id))?;
-    *existing = note;
-    snapshot.note_revisions.insert(note_id, revision);
-    Ok(())
 }
 
 // Reading client configuration never binds a socket or grants agent access.
@@ -295,19 +214,13 @@ pub(crate) async fn start_mcp_server(
         .map_err(|error| format!("Could not resolve the app configuration directory: {error}"))?
         .join(MCP_TOKEN_FILE_NAME);
     let token = load_or_create_token(&token_path)?;
-    {
-        let snapshot = state.snapshot.read().map_err(|e| e.to_string())?;
-        *snapshot.writes.app.write().map_err(|e| e.to_string())? = Some(app);
-        *snapshot
-            .writes
-            .permissions
-            .write()
-            .map_err(|e| e.to_string())? = READ_TOOLS.into_iter().map(String::from).collect();
-    }
+    *state.permissions.write().map_err(|e| e.to_string())? = read_permissions();
+    let registry = app.state::<SharedRegistry>().inner().clone();
     let cancellation = CancellationToken::new();
     let task = tokio::spawn(serve_local_connections(
         listener,
-        state.snapshot.clone(),
+        registry,
+        state.permissions.clone(),
         token,
         cancellation.clone(),
     ));
@@ -321,14 +234,7 @@ pub(crate) async fn start_mcp_server(
 
 #[tauri::command]
 pub(crate) async fn stop_mcp_server(state: tauri::State<'_, McpState>) -> Result<(), String> {
-    {
-        let snapshot = state.snapshot.read().map_err(|e| e.to_string())?;
-        *snapshot
-            .writes
-            .permissions
-            .write()
-            .map_err(|e| e.to_string())? = HashSet::new();
-    }
+    *state.permissions.write().map_err(|e| e.to_string())? = HashSet::new();
     let server = state.running.lock().await.take();
     if let Some(server) = server {
         server.cancellation.cancel();
@@ -344,12 +250,13 @@ pub(crate) async fn stop_mcp_server(state: tauri::State<'_, McpState>) -> Result
     Ok(())
 }
 
-// The editor owns the live snapshot. Each headless invocation relays its stdio
+// The app owns the live collection. Each headless invocation relays its stdio
 // stream over this authenticated loopback channel, without reading note files
 // or launching another editor. The token never enters client configuration.
 async fn serve_local_connections(
     listener: TcpListener,
-    snapshot: SharedSnapshot,
+    registry: SharedRegistry,
+    permissions: Permissions,
     token: String,
     cancellation: CancellationToken,
 ) {
@@ -383,7 +290,8 @@ async fn serve_local_connections(
                         continue;
                     }
                 };
-                let snapshot = snapshot.clone();
+                let registry = registry.clone();
+                let permissions = permissions.clone();
                 let token = token.clone();
                 let session_cancellation = cancellation.child_token();
                 sessions.spawn(async move {
@@ -402,7 +310,7 @@ async fn serve_local_connections(
                         _ = session_cancellation.cancelled() => return,
                     };
                     if !matches!(authenticated, Ok(Ok(()))) { return; }
-                    serve_mcp_connection(stream, snapshot, session_cancellation).await;
+                    serve_mcp_connection(stream, SodilaudServer::new(registry, permissions), session_cancellation).await;
                 });
             }
         }
@@ -422,7 +330,7 @@ fn should_retry_accept(error: &std::io::Error) -> bool {
     )
 }
 
-async fn serve_mcp_connection(stream: TcpStream, snapshot: SharedSnapshot, ct: CancellationToken) {
+async fn serve_mcp_connection(stream: TcpStream, server: SodilaudServer, ct: CancellationToken) {
     let (reader, writer) = stream.into_split();
     let mut transport = AsyncRwTransport::new_server(BoundedMessageReader::new(reader), writer);
     let first = loop {
@@ -457,7 +365,6 @@ async fn serve_mcp_connection(stream: TcpStream, snapshot: SharedSnapshot, ct: C
         inner: transport,
         require_metadata: !legacy,
     };
-    let server = SodilaudServer::new(snapshot);
     let service = if legacy {
         let Ok(service) = server.serve_with_ct(transport, ct).await else {
             return;
@@ -1201,22 +1108,23 @@ fn tool_error(message: String) -> CallToolResult {
 
 #[derive(Clone)]
 struct SodilaudServer {
-    snapshot: SharedSnapshot,
+    registry: SharedRegistry,
+    permissions: Permissions,
     #[allow(dead_code)]
     tool_router: ToolRouter<Self>,
 }
 
 impl SodilaudServer {
-    fn new(snapshot: SharedSnapshot) -> Self {
+    fn new(registry: SharedRegistry, permissions: Permissions) -> Self {
         Self {
-            snapshot,
+            registry,
+            permissions,
             tool_router: Self::tool_router(),
         }
     }
 
     fn is_allowed(&self, operation: &str) -> Result<bool, McpError> {
-        let writes = self.with_snapshot(|s| s.writes.clone())?;
-        let permissions = writes
+        let permissions = self
             .permissions
             .read()
             .map_err(|e| McpError::internal_error(e.to_string(), None))?;
@@ -1228,18 +1136,11 @@ impl SodilaudServer {
         operation: &'static str,
         arguments: serde_json::Value,
     ) -> Result<CallToolResult, McpError> {
-        let (writes, collection_id) =
-            self.with_snapshot(|s| (s.writes.clone(), s.collection_id.clone()))?;
         let appending = operation == "append_to_note";
         if !self.is_allowed(operation)? {
             return Ok(tool_error(format!(
                 "Permission for {operation} is disabled. Enable it in MCP Configuration."
             )));
-        }
-        if arguments["collectionId"].as_str() != Some(collection_id.as_str()) {
-            return Ok(tool_error(
-                "Collection changed; read the current collection before writing.".into(),
-            ));
         }
         let request_id = arguments["requestId"].as_str().unwrap_or_default();
         if request_id.trim().is_empty() || request_id.chars().count() > 128 {
@@ -1304,72 +1205,22 @@ impl SodilaudServer {
                 return Err(McpError::invalid_params("Name/title must contain 1-200 characters and content at most 100000 UTF-8 bytes", None));
             }
         }
-        let app = writes
-            .app
-            .read()
-            .map_err(|e| McpError::internal_error(e.to_string(), None))?
-            .clone();
-        let Some(app) = app else {
-            return Ok(tool_error("The editor is unavailable".into()));
-        };
-        let ticket = Uuid::new_v4().to_string();
-        let (sender, receiver) = tokio::sync::oneshot::channel();
-        {
-            let mut pending = writes
-                .pending
-                .lock()
-                .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-            if pending.len() >= 32 {
-                return Ok(tool_error(
-                    "Too many pending writes; retry with the same requestId".into(),
-                ));
-            }
-            pending.insert(ticket.clone(), sender);
-        }
-        // The guard also cleans up if the client disconnects and cancels this future.
-        struct PendingGuard(Arc<WriteBridge>, String);
-        impl Drop for PendingGuard {
-            fn drop(&mut self) {
-                if let Ok(mut pending) = self.0.pending.lock() {
-                    pending.remove(&self.1);
-                }
-            }
-        }
-        let _guard = PendingGuard(writes, ticket.clone());
-        // The Quick Notes page owns the notes and stays loaded while hidden.
-        app.emit_to(
-            crate::quicknotes::window::LABEL,
-            "mcp-write-request",
-            WriteEvent {
-                ticket,
-                operation,
-                arguments,
-            },
-        )
-        .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-        match tokio::time::timeout(std::time::Duration::from_secs(30), receiver).await {
-            Ok(Ok(result)) if result["ok"] == true => successful_result(result),
-            Ok(Ok(result)) => Ok(tool_error(
-                result["error"].as_str().unwrap_or("Write failed").into(),
-            )),
-            _ => Ok(tool_error(
-                "Write outcome unknown; retry with the same requestId and arguments".into(),
-            )),
+        match self.registry.agent_write(operation, &arguments) {
+            Ok(result) => successful_result(result),
+            Err(error) => Ok(tool_error(error)),
         }
     }
 
     fn with_snapshot<T>(&self, operation: impl FnOnce(&Snapshot) -> T) -> Result<T, McpError> {
-        let snapshot = self
-            .snapshot
-            .read()
-            .map_err(|_| McpError::internal_error("The Sodilaud snapshot is unavailable", None))?;
-        Ok(operation(&snapshot))
+        self.registry
+            .with(|workspace| Ok(operation(&snapshot_of(workspace))))
+            .map_err(|error| McpError::internal_error(error, None))
     }
 }
 
 #[tool_router]
 impl SodilaudServer {
-    /// Append exact text to an existing note. Requires separate editing permission and a current get_note revision. On a save failure the append remains unsaved in the editor; retry identical arguments to save without appending twice.
+    /// Append exact text to an existing note. Requires separate editing permission and a current get_note revision. It appears live in an open editor without disturbing the user's typing. Retry identical arguments after a failure; a requestId is never applied twice.
     #[tool(annotations(
         title = "Append to note",
         read_only_hint = false,
@@ -1429,7 +1280,7 @@ impl SodilaudServer {
         .await
     }
 
-    /// Rename a note and lock its title against automatic title generation. Requires a current get_note revision. Retry identical arguments after a save failure; the change may already be visible in the editor.
+    /// Rename a note and lock its title against automatic title generation. Requires a current get_note revision. Retry identical arguments after a failure; a requestId is never applied twice.
     #[tool(annotations(
         title = "Rename note",
         read_only_hint = false,
@@ -1449,7 +1300,7 @@ impl SodilaudServer {
         .await
     }
 
-    /// Move a note to an existing folder or null for top level, preserving content and pin state. Requires a current get_note revision. Retry identical arguments after a save failure; the change may already be visible in the editor.
+    /// Move a note to an existing folder or null for top level, preserving content and pin state. Requires a current get_note revision. Retry identical arguments after a failure; a requestId is never applied twice.
     #[tool(annotations(
         title = "Move note",
         read_only_hint = false,
@@ -1469,7 +1320,7 @@ impl SodilaudServer {
         .await
     }
 
-    /// Rename an existing folder without changing its ID or note assignments. Requires its current revision from list_folders; duplicate and reserved names are rejected. Retry identical arguments after a save failure; the change may already be visible in the editor.
+    /// Rename an existing folder without changing its ID or note assignments. Requires its current revision from list_folders; duplicate and reserved names are rejected. Retry identical arguments after a failure; a requestId is never applied twice.
     #[tool(annotations(
         title = "Rename folder",
         read_only_hint = false,
@@ -1489,7 +1340,7 @@ impl SodilaudServer {
         .await
     }
 
-    /// Move a note into persistent trash. Requires a current get_note revision. The user can restore it; agents cannot permanently delete trash. Retry identical arguments after a timeout or save failure.
+    /// Move a note into persistent trash. Requires a current get_note revision. The user can restore it; agents cannot permanently delete trash. Retry identical arguments after a timeout or failure; a requestId is never applied twice.
     #[tool(annotations(
         title = "Delete note",
         read_only_hint = false,
@@ -1509,7 +1360,7 @@ impl SodilaudServer {
         .await
     }
 
-    /// Delete an empty folder. Requires a current list_folders revision. Nonempty folders are rejected, including folders containing pinned notes. Move their notes first. Retry identical arguments after a timeout or save failure.
+    /// Delete an empty folder. Requires a current list_folders revision. Nonempty folders are rejected, including folders containing pinned notes. Move their notes first. Retry identical arguments after a timeout or failure; a requestId is never applied twice.
     #[tool(annotations(
         title = "Delete empty folder",
         read_only_hint = false,
@@ -1683,7 +1534,7 @@ impl ServerHandler for SodilaudServer {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new("sodilaud-mcp", env!("CARGO_PKG_VERSION")))
             .with_instructions(
-                "Access to the collection currently open in Sodilaud, including unsaved edits. Each function requires its permission enabled in MCP Configuration. All read functions start enabled; all write functions start disabled. delete_note moves a note to persistent trash and requires expectedRevision from get_note. delete_folder requires expectedRevision from list_folders and rejects nonempty folders. list_trash lists recovery metadata; only the user can restore or empty trash through the UI. rename_note and move_note require expectedRevision from get_note. rename_folder requires expectedRevision from list_folders. All edits preserve content except append_to_note, which requires the expectedRevision from get_note, appends exact text, and never adds separators. A revision conflict requires rereading; a save failure requires retrying identical arguments because the change may already be in the editor. Get collectionId from a read result and supply a unique requestId for each write; reuse identical arguments on retries. Retry keys last for this collection session; a switch or app restart invalidates collectionId. Results are paginated; follow nextOffset until it is null. get_note offsets count Unicode characters, not bytes.",
+                "Access to the notes collection currently open in Sodilaud, as the editor shows it. Each function requires its permission enabled in MCP Configuration. All read functions start enabled; all write functions start disabled. delete_note moves a note to persistent trash and requires expectedRevision from get_note. delete_folder requires expectedRevision from list_folders and rejects nonempty folders. list_trash lists recovery metadata; only the user can restore or empty trash through the UI. rename_note and move_note require expectedRevision from get_note. rename_folder requires expectedRevision from list_folders. All edits preserve content except append_to_note, which requires the expectedRevision from get_note, appends exact text, and never adds separators; line breaks are stored as \\n. A revision conflict requires rereading; after a failure or timeout, retry identical arguments with the same requestId, which never applies a write twice. Get collectionId from a read result and supply a unique requestId for each write; reuse identical arguments on retries. Retry keys last for this collection session; a switch or app restart invalidates collectionId. Results are paginated; follow nextOffset until it is null. get_note offsets count Unicode characters, not bytes.",
             )
     }
 
@@ -1711,7 +1562,6 @@ mod tests {
             collection_id: "test-collection".into(),
             note_revisions: HashMap::from([("one".into(), "revision-one".into())]),
             folder_revisions: HashMap::from([("work".into(), "revision-work".into())]),
-            writes: Arc::new(WriteBridge::default()),
             trash: vec![],
             folders: vec![Folder {
                 id: "work".into(),
@@ -1740,15 +1590,49 @@ mod tests {
         }
     }
 
+    /// A registry holding the fixture's notes and folders, under the fixture's
+    /// collection id so requests can name it.
+    fn registry() -> (SharedRegistry, std::path::PathBuf) {
+        let fixture = snapshot();
+        let path = crate::store::workspace::tests::temporary_db_path("mcp");
+        let mut conn = crate::store::workspace::open(&path).unwrap();
+        let notes: Vec<&Note> = fixture.notes.iter().collect();
+        crate::store::workspace::save_all(&mut conn, &notes, &fixture.folders, &[]).unwrap();
+        drop(conn);
+        let registry = SharedRegistry::default();
+        registry.open(&path, false).unwrap();
+        registry
+            .with(|workspace| {
+                workspace.id = fixture.collection_id.clone();
+                Ok(())
+            })
+            .unwrap();
+        (registry, path)
+    }
+
+    fn server() -> (SodilaudServer, Permissions, std::path::PathBuf) {
+        let (registry, path) = registry();
+        let permissions = Arc::new(RwLock::new(read_permissions()));
+        (
+            SodilaudServer::new(registry, permissions.clone()),
+            permissions,
+            path,
+        )
+    }
+
+    fn revision(registry: &SharedRegistry, id: &str) -> String {
+        registry
+            .with(|workspace| Ok(snapshot_of(workspace).note_revisions[id].clone()))
+            .unwrap()
+    }
+
     #[tokio::test]
     async fn function_permissions_are_independent_and_reads_can_be_revoked() {
-        let snapshot = Arc::new(RwLock::new(snapshot()));
-        let server = SodilaudServer::new(snapshot.clone());
+        let (server, permissions, path) = server();
         assert!(server.is_allowed("get_note").unwrap());
         assert!(!server.is_allowed("create_note").unwrap());
         assert!(permission_set(vec!["unknown".into()]).is_err());
-        *snapshot.read().unwrap().writes.permissions.write().unwrap() =
-            permission_set(vec!["create_note".into()]).unwrap();
+        *permissions.write().unwrap() = permission_set(vec!["create_note".into()]).unwrap();
         assert!(server.is_allowed("create_note").unwrap());
         assert!(!server.is_allowed("create_folder").unwrap());
         assert!(!server.is_allowed("append_to_note").unwrap());
@@ -1792,23 +1676,34 @@ mod tests {
             .unwrap()
             .is_error
             .unwrap());
+        std::fs::remove_file(path).unwrap();
     }
 
     #[tokio::test]
     async fn trash_listing_is_paginated_metadata_only_and_permission_gated() {
-        let mut data = snapshot();
-        data.trash = (0..3)
-            .map(|index| TrashSummary {
-                id: format!("trash-{index}"),
-                note_id: format!("note-{index}"),
-                title: format!("Deleted {index}"),
-                deleted_at: index,
-                folder_id: Some("old-folder".into()),
-                folder_name: Some("Old folder".into()),
+        let (server, permissions, path) = server();
+        server
+            .registry
+            .with(|workspace| {
+                workspace.trash = (0..3)
+                    .map(|index| crate::store::workspace::TrashEntry {
+                        id: format!("trash-{index}"),
+                        note: Note {
+                            id: format!("note-{index}"),
+                            title: format!("Deleted {index}"),
+                            content: "secret body".into(),
+                            updated_at: index,
+                            is_title_locked: true,
+                            is_pinned: false,
+                            folder_id: Some("old-folder".into()),
+                        },
+                        deleted_at: index,
+                        folder_name: Some("Old folder".into()),
+                    })
+                    .collect();
+                Ok(())
             })
-            .collect();
-        let shared = Arc::new(RwLock::new(data));
-        let server = SodilaudServer::new(shared.clone());
+            .unwrap();
         let first = server
             .list_trash(Parameters(ListFoldersArgs {
                 limit: Some(2),
@@ -1837,14 +1732,7 @@ mod tests {
                 .len(),
             1
         );
-        shared
-            .read()
-            .unwrap()
-            .writes
-            .permissions
-            .write()
-            .unwrap()
-            .remove("list_trash");
+        permissions.write().unwrap().remove("list_trash");
         assert!(server
             .list_trash(Parameters(ListFoldersArgs {
                 limit: None,
@@ -1860,6 +1748,7 @@ mod tests {
         for operation in ["delete_note", "delete_folder"] {
             assert!(!server.is_allowed(operation).unwrap());
         }
+        std::fs::remove_file(path).unwrap();
     }
 
     #[test]
@@ -1892,8 +1781,7 @@ mod tests {
 
     #[tokio::test]
     async fn organization_tools_enforce_independent_permissions_and_validate_inputs() {
-        let snapshot = Arc::new(RwLock::new(snapshot()));
-        let server = SodilaudServer::new(snapshot.clone());
+        let (server, permissions, path) = server();
         for (operation, args) in [
             (
                 "rename_note",
@@ -1914,8 +1802,7 @@ mod tests {
                 .unwrap()
                 .is_error
                 .unwrap());
-            *snapshot.read().unwrap().writes.permissions.write().unwrap() =
-                permission_set(vec![operation.into()]).unwrap();
+            *permissions.write().unwrap() = permission_set(vec![operation.into()]).unwrap();
             for other in WRITE_TOOLS {
                 assert_eq!(server.is_allowed(other).unwrap(), other == operation);
             }
@@ -1929,20 +1816,32 @@ mod tests {
                 _ => "name",
             }] = serde_json::json!(" ");
             assert!(server.write(operation, invalid).await.is_err());
-            // Valid arguments reach the editor boundary, rather than a validation error.
+            // Valid arguments reach the registry, which checks the revision.
             let result = server.write(operation, args).await.unwrap();
             assert!(serde_json::to_string(&result)
                 .unwrap()
-                .contains("editor is unavailable"));
-            snapshot
-                .read()
-                .unwrap()
-                .writes
-                .permissions
-                .write()
-                .unwrap()
-                .clear();
+                .contains("Revision conflict"));
+            permissions.write().unwrap().clear();
         }
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[tokio::test]
+    async fn an_append_reaches_the_registry_once_per_request_id() {
+        let (server, permissions, path) = server();
+        permissions.write().unwrap().insert("append_to_note".into());
+        let args = serde_json::json!({"collectionId":"test-collection", "requestId":"a1", "noteId":"two",
+            "expectedRevision": revision(&server.registry, "two"), "content":" appended"});
+        for _ in 0..2 {
+            let result = server.write("append_to_note", args.clone()).await.unwrap();
+            assert_eq!(result.is_error, Some(false), "{result:?}");
+        }
+        let content = server
+            .registry
+            .with(|workspace| Ok(workspace.notes[1].note.content.clone()))
+            .unwrap();
+        assert_eq!(content, "Other body appended");
+        std::fs::remove_file(path).unwrap();
     }
 
     #[test]
@@ -2048,7 +1947,7 @@ mod tests {
 
     #[tokio::test]
     async fn local_channel_rejects_invalid_authentication() {
-        let (address, _, cancellation, task) = start_test_server().await;
+        let (address, _, _, cancellation, task) = start_test_server().await;
         assert!(connect_to_editor(address, &"b".repeat(64)).await.is_err());
         let connection = connect_to_editor(address, &"a".repeat(64)).await;
         assert!(connection.is_ok());
@@ -2078,7 +1977,7 @@ mod tests {
 
     #[tokio::test]
     async fn stdio_relay_discovers_tools_reads_live_edits_and_stops_with_editor() {
-        let (address, snapshot, cancellation, server) = start_test_server().await;
+        let (address, registry, permissions, cancellation, server) = start_test_server().await;
         let stream = connect_to_editor(address, &"a".repeat(64)).await.unwrap();
         let (client, child) = tokio::io::duplex(64 * 1024);
         let (input, output) = tokio::io::split(child);
@@ -2157,7 +2056,20 @@ mod tests {
                 .unwrap()
                 .is_empty());
         }
-        snapshot.write().unwrap().notes[0].content = "Live café 📝 edit".into();
+        let old = registry
+            .with(|workspace| Ok(workspace.notes[0].note.content.clone()))
+            .unwrap();
+        registry
+            .push(
+                "test-collection",
+                "one",
+                0,
+                vec![crate::docs::registry::Update {
+                    client_id: "editor".into(),
+                    changes: crate::docs::changes::replace_all(&old, "Live café 📝 edit"),
+                }],
+            )
+            .unwrap();
         send_json(
             &mut client,
             serde_json::json!({
@@ -2204,11 +2116,7 @@ mod tests {
                 .unwrap()
                 .contains("disabled"));
         }
-        snapshot
-            .read()
-            .unwrap()
-            .writes
-            .permissions
+        permissions
             .write()
             .unwrap()
             .extend(WRITE_TOOLS[..2].iter().map(|s| s.to_string()));
@@ -2227,11 +2135,11 @@ mod tests {
             "params":{"name":"create_note","arguments":{"collectionId":"test-collection","requestId":"","title":"New"}}
         })).await;
         assert!(receive_json(&mut client).await["error"].is_object());
-        assert_eq!(snapshot.read().unwrap().notes.len(), 2);
+        assert_eq!(registry.state().unwrap().notes.len(), 2);
 
         assert_eq!(
             note["result"]["structuredContent"]["revision"],
-            "revision-one"
+            revision(&registry, "one")
         );
         // Creation permission alone must not authorize modification of a note.
         send_json(&mut client, serde_json::json!({
@@ -2244,21 +2152,14 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("disabled"));
-        snapshot
-            .read()
-            .unwrap()
-            .writes
-            .permissions
-            .write()
-            .unwrap()
-            .insert("append_to_note".into());
+        permissions.write().unwrap().insert("append_to_note".into());
         send_json(&mut client, serde_json::json!({
             "jsonrpc":"2.0", "id":12, "method":"tools/call",
             "params":{"name":"append_to_note","arguments":{"collectionId":"test-collection","requestId":"a1","noteId":"one","expectedRevision":"","content":" appended"}}
         })).await;
         assert!(receive_json(&mut client).await["error"].is_object());
         assert_eq!(
-            snapshot.read().unwrap().notes[0].content,
+            registry.state().unwrap().notes[0].note.content,
             "Live café 📝 edit"
         );
 
@@ -2273,11 +2174,12 @@ mod tests {
             .unwrap()
             .unwrap();
         assert!(connect_to_editor(address, &"a".repeat(64)).await.is_err());
+        std::fs::remove_file(registry.with(|w| Ok(w.path.clone())).unwrap()).unwrap();
     }
 
     #[tokio::test]
     async fn stdio_relay_exits_on_client_eof() {
-        let (address, _, cancellation, server) = start_test_server().await;
+        let (address, _, _, cancellation, server) = start_test_server().await;
         let stream = connect_to_editor(address, &"a".repeat(64)).await.unwrap();
         tokio::time::timeout(
             CONNECTION_TIMEOUT,
@@ -2292,7 +2194,7 @@ mod tests {
 
     #[tokio::test]
     async fn modern_notification_listener_is_acknowledged_over_stdio() {
-        let (address, _, cancellation, server) = start_test_server().await;
+        let (address, _, _, cancellation, server) = start_test_server().await;
         let stream = connect_to_editor(address, &"a".repeat(64)).await.unwrap();
         let mut client = BufReader::new(stream);
         send_json(
@@ -2345,21 +2247,24 @@ mod tests {
 
     async fn start_test_server() -> (
         std::net::SocketAddr,
-        SharedSnapshot,
+        SharedRegistry,
+        Permissions,
         CancellationToken,
         JoinHandle<()>,
     ) {
         let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
         let address = listener.local_addr().unwrap();
-        let snapshot = Arc::new(RwLock::new(snapshot()));
+        let (registry, _) = registry();
+        let permissions = Arc::new(RwLock::new(read_permissions()));
         let cancellation = CancellationToken::new();
         let task = tokio::spawn(serve_local_connections(
             listener,
-            snapshot.clone(),
+            registry.clone(),
+            permissions.clone(),
             "a".repeat(64),
             cancellation.clone(),
         ));
-        (address, snapshot, cancellation, task)
+        (address, registry, permissions, cancellation, task)
     }
 
     async fn send_json(stream: &mut (impl AsyncWrite + Unpin), value: serde_json::Value) {

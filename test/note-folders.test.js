@@ -32,7 +32,7 @@ const contextMenu = (element) => element.dispatchEvent(new app.dom.window.MouseE
   { bubbles: true, cancelable: true }
 ));
 
-test("pinned notes stay at the top level above folders", () => {
+test("pinned notes stay at the top level above folders", async () => {
   assert.deepEqual(sectionNames(), ["Work", "Personal"]);
   assert.equal(document.querySelectorAll('.note-item[data-id="pinned"]').length, 1);
   assert.equal(topLevelNote("pinned").dataset.id, "pinned");
@@ -46,7 +46,7 @@ test("pinned notes stay at the top level above folders", () => {
   assert.equal(document.getElementById("note-list").lastElementChild.dataset.id, "loose");
 });
 
-test("unpinning returns a note to its underlying folder", () => {
+test("unpinning returns a note to its underlying folder", async () => {
   document.querySelector('.note-item[data-id="pinned"] .note-item-pin').click();
   assert.ok(section("work").querySelector('.note-item[data-id="pinned"]'));
   assert.equal(document.querySelector(".pinned-notes-divider"), null);
@@ -56,16 +56,16 @@ test("unpinning returns a note to its underlying folder", () => {
   assert.ok(document.querySelector(".pinned-notes-divider"));
 });
 
-test("creating from a pinned note creates at the top level", () => {
+test("creating from a pinned note creates at the top level", async () => {
   document.querySelector('.note-item[data-id="pinned"]').click();
   document.getElementById("new-note-btn").click();
 
-  const createdNote = app.read("sodilaud_notes").find(({ id }) => id.startsWith("note_"));
+  const createdNote = (await app.savedNotes()).find(({ id }) => id.startsWith("note_"));
   assert.equal(createdNote.folderId, null);
   assert.ok(topLevelNote(createdNote.id));
 });
 
-test("the split-view selector also leaves folderless notes at the top level", () => {
+test("the split-view selector also leaves folderless notes at the top level", async () => {
   document.getElementById("split-note-btn").click();
   const select = document.getElementById("secondary-note-select");
   assert.deepEqual([...select.querySelectorAll("optgroup")].map(({ label }) => label), [
@@ -79,7 +79,7 @@ test("the split-view selector also leaves folderless notes at the top level", ()
   document.getElementById("close-secondary-btn").click();
 });
 
-test("collapsed folders reopen temporarily for sidebar search", () => {
+test("collapsed folders reopen temporarily for sidebar search", async () => {
   const toggle = section("work").querySelector(".note-folder-toggle");
   assert.equal(toggle.getAttribute("aria-expanded"), "true");
   toggle.focus();
@@ -101,28 +101,28 @@ test("collapsed folders reopen temporarily for sidebar search", () => {
   assert.equal(section("work").classList.contains("collapsed"), true);
 });
 
-test("the note context menu moves notes between folders", () => {
+test("the note context menu moves notes between folders", async () => {
   contextMenu(document.querySelector('.note-item[data-id="work-note"]'));
   document.getElementById("ctx-move-folder").click();
   document.querySelector('#ctx-move-folder-menu [data-folder-id="personal"]').click();
 
-  const saved = app.read("sodilaud_notes");
+  const saved = (await app.savedNotes());
   assert.equal(saved.find(({ id }) => id === "work-note").folderId, "personal");
   assert.ok(section("personal").querySelector('.note-item[data-id="work-note"]'));
 });
 
-test("folders can be created, renamed, used for new notes, and safely deleted", () => {
+test("folders can be created, renamed, used for new notes, and safely deleted", async () => {
   document.getElementById("new-folder-btn").click();
   let input = document.querySelector(".note-folder-input");
   input.value = "Projects";
   input.dispatchEvent(new app.dom.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
 
-  const project = app.read("sodilaud_folders").find(({ name }) => name === "Projects");
+  const project = (await app.savedFolders()).find(({ name }) => name === "Projects");
   assert.ok(project);
 
   contextMenu(section(project.id).querySelector(".note-folder-header"));
   document.getElementById("ctx-folder-new-note").click();
-  let createdNote = app.read("sodilaud_notes").find(({ id }) => id.startsWith("note_"));
+  let createdNote = (await app.savedNotes()).find(({ id }) => id.startsWith("note_"));
   assert.equal(createdNote.folderId, project.id);
 
   contextMenu(section(project.id).querySelector(".note-folder-header"));
@@ -130,7 +130,7 @@ test("folders can be created, renamed, used for new notes, and safely deleted", 
   input = document.querySelector(".note-folder-input");
   input.value = "Projects Archive";
   input.dispatchEvent(new app.dom.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-  assert.equal(app.read("sodilaud_folders").find(({ id }) => id === project.id).name, "Projects Archive");
+  assert.equal((await app.savedFolders()).find(({ id }) => id === project.id).name, "Projects Archive");
 
   document.getElementById("split-note-btn").click();
   assert.ok([...document.querySelectorAll("#secondary-note-select optgroup")]
@@ -139,13 +139,13 @@ test("folders can be created, renamed, used for new notes, and safely deleted", 
 
   contextMenu(section(project.id).querySelector(".note-folder-header"));
   document.getElementById("ctx-folder-delete").click();
-  assert.equal(app.read("sodilaud_folders").some(({ id }) => id === project.id), false);
-  createdNote = app.read("sodilaud_notes").find(({ id }) => id === createdNote.id);
+  assert.equal((await app.savedFolders()).some(({ id }) => id === project.id), false);
+  createdNote = (await app.savedNotes()).find(({ id }) => id === createdNote.id);
   assert.equal(createdNote.folderId, null);
   assert.ok(topLevelNote(createdNote.id));
 });
 
-test("creating a note clears an active sidebar search so the new note remains visible", () => {
+test("creating a note clears an active sidebar search so the new note remains visible", async () => {
   const search = document.getElementById("search-input");
   search.value = "no existing note matches this";
   search.dispatchEvent(new app.dom.window.Event("input", { bubbles: true }));

@@ -15,7 +15,7 @@ const app = await bootApp({
 });
 const { document } = app.dom.window;
 
-test("a legacy split layout boots as live and is rewritten in storage", () => {
+test("a legacy split layout boots as live and is rewritten in storage", async () => {
   const container = document.getElementById("app");
   assert.deepEqual([...container.classList].filter((name) => name.startsWith("mode-")), ["mode-live"]);
   assert.equal(document.getElementById("mode-live").getAttribute("aria-pressed"), "true");
@@ -31,7 +31,7 @@ test("switching notes inside the save debounce never writes the old text into th
   assert.equal(app.editorText(), "Second body");
 
   await app.settle(600);
-  const saved = Object.fromEntries(app.read("sodilaud_notes").map(note => [note.id, note.content]));
+  const saved = Object.fromEntries((await app.savedNotes()).map(note => [note.id, note.content]));
   assert.equal(saved.one, "A");
   assert.equal(saved.two, "Second body");
   assert.equal(app.editorText(), "Second body");

@@ -47,7 +47,9 @@ Later: Vim motions (`@replit/codemirror-vim`), not in the first version.
 
 ## 2. Rust-owned document model
 
-Status: designed, no longer a prerequisite for Quick Notes
+Status: done for notes, to ship in 0.11; files join with item 4's merge work
+
+Design: [`docs/superpowers/specs/2026-09-28-rust-document-model-design.md`](docs/superpowers/specs/2026-09-28-rust-document-model-design.md)
 
 Since 0.10 the Quick Notes panel is the only window that edits notes, so a note has one writer
 besides agents, and Quick Notes shipped on the window-owned model. This item is still needed
@@ -144,4 +146,6 @@ agent picks up and acts on. The design is ported from Marginalia; the code is bu
   that sends native Edit/Write on co-edited files through `apply_edit`.
 
 Depends on: 1, 2. Item 4 for files; notes work without it.
+First step: hand-test item 2's live agent edits (an append landing in an open note while typing),
+which 0.11 covers only with automated tests.
 Open: comment storage for external files (app data keyed by path, or a sidecar file).

@@ -53,9 +53,9 @@ the command.
 
 The client launches a background instance of the same binary. This instance
 does not open a window, load note storage, or automatically enable access. It
-relays MCP messages to the Quick Notes panel, which owns the current collection.
-The panel's page stays loaded while it is hidden, so agents work whether or not
-it is on screen.
+relays MCP messages to the running app, whose notes registry owns the open
+collection. Agents therefore work whether or not the Quick Notes panel is on
+screen, and even before its page has loaded.
 Multiple clients can connect independently. Diagnostics go to stderr; stdout
 contains only MCP messages. Closing the client's input or disabling access
 ends the background instance. Reconnect the client after restarting Sodilaud
@@ -141,18 +141,15 @@ Example (replace the collection ID with one from `list_folders`):
 
 ### Persistence and concurrency
 
-Creation runs through the editor's save queue, alongside SQLite saves. Queued
-editor saves take their snapshot when they execute, so they retain preceding
-MCP creations. SQLite creations save the complete notes/folders collection in
-one transaction, with folder-reference validation. Local note creation saves active notes alongside recovery data; folder creation
-saves the folders key, also saving recovery data if a deletion is pending. New items are published to the live collection
-after persistence succeeds; failures publish nothing. Edits made while a write
-is in flight are preserved and saved through the normal editor path.
+Every write is checked, saved to the workspace database and only then applied to
+the collection, all in one step inside the app. A write that fails to save
+changes nothing and returns an error; retry it with the same ID and arguments.
+New items then appear in the sidebar. Writes and the user's edits are applied in
+the order they reach the app, so neither overwrites the other.
 
-Workspace switches and app close wait for in-flight writes and reject new
-ones while transitioning. Disabling a permission rejects its queued writes and lets
-already-started saves finish. A response timeout does not cancel a save: its
-outcome is unknown, so retry with the same ID and arguments.
+A write for a collection that is no longer open is rejected. Disabling a
+permission rejects later calls to that function. A response timeout does not
+cancel a write: its outcome is unknown, so retry with the same ID and arguments.
 
 Retry receipts are held for the current collection session, across client
 reconnects and access toggles. Switching/opening a workspace (including a
@@ -191,29 +188,30 @@ agent access starts.
 }
 ```
 
-Revision tokens are opaque and cover the whole live note: content, title,
-modification time, pin state, title-lock state, and folder assignment. They
-include unsaved edits. Tokens stay stable while the note is unchanged and
-expire across collection sessions. When reading a note in chunks, restart the
-read if the revision changes between chunks.
+Revision tokens are opaque and cover the whole note: content, title,
+modification time, pin state, title-lock state, and folder assignment. The
+editor sends the user's typing to the app about 150 ms after it stops, so a
+revision reflects everything typed until shortly before the read. Tokens stay
+stable while the note is unchanged and expire across collection sessions. When
+reading a note in chunks, restart the read if the revision changes between chunks.
 
-The editor checks the expected revision when the queued append starts, before
-applying any text. A conflict changes nothing: reread the note and decide
-whether to submit a new append. The append preserves the title and other
-metadata and advances the modification time. It preserves the active editor,
-selection, and scroll position.
+The app checks the expected revision before applying any text. A conflict
+changes nothing: reread the note and decide whether to submit a new append. The
+append preserves the title and other metadata and advances the modification
+time. Line breaks are stored as `\n`.
 
-Once accepted, the append appears as an ordinary editor change while it saves.
-Typing after that point operates on the appended text and is preserved. Success
-is returned only after persistence; the response includes the saved `note` metadata and
-its `revision`. Read content through paginated `get_note` calls. Later user edits can make that returned revision stale.
+An accepted append reaches every editor showing the note as a change from
+another writer, like a collaborator's: the user's cursor, selection, scroll
+position and focus stay where they were, and typing that had not reached the app
+yet is kept and placed around the appended text. Undo in the editor reverts only
+the user's own changes, never the agent's. Success is returned after the note is
+saved; the response includes the saved `note` metadata and its `revision`. Read
+content through paginated `get_note` calls. Later user edits can make that
+returned revision stale.
 
-If persistence fails, **the appended text remains in the editor and the status
-shows Save failed**. The tool explicitly reports that it was applied but not
-saved. Retry the same `requestId` with identical arguments to save the current
-note without appending again, including any subsequent user edits. Do not use a
-new request ID for that retry. A note deleted by the user is never recreated by
-retrying an append. Successful retries return the original saved result.
+If saving fails, nothing is appended and the tool returns the error. Retry the
+same `requestId` with identical arguments. A note deleted by the user is never
+recreated by retrying an append. Successful retries return the original result.
 
 ## Renaming and moving
 
@@ -230,8 +228,7 @@ All three tools require the current `collectionId`, a unique `requestId`, and an
 
 Renames accept 1–200 characters after trimming. Folder names follow the sidebar's
 whitespace normalization, case-insensitive duplicate, and reserved-name rules.
-A folder currently being renamed in the sidebar rejects an MCP rename until the
-user finishes. Moving to a missing folder is rejected; the destination must be
+Moving to a missing folder is rejected; the destination must be
 supplied explicitly. Note changes preserve content, pin state, and selection,
 and advance the modification time. Folder renames preserve note revisions and
 folder order. Folder revisions cover the name, remain stable when membership
@@ -256,20 +253,16 @@ The schema requires `folderId` and accepts a string or null; omitting it is an
 error, and the string `"null"` is not a top-level destination.
 
 Revisions, permissions, target existence, destination existence, and folder-name
-availability are checked when the queued operation starts. Conflicts change
-nothing; reread the target before deciding on a new request. Accepted changes
-appear in the editor immediately, and success is returned after saving. SQLite
-uses the existing complete-workspace transaction with folder-reference validation;
-local note saves also preserve trash recovery data; folder-only saves update the
-folders key unless recovery data is pending.
+availability are checked before anything changes. Conflicts change nothing;
+reread the target before deciding on a new request. Changes are saved in one
+database transaction with folder-reference validation, then appear in the
+sidebar; success is returned after saving.
 
 Responses include saved `note` metadata or `folder` data plus the new `revision`.
-If a save fails, the change remains visible with **Save failed**. Retry identical
-arguments with the same request ID to save the current state without reapplying
-the change or overwriting subsequent user edits. Deleted targets are never
-recreated by retries. Successful retries return the original saved result;
-later edits may have made its revision stale. The same session and retry limits
-as the other write tools apply.
+If a save fails, nothing changes; retry identical arguments with the same request
+ID. Deleted targets are never recreated by retries. Successful retries return the
+original result; later edits may have made its revision stale. The same session
+and retry limits as the other write tools apply.
 
 ## Deleting and recovering notes
 
@@ -277,7 +270,7 @@ as the other write tools apply.
 unique `requestId`, `noteId`, and the current `expectedRevision` from `get_note`.
 `delete_folder` requires `collectionId`, `requestId`, `folderId`, and the current
 `expectedRevision` from `list_folders`. Each has a separate permission that starts
-off. Revisions and permissions are rechecked when the queued deletion executes.
+off. Revisions and permissions are checked before anything changes.
 
 Folder deletion through MCP is **empty-only**. Pinned notes still count as
 members of their underlying folder. Move all assigned notes elsewhere first;
@@ -290,15 +283,11 @@ lock state, original folder ID/name, and deletion time. If the last active note
 is deleted, Sodilaud creates a blank note at the top level. Sidebar and
 right-click note deletion use the same recovery path as MCP.
 
-Accepted deletions update the editor immediately. SQLite commits active notes,
-folders, and trash in one transaction. Local storage saves the recovery copy
-before removing the active note. An interrupted local save may leave a recovery
-copy alongside an active note; it cannot lose both copies. An unreadable trash
-collection is preserved, and recovery-changing writes fail rather than overwrite
-it. Failed deletions remain visibly unsaved; retry the **same request ID and
-identical arguments**, including the original revision, to persist the current
-state without deleting again. A retry never deletes a note that the user has
-subsequently restored. The usual collection-session retry limits apply.
+A deletion commits active notes, folders, and trash in one database transaction,
+so a note is always either active or in the trash. A failed deletion changes
+nothing; retry the **same request ID and identical arguments**, including the
+original revision. A retry never deletes a note that the user has subsequently
+restored. The usual collection-session retry limits apply.
 
 `delete_note` returns the deleted note's trash metadata under `trash`, including
 the trash entry `id` and original `noteId`. `delete_folder` returns `folderId`.
@@ -317,10 +306,8 @@ It refuses to overwrite an active note with the same ID.
 Right-click the trash icon (or use Shift+F10 while it is focused) and choose
 **Empty Trash…** for a confirmation. Cancel is focused by default. Only the
 entries present when confirmation opened are selected; notes deleted while it
-is open are retained. Emptying trash is permanent. For local storage, confirmed emptying removes the
-selected recovery copies first so it can free space after a quota failure; an
-interruption may leave an older active copy on disk. Trash is scoped to the local
-collection or current workspace database and survives restarts. There is no
+is open are retained. Emptying trash is permanent. Trash is scoped to the local
+notes or the connected workspace database and survives restarts. There is no
 automatic expiry.
 
 **MCP exposes no restore, empty, purge, or permanent-delete function.** Agents
@@ -329,11 +316,10 @@ notes or empty trash through the UI.
 
 ## Live data and privacy boundary
 
-The editor's in-memory collection is authoritative for MCP. A connected agent
-can therefore read local notes or an open portable workspace, and it sees
-keystrokes shortly after they are entered even if Sodilaud's persistence
-debounce has not saved them yet. Switching collections updates what the
-server exposes.
+The app's notes registry owns the collection and serves MCP. A connected agent
+can therefore read the local notes or an open portable workspace, and it sees
+keystrokes about 150 ms after typing stops, once the editor has sent them.
+Switching collections updates what the server exposes.
 
 The background instance connects to an internal TCP channel on
 `127.0.0.1:39393`. This is not an HTTP endpoint. Each connection must authenticate
@@ -352,9 +338,9 @@ Enable access only when needed and under a client's privacy terms you accept.
 
 Agents can search the full text of every note in the open collection, so do not keep
 tokens, passwords or other secrets in a collection you expose to them. The optional macOS
-[clipboard history](../docs/clipboard-history.md) feature is never part of the MCP
-snapshot: it is not referenced by the MCP server, and only the clipboard popup window,
-never the main window or an agent, can read entry contents.
+[clipboard history](../docs/clipboard-history.md) feature is never part of what MCP
+serves: it is not referenced by the MCP server or the notes registry, and only the
+clipboard popup window, never the main window or an agent, can read entry contents.
 
 Sodilaud has no update checker and makes no outbound request. MCP does not
 expose update-check or installation tools. See [Storage and privacy](../README.md#storage-and-privacy)

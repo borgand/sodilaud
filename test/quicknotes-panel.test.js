@@ -13,8 +13,7 @@ const NOTES = [
 
 const app = await bootApp({
   platform: "MacIntel",
-  storage: { sodilaud_notes: NOTES, sodilaud_quicknotes_active_note: "c" },
-  handlers: { load_workspace_preference: () => null }
+  storage: { sodilaud_notes: NOTES, sodilaud_quicknotes_active_note: "c" }
 });
 const { document, KeyboardEvent, MouseEvent } = app.dom.window;
 const calls = (command) => app.invocations.filter(call => call.command === command);

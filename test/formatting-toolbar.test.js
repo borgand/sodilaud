@@ -15,8 +15,7 @@ const NOTES = [
 
 const app = await bootApp({
   platform: "MacIntel",
-  storage: { sodilaud_notes: NOTES },
-  handlers: { load_workspace_preference: () => null }
+  storage: { sodilaud_notes: NOTES }
 });
 const { document, MouseEvent, KeyboardEvent } = app.dom.window;
 
@@ -341,7 +340,7 @@ test("mode buttons are compact icons named by label and title", () => {
 
 // Runs last: a second boot replaces the globals the tests above rely on.
 test("off macOS the sidebar shortcut is Ctrl+Alt+S and labels say so", async () => {
-  const other = await bootApp({ instance: 2, platform: "Win32", handlers: { load_workspace_preference: () => null } });
+  const other = await bootApp({ instance: 2, platform: "Win32" });
   const doc = other.dom.window.document;
   const collapsed = () => doc.getElementById("sidebar").classList.contains("collapsed");
   const key = init => doc.dispatchEvent(new other.dom.window.KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init }));

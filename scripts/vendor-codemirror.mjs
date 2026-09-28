@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const entry = fileURLToPath(new URL("./codemirror-entry.mjs", import.meta.url));
 const outfile = fileURLToPath(new URL("../src/vendor/codemirror.js", import.meta.url));
-const versions = await Promise.all(["@codemirror/state", "@codemirror/view", "@codemirror/language", "@codemirror/commands", "@lezer/markdown"].map(async name => {
+const versions = await Promise.all(["@codemirror/state", "@codemirror/view", "@codemirror/language", "@codemirror/commands", "@codemirror/collab", "@lezer/markdown"].map(async name => {
   const pkg = JSON.parse(await readFile(new URL(`../node_modules/${name}/package.json`, import.meta.url), "utf8"));
   return `${name} ${pkg.version}`;
 }));
