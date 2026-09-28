@@ -12,6 +12,8 @@ import { trapModalFocus } from "./modal-focus.js";
 import { applyPlatformShortcutLabels } from "./platform-labels.js";
 import { resolveLinkAction } from "./markdown.js";
 import { WELCOME_NOTE_TITLE } from "./welcome-note.js";
+import { createFileEditor } from "./file-editor.js";
+import { isMacLikePlatform } from "./platform-labels.js";
 
 const HOTKEY_MESSAGES = {
   HotkeyInvalid: "That shortcut is not supported. The previous hotkey is still active.",
@@ -50,7 +52,9 @@ let notificationTimer = null;
 const appearance = createAppearance({
   document,
   storage: localStorage,
-  broadcast: (key) => broadcastPreference(window, key)
+  broadcast: (key) => broadcastPreference(window, key),
+  onLineNumbers: (enabled) => fileEditor?.setLineNumbers(enabled),
+  onSyntaxHighlighting: (enabled) => fileEditor?.setSyntaxHighlighting(enabled)
 });
 const themes = createThemes({
   document,
@@ -58,6 +62,32 @@ const themes = createThemes({
   invoke,
   onApplied: () => syncClipboardPopupTheme({ document, invoke, isMac: isMac && Boolean(window.__TAURI__) }),
   onChanged: () => broadcastPreference(window, "sodilaud_active_theme")
+});
+
+// Rendered and live-preview links: Rust shows the real destination before the
+// browser opens it.
+function openExternalHref(href) {
+  const action = resolveLinkAction(href);
+  if (action.kind !== "external") return;
+  if (!window.__TAURI__) {
+    window.open(action.url, "_blank", "noopener,noreferrer");
+    return;
+  }
+  invoke("confirm_and_open_url", { url: action.url }).catch((error) => {
+    console.error("Failed to open a link in the browser", error);
+    showNotification("Could not open that link");
+  });
+}
+
+const fileEditor = createFileEditor({
+  document,
+  invoke,
+  storage: localStorage,
+  appearance,
+  broadcast: (key) => broadcastPreference(window, key),
+  notify: showNotification,
+  closeMenus: () => toggleActionsDropdown(false),
+  openExternal: openExternalHref
 });
 
 function showNotification(message) {
@@ -229,16 +259,7 @@ function handleLinkClick(event) {
   const link = event.target.closest("a[href]");
   if (!link) return;
   event.preventDefault();
-  const action = resolveLinkAction(link.getAttribute("href"));
-  if (action.kind !== "external") return;
-  if (!window.__TAURI__) {
-    window.open(action.url, "_blank", "noopener,noreferrer");
-    return;
-  }
-  invoke("confirm_and_open_url", { url: action.url }).catch((error) => {
-    console.error("Failed to open a link in the browser", error);
-    showNotification("Could not open that link");
-  });
+  openExternalHref(link.getAttribute("href"));
 }
 
 // ----------------------------------------------------
@@ -246,6 +267,10 @@ function handleLinkClick(event) {
 // ----------------------------------------------------
 function followPreferenceChange(key) {
   if (appearance.reload(key)) return;
+  if (key === "sodilaud_layout_mode") {
+    fileEditor.setLayoutMode(localStorage.getItem(key), { persist: false });
+    return;
+  }
   if (key === "sodilaud_active_theme" || key === "sodilaud_custom_themes" || key === "color-scheme") {
     themes.load();
   }
@@ -262,9 +287,14 @@ function openSection(section) {
 function attachListeners() {
   actionsBtn.addEventListener("click", (event) => {
     event.stopPropagation();
+    fileEditor.closeFormatMenus();
     toggleActionsDropdown();
   });
-  document.addEventListener("click", () => toggleActionsDropdown(false));
+  document.addEventListener("click", () => {
+    toggleActionsDropdown(false);
+    fileEditor.closeFormatMenus();
+  });
+  fileEditor.attach();
   actionsDropdown.addEventListener("click", (event) => {
     if (event.target.closest(".view-setting-row, .dropdown-note")) event.stopPropagation();
   });
@@ -350,6 +380,12 @@ function handleKeydown(event) {
     return;
   }
   if (appearance.handleZoomShortcut(event)) return;
+  if (isSidebarShortcut(event)) {
+    event.preventDefault();
+    fileEditor.toggleSidebar();
+    return;
+  }
+  if (fileEditor.handleShortcut(event)) return;
 
   // Disable browser inspect shortcuts and accidental page reloads.
   if (
@@ -382,11 +418,31 @@ function handleKeydown(event) {
   }
 }
 
-// Rust waits for this window's answer before quitting. Nothing here is unsaved
-// yet; file buffers are flushed here once the main window edits files.
+// Ctrl+Cmd+S on macOS; Ctrl+Alt+S elsewhere, as in Quick Notes.
+function isSidebarShortcut(event) {
+  if (!event.ctrlKey || event.shiftKey) return false;
+  if (isMacLikePlatform(navigator)) {
+    return event.metaKey && !event.altKey && (event.code === "KeyS" || event.key.toLowerCase() === "s");
+  }
+  return event.altKey && !event.metaKey && event.key.toLowerCase() === "s";
+}
+
+// Rust waits for this window's answer before quitting: every open file is
+// saved first, and an unsaved new file is asked about.
 async function registerQuitHandler(listen) {
-  await listen("sodilaud-quit-requested", () => {
-    invoke("quit_window_done", { ok: true }).catch((error) => {
+  let quitting = false;
+  await listen("sodilaud-quit-requested", async () => {
+    if (quitting) return;
+    quitting = true;
+    let ok = false;
+    try {
+      ok = await fileEditor.flushForQuit();
+    } catch (error) {
+      console.error("Failed to save files before quitting", error);
+    } finally {
+      quitting = false;
+    }
+    invoke("quit_window_done", { ok }).catch((error) => {
       console.error("Failed to quit Sodilaud", error);
     });
   });
@@ -400,6 +456,8 @@ async function registerNativeHandlers() {
     await registerQuitHandler(listen);
     await listen("sodilaud-open-about", openAboutModal);
     await listen("sodilaud-open-section", ({ payload }) => openSection(payload));
+    await listen("file-changed", ({ payload }) => fileEditor.handleExternalChange(payload));
+    await listen("file-open-request", () => fileEditor.takePending());
   } catch (error) {
     console.error("Failed to register the main window's native handlers", error);
   }
@@ -425,6 +483,7 @@ async function startApp() {
     console.error("Failed to set up clipboard history", error);
   }
   await loadQuickNotesConfig();
+  await fileEditor.restore();
 }
 
 if (document.readyState === "loading") {

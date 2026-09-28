@@ -11,6 +11,7 @@ use tauri::{
 };
 
 mod clipboard;
+mod files;
 mod mcp;
 mod platform;
 mod quicknotes;
@@ -880,6 +881,17 @@ pub fn run(context: tauri::Context<tauri::Wry>) {
         .on_menu_event(handle_macos_menu_event)
         .manage(clipboard::runtime::ClipboardRuntime::default());
 
+    // Registered first, as the plugin requires: a second launch hands its files
+    // to this instance and exits.
+    #[cfg(not(target_os = "macos"))]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
+        let paths = files::paths_from_args(args)
+            .into_iter()
+            .map(|path| std::path::Path::new(&cwd).join(path))
+            .collect();
+        files::open_from_system(app, paths);
+    }));
+
     builder
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .on_window_event(on_window_event)
@@ -933,13 +945,26 @@ pub fn run(context: tauri::Context<tauri::Wry>) {
             quicknotes::commands::qn_set_hotkey,
             quicknotes::commands::qn_dismiss_intro,
             quicknotes::commands::qn_show,
-            quicknotes::commands::show_main_window
+            quicknotes::commands::show_main_window,
+            files::commands::file_open_dialog,
+            files::commands::file_save_as_dialog,
+            files::commands::file_read,
+            files::commands::file_write,
+            files::commands::file_lists,
+            files::commands::file_set_open,
+            files::commands::file_take_pending,
+            files::commands::file_forget_recent,
+            files::commands::file_confirm_discard
         ])
         .setup(|app| {
             #[cfg(target_os = "macos")]
             clipboard::tray::install(app.handle())?;
             quicknotes::start(app.handle());
+            files::start(app.handle());
             quicknotes::restore_windows(app.handle());
+            // Windows and Linux pass "Open With" files as arguments at launch.
+            #[cfg(not(target_os = "macos"))]
+            files::open_from_system(app.handle(), files::paths_from_args(std::env::args()));
             Ok(())
         })
         .build(context)
@@ -963,6 +988,12 @@ pub fn run(context: tauri::Context<tauri::Wry>) {
             }
             #[cfg(target_os = "macos")]
             tauri::RunEvent::Reopen { .. } => clipboard::tray::show_main(app),
+            // Finder's "Open With" and double-clicks, at launch or later.
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::Opened { urls } => files::open_from_system(
+                app,
+                urls.iter().filter_map(|url| url.to_file_path().ok()).collect(),
+            ),
             // Tauri has unregistered the label by now, so a popup re-enabled while
             // the old one was being destroyed can be created.
             #[cfg(target_os = "macos")]

@@ -19,6 +19,13 @@
   max-width: 760px;
 }
 
+.start-page[hidden],
+.file-editor[hidden],
+.files-sidebar[hidden],
+.file-banner[hidden] {
+  display: none;
+}
+
 .start-header {
   margin-bottom: 36px;
 }
@@ -166,4 +173,192 @@
 
 .app-notification[hidden] {
   display: none;
+}
+
+.main-topbar {
+  gap: 8px;
+}
+
+.main-topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1 1 0;
+}
+
+.main-topbar .topbar-center {
+  flex: 0 1 auto;
+}
+
+.main-topbar .topbar-center[hidden] {
+  display: none;
+}
+
+.main-topbar-actions {
+  flex: 1 1 0;
+  justify-content: flex-end;
+}
+
+.main-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.main-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.files-sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  padding: 12px 8px;
+  border-right: 1px solid var(--border-color);
+  background: var(--sidebar-bg, var(--bg-sidebar));
+}
+
+.files-sidebar-title {
+  margin: 0 8px 8px;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.open-files-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.open-file-item {
+  display: flex;
+  align-items: center;
+  border-radius: 6px;
+}
+
+.open-file-item.active {
+  background: var(--bg-note-active);
+}
+
+.open-file-item:hover:not(.active) {
+  background: var(--bg-note-hover);
+}
+
+.open-file-name {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 0;
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.88rem;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.open-file-close {
+  width: 22px;
+  height: 22px;
+  margin-right: 4px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.open-file-item:hover .open-file-close,
+.open-file-item.active .open-file-close,
+.open-file-close:focus-visible {
+  opacity: 1;
+}
+
+.file-editor {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.file-editor .editor-pane {
+  flex: 1;
+  min-height: 0;
+}
+
+.file-editor.mode-reading .editor-wrapper {
+  display: none;
+}
+
+.file-editor.mode-reading .preview-wrapper {
+  display: flex;
+  border-left: none;
+}
+
+.file-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-note-active);
+  font-size: 0.88rem;
+}
+
+.file-banner-text {
+  flex: 1;
+}
+
+.file-banner-btn {
+  padding: 3px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.file-status {
+  height: var(--statusbar-height);
+  padding: 0 16px;
+  border-top: 1px solid var(--border-color);
+  background: var(--statusbar-bg, var(--bg-sidebar));
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  line-height: var(--statusbar-height);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recent-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.recent-file.missing {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+.recent-file-path {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

@@ -82,3 +82,14 @@ test("settings commands belong to the main window and panel commands to the pane
     assert.deepEqual(holders(command), ["default", "quicknotes"], command);
   }
 });
+
+test("only the main window can reach user files", async () => {
+  const caps = await capabilities();
+  const holders = (command) => caps.filter(cap => cap.permissions.includes(grant(command))).map(cap => cap.identifier);
+  for (const command of [
+    "file_open_dialog", "file_save_as_dialog", "file_read", "file_write", "file_lists",
+    "file_set_open", "file_take_pending", "file_forget_recent", "file_confirm_discard"
+  ]) {
+    assert.deepEqual(holders(command), ["default"], `${command} must be granted to the main window only`);
+  }
+});

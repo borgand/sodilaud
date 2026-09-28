@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window: the start page, settings (including importing a theme file), and (in a later change) the file editor. It cannot read or write notes; the Quick Notes window owns them.",
+  "description": "Capability for the main window: the start page, settings (including importing a theme file), and the file editor, which reaches only files the user chose. It cannot read or write notes; the Quick Notes window owns them.",
   "windows": [
     "main"
   ],
@@ -18,6 +18,15 @@
     "allow-qn-get-config",
     "allow-qn-set-hotkey",
     "allow-qn-dismiss-intro",
-    "allow-qn-show"
+    "allow-qn-show",
+    "allow-file-open-dialog",
+    "allow-file-save-as-dialog",
+    "allow-file-read",
+    "allow-file-write",
+    "allow-file-lists",
+    "allow-file-set-open",
+    "allow-file-take-pending",
+    "allow-file-forget-recent",
+    "allow-file-confirm-discard"
   ]
 }

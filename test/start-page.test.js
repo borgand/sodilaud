@@ -13,8 +13,10 @@ test("a fresh main window shows the start page with the Quick Notes hotkey", asy
 
   assert.equal(doc.getElementById("start-page").hidden, false);
   assert.equal(doc.getElementById("quicknotes-hotkey-label").textContent, "⌘⇧N");
-  assert.equal(doc.getElementById("start-actions").hidden, true);
-  assert.equal(doc.getElementById("recent-files").hidden, true);
+  assert.equal(doc.getElementById("start-actions").hidden, false);
+  assert.equal(doc.getElementById("recent-files").hidden, false);
+  assert.equal(doc.getElementById("recent-files-empty").hidden, false, "no recent files yet");
+  assert.equal(doc.getElementById("file-editor").hidden, true);
 
   app.click("open-quicknotes-btn");
   app.click("open-welcome-note-link");
