@@ -8,7 +8,7 @@ Design: [`docs/superpowers/specs/2026-09-27-editor-surface-design.md`](docs/supe
 
 ## 1. Editor swap: CodeMirror 6 live preview
 
-Status: implemented on `feat/cm6-editor`, pending manual verification
+Status: done, shipped in 0.9.0 (#9)
 
 Replace the textarea and the separate preview pane with a CM6 live-preview editor on today's
 window-owned model. Collab comes with item 2. Doing the swap first means the registry only
