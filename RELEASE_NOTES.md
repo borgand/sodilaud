@@ -1,22 +1,29 @@
-# Sodilaud v0.9.0
+# Sodilaud v0.10.0
 
-This release replaces the editor. Notes are edited in place with Markdown rendered as you write, and formatting is available from the keyboard and a toolbar.
+Sodilaud now has two halves: Quick Notes, a floating notepad one hotkey away, and a Markdown editor for the files on your disk.
 
 ## Highlights
 
-- **Live, Source, and Reading modes.** The Edit / Split / Preview layout is replaced by three modes, switched with the icon buttons in the top bar. **Live** is the new default: Markdown syntax shows only on the lines your cursor or selection touches, while headings, emphasis, links, task checkboxes, and tables render in place. **Source** shows raw Markdown in a monospace font. **Reading** is the rendered, read-only view. The synced split preview is gone.
-- **Formatting shortcuts.** `Cmd/Ctrl+B` bold, `Cmd/Ctrl+I` italic, `Cmd/Ctrl+Shift+X` strikethrough, `Cmd/Ctrl+E` inline code, `Cmd/Ctrl+K` link, `Cmd/Ctrl+Alt+1` to `6` headings, `Cmd/Ctrl+Shift+7`, `8`, and `9` numbered, bullet, and task lists, `Cmd/Ctrl+Shift+.` quote, and `Cmd/Ctrl+Alt+C` code block. Marks, headings, lists, and quotes toggle off when applied again, and each action is one undo step.
-- **Formatting toolbar.** A button group left of the mode buttons, with a heading menu and buttons for code blocks, tables, and horizontal rules. Buttons that do not fit the window move into a "»" menu. The toolbar acts on the pane you last worked in and is unavailable in Reading mode.
-- **Tables and links in Live mode.** Tables render as a formatted table until you click into one, which shows the raw pipe source for editing. On macOS, `Cmd`-click opens a link through the usual confirmation dialog (`Ctrl`-click on Windows and Linux); a plain click places the cursor. In Reading mode a plain click opens a link, as before.
-- **Everything else carries over.** Compare mode, the two-note split view, find and replace, zoom and line spacing, line numbers, and the smart editing keys for lists, tables, indentation, and pair completion all work as before.
+- **Quick Notes.** Press `⌘⇧N` (`Ctrl+Shift+N` on Windows and Linux) in any app to show or hide your notes in a floating panel. It stays on top while you work in other apps and closes only when you ask: the hotkey again, `Cmd/Ctrl+W`, or its **×** button. On macOS it opens over full-screen apps without bringing Sodilaud to the front or changing your `⌘Tab` order. It reopens at the same size and place, on the note you had open. Everything your notes had carries over: folders, pins, search, trash, find and replace, split view, and compare.
+- **Edit Markdown files.** The main window opens `.md`, `.markdown`, and `.txt` files with the same Live, Source, and Reading editor and formatting toolbar. Changes save automatically once a file has a name, and each open file keeps its own undo history. Open files from the start page, with `Cmd/Ctrl+O`, or from Finder with **Open With → Sodilaud**. Open files reopen at the next launch.
+- **Your files, unchanged.** Saves are atomic and keep the file's permissions, byte-order mark, and CRLF line endings. Sodilaud never reformats a file. A file changed by another app reloads if you have not edited it, and asks **Reload** or **Keep mine** if you have.
+- **A start page.** With no file open, the main window explains both halves of the app, offers New File and Open File, lists recent files, and links the Quick Notes Welcome note.
 
 ## Changed
 
-- **Toggle Sidebar** moves from `Cmd/Ctrl+B` to `Ctrl+Cmd+S` on macOS (`Ctrl+Alt+S` on Windows and Linux), because `Cmd/Ctrl+B` now makes text bold.
-- Remote images still never load. In Live mode only embedded `data:` images render; other images stay visible as Markdown source.
+- Notes moved from the main window to Quick Notes. The first launch after upgrading shows where they went.
+- Agent access is turned on in the Quick Notes menu; the main window's **Sodilaud menu → Agent access…** takes you there. Agents keep working while the panel is hidden, and they cannot see your files.
+- Themes, zoom, line spacing, syntax highlighting, and line numbers are set in the main window's menu and apply to both windows. Sidebar preview lines stay in the Quick Notes menu.
+- `Cmd/Ctrl+N` creates a note in Quick Notes and a file in the main window. Help (`Cmd/Ctrl+/`) opens in the main window.
+- On Windows and Linux, closing the main window quits Sodilaud after saving, since there is no menu-bar icon to keep it running. Opening a file while Sodilaud runs hands it to the running app.
+
+## Limits
+
+- Files must be UTF-8 text of at most 10 MB. A file that mixes LF and CRLF line endings is saved with LF once edited.
+- Find and replace, split view, and compare work in Quick Notes but not yet on files. Folders cannot be opened yet.
 
 ## Compatibility
 
-- No changes to notes or workspaces. Notes, workspaces, and preferences carry over from v0.8.2.
-- The saved layout preference is converted once: Edit and Split open in Live, Preview opens in Reading.
+- Notes, folders, trash, and workspaces carry over unchanged.
+- New settings files in the app's config directory, readable only by you: `quicknotes.json` (panel size and position, hotkey, windows open at quit) and `files.json` (open and recent files).
 - Builds are not production-signed; macOS and Windows may display a security warning.
