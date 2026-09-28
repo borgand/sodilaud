@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { bootApp } from "./helpers/app-harness.js";
+import { bootMainWindow } from "./helpers/app-harness.js";
 import {
   ACTIVE_TEXT_PROPERTIES,
   DERIVED_THEME_PROPERTIES,
@@ -27,7 +27,7 @@ const partlyMeasurable = {
 };
 
 test("switching away from a dark theme leaves none of its tones behind", async () => {
-  await bootApp({
+  await bootMainWindow({
     storage: {
       sodilaud_active_theme: "github-dark",
       sodilaud_custom_themes: [partlyMeasurable]

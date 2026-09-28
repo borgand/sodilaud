@@ -6,11 +6,12 @@ import test from "node:test";
 import { JSDOM } from "jsdom";
 import { bootApp } from "./helpers/app-harness.js";
 
-const html = await readFile(new URL("../src/notes.html", import.meta.url), "utf8");
-const document = new JSDOM(html).window.document;
+const parse = async (page) => new JSDOM(await readFile(new URL(`../src/${page}`, import.meta.url), "utf8")).window.document;
+const notesDocument = await parse("notes.html");
+const document = await parse("index.html");
 
 test("interactive controls have an accessible name", () => {
-  const unnamed = [...document.querySelectorAll("button, input, select, textarea")]
+  const unnamed = [notesDocument, document].flatMap(page => [...page.querySelectorAll("button, input, select, textarea")])
     .filter((element) => {
       const visibleText = element.textContent.trim();
       const hasLabel = [...(element.labels || [])].some(label => label.textContent.trim());
@@ -31,9 +32,11 @@ test("both editors expose their content element with an accessible name", async 
 });
 
 test("help, theme, about, MCP, clipboard, and trash overlays expose modal dialog semantics", () => {
-  const dialogs = [...document.querySelectorAll("[role='dialog']")];
+  const ids = (page) => [...page.querySelectorAll("[role='dialog']")].map(dialog => dialog.id).sort();
+  assert.deepEqual(ids(document), ["about-modal", "clipboard-settings-modal", "help-modal", "theme-modal"]);
+  assert.deepEqual(ids(notesDocument), ["mcp-config-modal", "trash-modal"]);
+  const dialogs = [document, notesDocument].flatMap(page => [...page.querySelectorAll("[role='dialog']")]);
 
-  assert.equal(dialogs.length, 6);
   dialogs.forEach((dialog) => {
     assert.equal(dialog.getAttribute("aria-modal"), "true");
     assert.ok(dialog.getAttribute("aria-label") || dialog.getAttribute("aria-labelledby"));

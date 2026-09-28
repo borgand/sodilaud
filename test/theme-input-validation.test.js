@@ -22,8 +22,8 @@ test("real colours still pass", () => {
 });
 
 test("an imported theme with a non-string name falls back to the file name", async () => {
-  const { bootApp } = await import("./helpers/app-harness.js");
-  const app = await bootApp({
+  const { bootMainWindow } = await import("./helpers/app-harness.js");
+  const app = await bootMainWindow({
     handlers: {
       import_file_native: () => ({
         title: "numbered_theme.json",

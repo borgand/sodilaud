@@ -3331,3 +3331,50 @@ kbd {
 .cm-mode-live .cm-lp-table.markdown-preview table {
   margin-bottom: 0;
 }
+
+/* ----------------------------------------------------
+   Quick Notes panel
+   The panel has no native title bar: this strip moves it and hides it.
+   ---------------------------------------------------- */
+:root {
+  --quicknotes-header-height: 26px;
+}
+
+.quicknotes-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--quicknotes-header-height);
+  padding: 0 6px 0 12px;
+  background: var(--topbar-bg, var(--bg-sidebar));
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.02em;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+}
+
+.quicknotes-close-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.quicknotes-close-btn:hover,
+.quicknotes-close-btn:focus-visible {
+  background: var(--bg-note-hover);
+  color: var(--text-primary);
+}
+
+.quicknotes-page .app-container {
+  height: calc(100vh - var(--quicknotes-header-height));
+}

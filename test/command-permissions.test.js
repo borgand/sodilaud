@@ -51,7 +51,7 @@ test("popup commands are granted only to the clipboard window", async () => {
 });
 
 const NOTE_COMMANDS = [
-  "load_workspace_preference", "set_last_workspace", "save_file_native", "import_file_native",
+  "load_workspace_preference", "set_last_workspace", "save_file_native",
   "select_db_file", "vacuum_workspace", "load_db_notes", "load_db_folders", "load_db_trash",
   "save_note_db", "save_notes_db", "save_folders_db", "save_workspace_db",
   "update_mcp_snapshot", "update_mcp_note", "get_mcp_connection_info", "start_mcp_server",
@@ -78,7 +78,7 @@ test("settings commands belong to the main window and panel commands to the pane
   for (const command of ["qn_close", "qn_start_drag", "show_main_window"]) {
     assert.deepEqual(holders(command), ["quicknotes"], command);
   }
-  for (const command of ["quit_handler_ready", "quit_window_done", "qn_get_config"]) {
+  for (const command of ["quit_handler_ready", "quit_window_done", "qn_get_config", "import_file_native"]) {
     assert.deepEqual(holders(command), ["default", "quicknotes"], command);
   }
 });

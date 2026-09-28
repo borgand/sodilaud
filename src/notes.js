@@ -14,9 +14,11 @@ import { createTrashUi } from "./trash-ui.js";
 import { createMcpWriter, createNoteRevisionTracker, createFolderRevisionTracker } from "./mcp-writes.js";
 import { renderMarkdown, resolveLinkAction, sanitizeMarkdownHtml } from "./markdown.js";
 import { getNotePreview } from "./note-preview.js";
-import { ACTIVE_TEXT_PROPERTIES, DERIVED_THEME_PROPERTIES, deriveThemeSurfaceColors, isValidColor } from "./theme-colors.js";
-import { createCssColorResolver, createOpaqueColorParser, isColorDark } from "./css-color.js";
-import { PRESET_THEMES } from "./preset-themes.js";
+import { createThemes } from "./themes.js";
+import { createAppearance } from "./appearance.js";
+import { broadcastPreference, onPreferenceChange } from "./preferences.js";
+import { trapModalFocus } from "./modal-focus.js";
+import { applyPlatformShortcutLabels, isMacLikePlatform } from "./platform-labels.js";
 import { compareNoteText, emptyNoteComparison } from "./note-compare.js";
 import { findTextMatches } from "./find.js";
 import { createMarkdownEditor } from "./editor-view.js";
@@ -26,8 +28,6 @@ import { livePreview } from "./editor-live-preview.js";
 import { getMarkdownTemplateEdit } from "./markdown-insert.js";
 import { escapeHTML, highlightPreviewCode } from "./syntax-highlighting.js";
 import { WELCOME_NOTE_CONTENT, WELCOME_NOTE_TITLE } from "./welcome-note.js";
-import { setupClipboardHistory, syncClipboardPopupTheme } from "./clipboard-settings-ui.js";
-import { isMacPlatform } from "./clipboard-settings.js";
 import {
   canMoveNote,
   getNoteMoveTargetIndex,
@@ -49,28 +49,7 @@ import {
   removeFolder,
   validFolderId
 } from "./folders.js";
-import {
-  DEFAULT_EDITOR_LINE_SPACING,
-  DEFAULT_EDITOR_LINE_NUMBERS,
-  DEFAULT_EDITOR_ZOOM,
-  DEFAULT_NOTE_PREVIEW_LINES,
-  DEFAULT_SYNTAX_HIGHLIGHTING,
-  MAX_EDITOR_LINE_SPACING,
-  MAX_EDITOR_ZOOM,
-  MAX_NOTE_PREVIEW_LINES,
-  MIN_EDITOR_LINE_SPACING,
-  MIN_EDITOR_ZOOM,
-  MIN_NOTE_PREVIEW_LINES,
-  normalizeEditorLineSpacing,
-  normalizeEditorLineNumbers,
-  normalizeEditorZoom,
-  normalizeLayoutMode,
-  normalizeNotePreviewLines,
-  normalizeSyntaxHighlighting,
-  stepEditorLineSpacing,
-  stepEditorZoom,
-  stepNotePreviewLines
-} from "./view-preferences.js";
+import { normalizeLayoutMode } from "./view-preferences.js";
 
 // ----------------------------------------------------
 // Sodilaud - Core Application Logic
@@ -78,16 +57,6 @@ import {
 // ----------------------------------------------------
 
 const { invoke } = window.__TAURI__ ? window.__TAURI__.core : { invoke: () => Promise.resolve() };
-
-// Set once at start-up from the same check setupClipboardHistory makes, so
-// every later theme change can tell the popup about it without re-deriving
-// platform and Tauri presence each time.
-let clipboardHistoryIsMac = false;
-
-// Resolves any CSS colour an imported theme may use to sRGB, by asking the
-// engine. Themes only change on demand, so the probe it uses costs nothing.
-const resolveCssColor = createCssColorResolver(document);
-const parseOpaqueThemeColor = createOpaqueColorParser(resolveCssColor);
 
 // Select DOM elements
 const appContainer = document.getElementById("app");
@@ -106,7 +75,6 @@ const cursorPosition = document.getElementById("cursor-position");
 const selectionCount = document.getElementById("selection-count");
 const saveStatus = document.getElementById("save-status");
 const mcpStatus = document.getElementById("mcp-status");
-const themeToggleBtn = document.getElementById("theme-toggle");
 const focusBtn = document.getElementById("focus-btn");
 const splitNoteBtn = document.getElementById("split-note-btn");
 const compareNotesBtn = document.getElementById("compare-notes-btn");
@@ -143,20 +111,6 @@ const mcpPermissionInputs = [...document.querySelectorAll("[data-mcp-tool]")];
 const mcpSelectAllInputs = [...document.querySelectorAll("[data-mcp-select-all]")];
 const mcpPermissionStatus = document.getElementById("mcp-permission-status");
 const agentAccessConfigBtn = document.getElementById("agent-access-config-btn");
-const helpMenuBtn = document.getElementById("help-menu-btn");
-const aboutMenuBtn = document.getElementById("about-menu-btn");
-const viewSettings = document.getElementById("view-settings");
-const zoomOutBtn = document.getElementById("zoom-out-btn");
-const zoomResetBtn = document.getElementById("zoom-reset-btn");
-const zoomInBtn = document.getElementById("zoom-in-btn");
-const lineSpacingDecreaseBtn = document.getElementById("line-spacing-decrease-btn");
-const lineSpacingValue = document.getElementById("line-spacing-value");
-const lineSpacingIncreaseBtn = document.getElementById("line-spacing-increase-btn");
-const previewLinesDecreaseBtn = document.getElementById("preview-lines-decrease-btn");
-const previewLinesValue = document.getElementById("preview-lines-value");
-const previewLinesIncreaseBtn = document.getElementById("preview-lines-increase-btn");
-const syntaxHighlightingToggle = document.getElementById("syntax-highlighting-toggle");
-const lineNumbersToggle = document.getElementById("line-numbers-toggle");
 
 const panesContainer = document.getElementById("panes-container");
 const primaryPaneWrapper = document.getElementById("primary-pane-wrapper");
@@ -217,28 +171,11 @@ const ctxFolderDeleteBtn = document.getElementById("ctx-folder-delete");
 const ctxFolderDivider = document.getElementById("ctx-folder-divider");
 
 const helpBtn = document.getElementById("help-btn");
-const helpModalBackdrop = document.getElementById("help-modal-backdrop");
-const helpModal = document.getElementById("help-modal");
-const closeHelpBtn = document.getElementById("close-help-btn");
-const tabShortcutsBtn = document.getElementById("tab-shortcuts-btn");
-const tabMarkdownBtn = document.getElementById("tab-markdown-btn");
-const tabMcpBtn = document.getElementById("tab-mcp-btn");
-const paneShortcuts = document.getElementById("pane-shortcuts");
-const paneMarkdown = document.getElementById("pane-markdown");
-const paneMcp = document.getElementById("pane-mcp");
+const settingsMenuBtn = document.getElementById("settings-menu-btn");
+const quickNotesCloseBtn = document.getElementById("quicknotes-close-btn");
+const quickNotesDragRegion = document.getElementById("quicknotes-header");
 const splitDropOverlay = document.getElementById("split-drop-overlay");
 
-const themePickerBtn = document.getElementById("theme-picker-btn");
-const activeThemeMenuValue = document.getElementById("active-theme-menu-value");
-const themeModalBackdrop = document.getElementById("theme-modal-backdrop");
-const themeModal = document.getElementById("theme-modal");
-const closeThemeBtn = document.getElementById("close-theme-btn");
-const themeImportBtn = document.getElementById("theme-import-btn");
-const themeExportBtn = document.getElementById("theme-export-btn");
-const themeGrid = document.getElementById("theme-grid");
-const aboutModalBackdrop = document.getElementById("about-modal-backdrop");
-const aboutModal = document.getElementById("about-modal");
-const closeAboutBtn = document.getElementById("close-about-btn");
 const mcpConfigModalBackdrop = document.getElementById("mcp-config-modal-backdrop");
 const mcpConfigModal = document.getElementById("mcp-config-modal");
 const closeMcpConfigBtn = document.getElementById("close-mcp-config-btn");
@@ -249,10 +186,7 @@ const copyMcpArgsBtn = document.getElementById("copy-mcp-args-btn");
 const copyMcpExampleBtn = document.getElementById("copy-mcp-example-btn");
 const mcpConfigExampleCode = document.getElementById("mcp-config-example-code");
 
-const LEGACY_THEME_IDS = {
-  "macintosh-system-7": "mac-os-9-platinum"
-};
-
+const ACTIVE_NOTE_KEY = "sodilaud_quicknotes_active_note";
 const COLLAPSED_FOLDERS_KEY = "sodilaud_collapsed_folders";
 
 // State
@@ -275,16 +209,8 @@ let currentLayoutMode = "live";
 let primaryEditor = null;
 let secondaryEditor = null;
 let isFocusMode = false;
-let isHelpModalOpen = false;
-let helpModalPreviousFocus = null;
-let isThemeModalOpen = false;
-let themeModalPreviousFocus = null;
-let isAboutModalOpen = false;
-let aboutModalPreviousFocus = null;
 let isMcpConfigModalOpen = false;
 let mcpConfigModalPreviousFocus = null;
-let customThemes = [];
-let activeThemeId = "default-dark";
 let findMatches = [];
 let activeMatchIndex = -1;
 let isFindBarOpen = false;
@@ -304,16 +230,10 @@ let isRegexMode = false;
 let isReplaceOpen = false;
 const noteSaveDebounceTimers = new Map();
 let previewDebounceTimer = null;
-let nativeAboutUnlisten = null;
 let dbSaveQueue = Promise.resolve();
 let localMirrorFailureNotified = false;
 let notificationSequence = 0;
 let activeNotification = null;
-let currentEditorZoom = DEFAULT_EDITOR_ZOOM;
-let editorLineSpacing = DEFAULT_EDITOR_LINE_SPACING;
-let notePreviewLines = DEFAULT_NOTE_PREVIEW_LINES;
-let syntaxHighlightingEnabled = DEFAULT_SYNTAX_HIGHLIGHTING;
-let editorLineNumbersEnabled = DEFAULT_EDITOR_LINE_NUMBERS;
 let previewHighlightsRendered = false;
 let isMcpEnabled = false;
 const MCP_READ_TOOLS = ["list_folders", "list_notes", "search_notes", "get_note", "list_trash"];
@@ -329,6 +249,26 @@ let mcpWriteListener = null;
 let mcpCollectionId = window.crypto.randomUUID();
 let isWorkspaceSwitching = false;
 let isClosePending = false;
+
+const shareAppearance = (key) => broadcastPreference(window, key);
+const appearance = createAppearance({
+  document,
+  storage: localStorage,
+  broadcast: shareAppearance,
+  onPreviewLines: () => renderNoteList(searchInput.value),
+  onLineNumbers: (enabled) => {
+    primaryEditor.setLineNumbers(enabled);
+    secondaryEditor.setLineNumbers(enabled);
+  },
+  onSyntaxHighlighting: (enabled) => {
+    primaryEditor.setSyntaxHighlighting(enabled);
+    secondaryEditor.setSyntaxHighlighting(enabled);
+    updateMarkdownPreview();
+    updateSecondaryMarkdownPreview();
+  }
+});
+// The theme is chosen in the main window; this page only follows it.
+const themes = createThemes({ document, storage: localStorage, invoke });
 
 function enqueueWorkspaceOperation(operation) {
   const result = dbSaveQueue.then(operation);
@@ -563,8 +503,8 @@ function createAppEditor(host, { ariaLabel, pane }) {
     ariaLabel,
     placeholder: "Type something here... Supports Markdown formatting.",
     mode: editorModeFor(currentLayoutMode),
-    syntaxHighlighting: syntaxHighlightingEnabled,
-    lineNumbers: editorLineNumbersEnabled,
+    syntaxHighlighting: appearance.syntaxHighlighting,
+    lineNumbers: appearance.lineNumbers,
     extensions: [markdownEditingCommands(), livePreview({ onOpenLink: openExternalHref })],
     onChange: pane === "primary" ? handleEditorInput : handleSecondaryEditorInput,
     onSelectionChange: () => {
@@ -575,33 +515,6 @@ function createAppEditor(host, { ariaLabel, pane }) {
     onFocus: () => setActivePane(pane)
   });
   return editor;
-}
-
-function isMacLikePlatform() {
-  const platform = navigator.userAgentData?.platform || navigator.platform || navigator.userAgent || "";
-  return /mac|iphone|ipad|ipod/i.test(platform);
-}
-
-// Ctrl+Cmd off macOS would read Ctrl+Ctrl, so those chords use Ctrl+Alt there.
-function applyPlatformShortcutLabels() {
-  if (isMacLikePlatform()) return;
-
-  document.querySelectorAll("[title]").forEach((element) => {
-    const title = element.getAttribute("title");
-    if (title?.includes("Cmd")) {
-      element.setAttribute("title", title.replaceAll("Ctrl+Cmd", "Ctrl+Alt").replaceAll("Cmd", "Ctrl"));
-    }
-  });
-
-  document.querySelectorAll("kbd[data-shortcut-off-mac]").forEach((element) => {
-    element.textContent = element.dataset.shortcutOffMac;
-  });
-
-  document.querySelectorAll("kbd, .shortcut-hint").forEach((element) => {
-    if (element.textContent.includes("Cmd")) {
-      element.textContent = element.textContent.replaceAll("Cmd", "Ctrl");
-    }
-  });
 }
 
 // Reports the remembered workspace alongside whether it could be determined at
@@ -627,35 +540,20 @@ async function loadRememberedWorkspacePath() {
 // Initialize app
 async function init() {
   // 1. Localize shortcut labels and attach event listeners immediately.
-  applyPlatformShortcutLabels();
+  applyPlatformShortcutLabels(document, navigator);
   primaryEditor = createAppEditor(editorHost, { ariaLabel: "Sodilaud content", pane: "primary" });
   secondaryEditor = createAppEditor(secondaryEditorHost, {
     ariaLabel: "Secondary scratchpad content",
     pane: "secondary"
   });
   attachEventListeners();
-  window.addEventListener("pagehide", () => {
-    nativeAboutUnlisten?.();
-  }, { once: true });
-  await registerNativeAboutHandler();
   await registerQuitHandler();
-  try {
-    clipboardHistoryIsMac = Boolean(window.__TAURI__) && isMacPlatform(navigator);
-    await setupClipboardHistory({
-      document,
-      invoke,
-      listen: window.__TAURI__?.event?.listen,
-      storage: localStorage,
-      notify: showNotification,
-      isMac: clipboardHistoryIsMac
-    });
-  } catch (error) {
-    console.error("Failed to set up clipboard history", error);
-  }
+  await registerQuickNotesHandlers();
+  await onPreferenceChange(window, followPreferenceChange);
 
   // 2. Load the saved theme (Default Dark on first launch) and layout mode
-  loadSavedThemes();
-  loadViewPreferences();
+  themes.load();
+  appearance.load();
   const savedLayoutMode = localStorage.getItem("sodilaud_layout_mode");
   setLayoutMode(normalizeLayoutMode(savedLayoutMode), { persist: savedLayoutMode !== null });
 
@@ -732,38 +630,14 @@ async function init() {
   if (notes.length === 0) {
     createNote(WELCOME_NOTE_TITLE, WELCOME_NOTE_CONTENT);
   } else {
-    // Select first note by default
-    activeNoteId = notes[0].id;
+    // Reopen the note that was open last, or the first one.
+    const remembered = localStorage.getItem(ACTIVE_NOTE_KEY);
+    activeNoteId = notes.some(note => note.id === remembered) ? remembered : notes[0].id;
   }
 
   // 6. Render UI
   renderNoteList();
   loadActiveNote();
-}
-
-// ----------------------------------------------------
-// Theme Handling
-// ----------------------------------------------------
-function setTheme(theme, pin = true) {
-  const isDark = theme === "dark";
-  
-  if (isDark) {
-    document.documentElement.classList.add("theme-dark");
-    document.documentElement.classList.remove("theme-light");
-    themeToggleBtn.querySelector(".btn-text").textContent = "Theme: Default Dark";
-    activeThemeMenuValue.textContent = "Default Dark";
-  } else {
-    document.documentElement.classList.add("theme-light");
-    document.documentElement.classList.remove("theme-dark");
-    themeToggleBtn.querySelector(".btn-text").textContent = "Theme: Default Light";
-    activeThemeMenuValue.textContent = "Default Light";
-  }
-
-  if (pin) {
-    localStorage.setItem("color-scheme", theme);
-  } else {
-    localStorage.removeItem("color-scheme");
-  }
 }
 
 // ----------------------------------------------------
@@ -831,6 +705,11 @@ function deleteNote(id, event) {
 function loadActiveNote() {
   const activeNote = notes.find(n => n.id === activeNoteId);
   if (!activeNote) return;
+  try {
+    localStorage.setItem(ACTIVE_NOTE_KEY, activeNote.id);
+  } catch {
+    // Only the reopened note depends on it.
+  }
 
   cancelScheduledNoteComparison();
 
@@ -857,7 +736,7 @@ function createNoteListItem(note) {
     item.setAttribute("aria-label", `Open ${isNotePinned(note) ? "pinned " : ""}${note.title}`);
     if (note.id === activeNoteId) item.setAttribute("aria-current", "true");
     
-    const snippet = getNotePreview(note, notePreviewLines);
+    const snippet = getNotePreview(note, appearance.previewLines);
     
     const formattedDate = new Date(note.updatedAt).toLocaleDateString(undefined, {
       month: "short",
@@ -1555,17 +1434,6 @@ async function registerQuitHandler() {
   }
 }
 
-async function registerNativeAboutHandler() {
-  const listen = window.__TAURI__?.event?.listen;
-  if (typeof listen !== "function") return;
-
-  try {
-    nativeAboutUnlisten = await listen("sodilaud-open-about", openAboutModal);
-  } catch (error) {
-    console.error("Failed to register the native About menu handler", error);
-  }
-}
-
 // ----------------------------------------------------
 // UI Logic: Word counts, auto-saves, live previews
 // ----------------------------------------------------
@@ -1664,7 +1532,7 @@ function updateMarkdownPreview() {
         throw new Error("window.marked is neither a function nor contains a parse function");
       }
       markdownPreview.innerHTML = html;
-      highlightPreviewCode(markdownPreview, window.hljs, syntaxHighlightingEnabled);
+      highlightPreviewCode(markdownPreview, window.hljs, appearance.syntaxHighlighting);
     } catch (e) {
       console.error("Marked parser error:", e);
       markdownPreview.innerHTML = `<div style="color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.2); background: rgba(239, 68, 68, 0.05); padding: 12px; border-radius: 8px; margin-bottom: 16px; font-size: 0.9rem;">
@@ -1888,96 +1756,14 @@ function handleFormatTriggerKeydown(entry, event) {
   }
 }
 
-function applyEditorZoom(value, { persist = true } = {}) {
-  currentEditorZoom = normalizeEditorZoom(value);
-  document.documentElement.style.setProperty("--editor-font-size", `${currentEditorZoom}rem`);
-  zoomResetBtn.textContent = `${Math.round(currentEditorZoom * 100)}%`;
-  zoomOutBtn.disabled = currentEditorZoom <= MIN_EDITOR_ZOOM;
-  zoomInBtn.disabled = currentEditorZoom >= MAX_EDITOR_ZOOM;
-
-  if (persist) {
-    localStorage.setItem("sodilaud_editor_zoom", String(currentEditorZoom));
+// Another window changed a shared preference: re-read and apply it here.
+function followPreferenceChange(key) {
+  if (appearance.reload(key)) return;
+  if (key === "sodilaud_active_theme" || key === "sodilaud_custom_themes" || key === "color-scheme") {
+    themes.load();
+  } else if (key === "sodilaud_layout_mode") {
+    setLayoutMode(normalizeLayoutMode(localStorage.getItem("sodilaud_layout_mode")), { persist: false });
   }
-}
-
-function applyEditorLineSpacing(value, { persist = true } = {}) {
-  editorLineSpacing = normalizeEditorLineSpacing(value);
-  document.documentElement.style.setProperty("--editor-line-height", String(editorLineSpacing));
-  lineSpacingValue.textContent = `${editorLineSpacing.toFixed(1)}×`;
-  lineSpacingDecreaseBtn.disabled = editorLineSpacing <= MIN_EDITOR_LINE_SPACING;
-  lineSpacingIncreaseBtn.disabled = editorLineSpacing >= MAX_EDITOR_LINE_SPACING;
-
-  if (persist) {
-    localStorage.setItem("sodilaud_editor_line_spacing", String(editorLineSpacing));
-  }
-}
-
-function applyNotePreviewLines(value, { persist = true, render = true } = {}) {
-  notePreviewLines = normalizeNotePreviewLines(value);
-  document.documentElement.style.setProperty("--note-preview-lines", String(notePreviewLines));
-  previewLinesValue.textContent = String(notePreviewLines);
-  previewLinesDecreaseBtn.disabled = notePreviewLines <= MIN_NOTE_PREVIEW_LINES;
-  previewLinesIncreaseBtn.disabled = notePreviewLines >= MAX_NOTE_PREVIEW_LINES;
-
-  if (persist) {
-    localStorage.setItem("sodilaud_note_preview_lines", String(notePreviewLines));
-  }
-  if (render) {
-    renderNoteList(searchInput.value);
-  }
-}
-
-function applyEditorLineNumbers(value, { persist = true, render = true } = {}) {
-  editorLineNumbersEnabled = normalizeEditorLineNumbers(value);
-  document.documentElement.classList.toggle("editor-line-numbers-enabled", editorLineNumbersEnabled);
-  lineNumbersToggle.textContent = editorLineNumbersEnabled ? "On" : "Off";
-  lineNumbersToggle.setAttribute("aria-pressed", String(editorLineNumbersEnabled));
-
-  if (persist) {
-    localStorage.setItem("sodilaud_editor_line_numbers", String(editorLineNumbersEnabled));
-  }
-  if (render) {
-    primaryEditor.setLineNumbers(editorLineNumbersEnabled);
-    secondaryEditor.setLineNumbers(editorLineNumbersEnabled);
-  }
-}
-
-function applySyntaxHighlighting(value, { persist = true, render = true } = {}) {
-  syntaxHighlightingEnabled = normalizeSyntaxHighlighting(value);
-  syntaxHighlightingToggle.textContent = syntaxHighlightingEnabled ? "On" : "Off";
-  syntaxHighlightingToggle.setAttribute("aria-pressed", String(syntaxHighlightingEnabled));
-
-  if (persist) {
-    localStorage.setItem("sodilaud_syntax_highlighting", String(syntaxHighlightingEnabled));
-  }
-  if (render) {
-    primaryEditor.setSyntaxHighlighting(syntaxHighlightingEnabled);
-    secondaryEditor.setSyntaxHighlighting(syntaxHighlightingEnabled);
-    updateMarkdownPreview();
-    updateSecondaryMarkdownPreview();
-  }
-}
-
-function loadViewPreferences() {
-  applyEditorZoom(localStorage.getItem("sodilaud_editor_zoom") ?? DEFAULT_EDITOR_ZOOM, {
-    persist: false
-  });
-  applyEditorLineSpacing(
-    localStorage.getItem("sodilaud_editor_line_spacing") ?? DEFAULT_EDITOR_LINE_SPACING,
-    { persist: false }
-  );
-  applyNotePreviewLines(
-    localStorage.getItem("sodilaud_note_preview_lines") ?? DEFAULT_NOTE_PREVIEW_LINES,
-    { persist: false, render: false }
-  );
-  applySyntaxHighlighting(
-    localStorage.getItem("sodilaud_syntax_highlighting") ?? DEFAULT_SYNTAX_HIGHLIGHTING,
-    { persist: false }
-  );
-  applyEditorLineNumbers(
-    localStorage.getItem("sodilaud_editor_line_numbers") ?? DEFAULT_EDITOR_LINE_NUMBERS,
-    { persist: false }
-  );
 }
 
 // Ctrl+Cmd+S on macOS; Ctrl+Alt+S elsewhere, since Ctrl is already Mod there.
@@ -1985,7 +1771,7 @@ function loadViewPreferences() {
 // a character on some layouts.
 function isSidebarShortcut(event) {
   if (!event.ctrlKey || event.shiftKey) return false;
-  if (isMacLikePlatform()) {
+  if (isMacLikePlatform(navigator)) {
     return event.metaKey && !event.altKey && (event.code === "KeyS" || event.key.toLowerCase() === "s");
   }
   return event.altKey && !event.metaKey && event.key.toLowerCase() === "s";
@@ -2421,34 +2207,19 @@ function attachEventListeners() {
   // Focus toggle
   focusBtn.addEventListener("click", toggleFocusMode);
 
-  // Help & Reference Modal
-  helpBtn.addEventListener("click", () => openHelpModal());
-  helpMenuBtn.addEventListener("click", () => {
+  // Help and settings live in the main window.
+  helpBtn.addEventListener("click", () => showMainWindow("help"));
+  settingsMenuBtn.addEventListener("click", () => {
     toggleActionsDropdown(false);
-    actionsBtn.focus({ preventScroll: true });
-    openHelpModal();
+    showMainWindow("settings");
   });
-  closeHelpBtn.addEventListener("click", closeHelpModal);
-  helpModalBackdrop.addEventListener("click", (e) => {
-    if (e.target === helpModalBackdrop) closeHelpModal();
+  quickNotesCloseBtn.addEventListener("click", hideQuickNotes);
+  quickNotesDragRegion.addEventListener("mousedown", (event) => {
+    if (event.button !== 0 || event.target.closest("button")) return;
+    invoke("qn_start_drag").catch(() => {});
   });
-  tabShortcutsBtn.addEventListener("click", () => switchHelpTab("shortcuts"));
-  tabMarkdownBtn.addEventListener("click", () => switchHelpTab("markdown"));
-  tabMcpBtn.addEventListener("click", () => switchHelpTab("mcp"));
 
-  // About Modal
-  aboutMenuBtn.addEventListener("click", () => {
-    toggleActionsDropdown(false);
-    actionsBtn.focus({ preventScroll: true });
-    openAboutModal();
-  });
-  closeAboutBtn.addEventListener("click", closeAboutModal);
-  aboutModalBackdrop.addEventListener("click", (e) => {
-    if (e.target === aboutModalBackdrop) closeAboutModal();
-  });
-  aboutModal.addEventListener("click", handlePreviewLinkClick);
-
-  // MCP Configuration Modal
+    // MCP Configuration Modal
   for (const input of mcpPermissionInputs) {
     input.addEventListener("change", () => changeMcpPermissions({ ...mcpPermissions, [input.dataset.mcpTool]: input.checked }));
   }
@@ -2487,21 +2258,6 @@ function attachEventListeners() {
   });
   secondaryNoteTitle.addEventListener("input", handleSecondaryTitleInput);
 
-  // Theme selector button in sidebar footer
-  themeToggleBtn.addEventListener("click", openThemeModal);
-
-  // Theme Picker Modal
-  themePickerBtn.addEventListener("click", () => {
-    toggleActionsDropdown(false);
-    openThemeModal();
-  });
-  closeThemeBtn.addEventListener("click", closeThemeModal);
-  themeModalBackdrop.addEventListener("click", (e) => {
-    if (e.target === themeModalBackdrop) closeThemeModal();
-  });
-  themeImportBtn.addEventListener("click", importThemeFile);
-  themeExportBtn.addEventListener("click", exportCurrentTheme);
-
   // Actions menu
   actionsBtn.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -2535,36 +2291,9 @@ function attachEventListeners() {
   document.fonts?.ready.then(layoutFormatToolbar);
   layoutFormatToolbar();
 
-  viewSettings.addEventListener("click", (e) => e.stopPropagation());
-  zoomOutBtn.addEventListener("click", () => applyEditorZoom(stepEditorZoom(currentEditorZoom, -1)));
-  zoomResetBtn.addEventListener("click", () => applyEditorZoom(DEFAULT_EDITOR_ZOOM));
-  zoomInBtn.addEventListener("click", () => applyEditorZoom(stepEditorZoom(currentEditorZoom, 1)));
-  lineSpacingDecreaseBtn.addEventListener("click", () => {
-    applyEditorLineSpacing(stepEditorLineSpacing(editorLineSpacing, -1));
-  });
-  lineSpacingValue.addEventListener("click", () => {
-    applyEditorLineSpacing(DEFAULT_EDITOR_LINE_SPACING);
-  });
-  lineSpacingIncreaseBtn.addEventListener("click", () => {
-    applyEditorLineSpacing(stepEditorLineSpacing(editorLineSpacing, 1));
-  });
-  previewLinesDecreaseBtn.addEventListener("click", () => {
-    applyNotePreviewLines(stepNotePreviewLines(notePreviewLines, -1));
-  });
-  previewLinesValue.addEventListener("click", () => {
-    applyNotePreviewLines(DEFAULT_NOTE_PREVIEW_LINES);
-  });
-  previewLinesIncreaseBtn.addEventListener("click", () => {
-    applyNotePreviewLines(stepNotePreviewLines(notePreviewLines, 1));
-  });
-  syntaxHighlightingToggle.addEventListener("click", () => {
-    applySyntaxHighlighting(!syntaxHighlightingEnabled);
-  });
-  lineNumbersToggle.addEventListener("click", () => {
-    applyEditorLineNumbers(!editorLineNumbersEnabled);
-  });
+  appearance.attachControls();
 
-  copyMarkdownBtn.addEventListener("click", copyMarkdownToClipboard);
+    copyMarkdownBtn.addEventListener("click", copyMarkdownToClipboard);
   copyHtmlBtn.addEventListener("click", copyHtmlToClipboard);
   importBtn.addEventListener("click", importFile);
   exportBtn.addEventListener("click", exportAsMarkdownFile);
@@ -2740,52 +2469,14 @@ function attachEventListeners() {
     const isMeta = e.metaKey || e.ctrlKey;
     const isShift = e.shiftKey;
 
-    if (isThemeModalOpen && e.key === "Tab" && !isMeta && !e.altKey) {
-      const focusable = [...themeModal.querySelectorAll("button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])")]
-        .filter((element) => element.offsetParent !== null);
-      if (focusable.length > 0) {
-        const first = focusable[0];
-        const last = focusable[focusable.length - 1];
-        if ((isShift && document.activeElement === first) || (!isShift && document.activeElement === last)) {
-          e.preventDefault();
-          (isShift ? last : first).focus();
-        }
-      }
-    }
-
-    if (isHelpModalOpen && e.key === "Tab" && !isMeta && !e.altKey) {
-      e.preventDefault();
-      cycleHelpTab(isShift);
-      return;
-    }
-
-    if (isAboutModalOpen && e.key === "Tab" && !isMeta && !e.altKey) {
-      trapModalFocus(e, aboutModal);
-      return;
-    }
-
     if (isMcpConfigModalOpen && e.key === "Tab" && !isMeta && !e.altKey) {
       trapModalFocus(e, mcpConfigModal);
       return;
     }
 
-    if (isMeta && !e.altKey && (e.key === "+" || e.key === "=")) {
-      e.preventDefault();
-      applyEditorZoom(stepEditorZoom(currentEditorZoom, 1));
-      return;
-    }
-    if (isMeta && !e.altKey && (e.key === "-" || e.key === "_")) {
-      e.preventDefault();
-      applyEditorZoom(stepEditorZoom(currentEditorZoom, -1));
-      return;
-    }
-    if (isMeta && !e.altKey && e.key === "0") {
-      e.preventDefault();
-      applyEditorZoom(DEFAULT_EDITOR_ZOOM);
-      return;
-    }
+    if (appearance.handleZoomShortcut(e)) return;
 
-    // Disable browser inspect shortcuts and accidental page reloads (F12, Cmd+Opt+I, Ctrl+Shift+I, Cmd+R)
+        // Disable browser inspect shortcuts and accidental page reloads (F12, Cmd+Opt+I, Ctrl+Shift+I, Cmd+R)
     if (
       e.key === "F12" ||
       (isMeta && e.altKey && e.key.toLowerCase() === "i") ||
@@ -2829,7 +2520,12 @@ function attachEventListeners() {
     }
     if ((isMeta && (e.key === "/" || e.key === "?")) || e.key === "F1") {
       e.preventDefault();
-      toggleHelpModal();
+      showMainWindow("help");
+    }
+    // Cmd+W hides the panel, like closing any window; the notes stay loaded.
+    if (isMeta && !isShift && !e.altKey && e.key.toLowerCase() === "w") {
+      e.preventDefault();
+      hideQuickNotes();
     }
     if (e.altKey && e.key === "ArrowUp") {
       e.preventDefault();
@@ -2849,15 +2545,6 @@ function attachEventListeners() {
       } else if (isMcpConfigModalOpen) {
         e.preventDefault();
         closeMcpConfigModal();
-      } else if (isAboutModalOpen) {
-        e.preventDefault();
-        closeAboutModal();
-      } else if (isThemeModalOpen) {
-        e.preventDefault();
-        closeThemeModal();
-      } else if (isHelpModalOpen) {
-        e.preventDefault();
-        closeHelpModal();
       } else if (isFindBarOpen) {
         e.preventDefault();
         hideFindBar();
@@ -4278,7 +3965,7 @@ function updateSecondaryMarkdownPreview() {
   if (currentLayoutMode !== "reading") return;
   if (window.marked) {
     secondaryMarkdownPreview.innerHTML = renderMarkdown(secondaryEditor.getText());
-    highlightPreviewCode(secondaryMarkdownPreview, window.hljs, syntaxHighlightingEnabled);
+    highlightPreviewCode(secondaryMarkdownPreview, window.hljs, appearance.syntaxHighlighting);
   }
 }
 
@@ -4371,551 +4058,38 @@ function toggleNotePinned(noteId) {
 }
 
 // ----------------------------------------------------
-// Help & Reference Modal Logic
+// Quick Notes panel
 // ----------------------------------------------------
-function openHelpModal(defaultTab = "shortcuts") {
-  helpModalPreviousFocus = document.activeElement;
-  isHelpModalOpen = true;
-  helpModalBackdrop.style.display = "flex";
-  helpModalBackdrop.setAttribute("aria-hidden", "false");
-  helpBtn.setAttribute("aria-expanded", "true");
-  switchHelpTab(defaultTab, true);
-}
-
-function closeHelpModal() {
-  isHelpModalOpen = false;
-  helpModalBackdrop.style.display = "none";
-  helpModalBackdrop.setAttribute("aria-hidden", "true");
-  helpBtn.setAttribute("aria-expanded", "false");
-  if (helpModalPreviousFocus && helpModalPreviousFocus.isConnected) {
-    helpModalPreviousFocus.focus({ preventScroll: true });
-  }
-  helpModalPreviousFocus = null;
-}
-
-function toggleHelpModal() {
-  if (isHelpModalOpen) {
-    closeHelpModal();
-  } else {
-    openHelpModal();
-  }
-}
-
-function switchHelpTab(tabName, focusTab = false) {
-  const helpTopics = {
-    shortcuts: { button: tabShortcutsBtn, pane: paneShortcuts },
-    markdown: { button: tabMarkdownBtn, pane: paneMarkdown },
-    mcp: { button: tabMcpBtn, pane: paneMcp }
-  };
-  const activeTopic = helpTopics[tabName] || helpTopics.shortcuts;
-
-  Object.values(helpTopics).forEach(({ button, pane }) => {
-    const isActive = button === activeTopic.button;
-    button.classList.toggle("active", isActive);
-    button.setAttribute("aria-selected", String(isActive));
-    button.tabIndex = isActive ? 0 : -1;
-    pane.classList.toggle("active", isActive);
-    pane.setAttribute("aria-hidden", String(!isActive));
-  });
-
-  if (focusTab) {
-    activeTopic.button.focus({ preventScroll: true });
-  }
-}
-
-function cycleHelpTab(backwards = false) {
-  const tabs = ["shortcuts", "markdown", "mcp"];
-  const currentTab = tabs.find(tabName =>
-    document.getElementById(`tab-${tabName}-btn`).classList.contains("active")
-  ) || "shortcuts";
-  const currentIndex = tabs.indexOf(currentTab);
-  const direction = backwards ? -1 : 1;
-  const nextIndex = (currentIndex + direction + tabs.length) % tabs.length;
-  switchHelpTab(tabs[nextIndex], true);
-}
-
-// ----------------------------------------------------
-// About Modal Logic
-// ----------------------------------------------------
-function openAboutModal() {
-  if (isAboutModalOpen) return;
-  aboutModalPreviousFocus = document.activeElement;
-  isAboutModalOpen = true;
-  aboutModalBackdrop.style.display = "flex";
-  aboutModalBackdrop.setAttribute("aria-hidden", "false");
-  closeAboutBtn.focus({ preventScroll: true });
-}
-
-function closeAboutModal() {
-  isAboutModalOpen = false;
-  aboutModalBackdrop.style.display = "none";
-  aboutModalBackdrop.setAttribute("aria-hidden", "true");
-  if (aboutModalPreviousFocus && aboutModalPreviousFocus.isConnected) {
-    aboutModalPreviousFocus.focus({ preventScroll: true });
-  }
-  aboutModalPreviousFocus = null;
-}
-
-function trapModalFocus(event, modal) {
-  const focusable = [...modal.querySelectorAll(
-    "button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex='-1'])"
-  )].filter((element) => !element.closest("[hidden]") &&
-    (!element.closest("details:not([open])") || element.tagName === "SUMMARY"));
-  if (focusable.length === 0) return;
-
-  const first = focusable[0];
-  const last = focusable[focusable.length - 1];
-  if ((event.shiftKey && document.activeElement === first) ||
-      (!event.shiftKey && document.activeElement === last)) {
-    event.preventDefault();
-    (event.shiftKey ? last : first).focus();
-  }
-}
-
-// ----------------------------------------------------
-// Color Themes & Palette Engine
-// ----------------------------------------------------
-function openThemeModal() {
-  themeModalPreviousFocus = actionsDropdown.contains(document.activeElement)
-    ? actionsBtn
-    : document.activeElement;
-  isThemeModalOpen = true;
-  themeModalBackdrop.style.display = "flex";
-  themeModalBackdrop.setAttribute("aria-hidden", "false");
-  themeToggleBtn.setAttribute("aria-expanded", "true");
-  themePickerBtn.setAttribute("aria-expanded", "true");
-  renderThemeGrid();
-  closeThemeBtn.focus({ preventScroll: true });
-}
-
-function closeThemeModal() {
-  isThemeModalOpen = false;
-  themeModalBackdrop.style.display = "none";
-  themeModalBackdrop.setAttribute("aria-hidden", "true");
-  themeToggleBtn.setAttribute("aria-expanded", "false");
-  themePickerBtn.setAttribute("aria-expanded", "false");
-  if (themeModalPreviousFocus && themeModalPreviousFocus.isConnected) {
-    themeModalPreviousFocus.focus({ preventScroll: true });
-  }
-  themeModalPreviousFocus = null;
-}
-
-function loadSavedThemes() {
+// The main window asks for a note (its start page links the Welcome note) or
+// for this window's menu (where agent access lives).
+async function registerQuickNotesHandlers() {
+  const listen = window.__TAURI__?.event?.listen;
+  if (typeof listen !== "function") return;
   try {
-    const saved = localStorage.getItem("sodilaud_custom_themes");
-    if (saved) {
-      const parsedThemes = JSON.parse(saved);
-      if (Array.isArray(parsedThemes)) {
-        customThemes = parsedThemes
-          .map((theme, index) => normalizeCustomTheme(theme, index))
-          .filter(Boolean);
-        localStorage.setItem("sodilaud_custom_themes", JSON.stringify(customThemes));
-      }
-    }
-  } catch (e) {}
-
-  const storedThemeId = localStorage.getItem("sodilaud_active_theme");
-  const savedThemeId = LEGACY_THEME_IDS[storedThemeId] || storedThemeId;
-  const themeExists = [...PRESET_THEMES, ...customThemes]
-    .some((theme) => theme.id === savedThemeId);
-
-  if (savedThemeId && themeExists) {
-    if (savedThemeId !== storedThemeId) {
-      localStorage.setItem("sodilaud_active_theme", savedThemeId);
-    }
-    applyTheme(savedThemeId);
-  } else {
-    applyTheme("default-dark");
-  }
-}
-
-function applyTheme(themeId) {
-  activeThemeId = themeId;
-  localStorage.setItem("sodilaud_active_theme", themeId);
-
-  const root = document.documentElement;
-  const themeBtnText = document.getElementById("theme-btn-text");
-
-  if (themeId === "default-dark") {
-    clearCustomThemeStyles();
-    setTheme("dark");
-    if (themeBtnText) themeBtnText.textContent = "Theme: Default Dark";
-    renderThemeGrid();
-    syncClipboardPopupTheme({ document, invoke, isMac: clipboardHistoryIsMac });
-    return;
-  }
-  if (themeId === "default-light") {
-    clearCustomThemeStyles();
-    setTheme("light");
-    if (themeBtnText) themeBtnText.textContent = "Theme: Default Light";
-    renderThemeGrid();
-    syncClipboardPopupTheme({ document, invoke, isMac: clipboardHistoryIsMac });
-    return;
-  }
-
-  const allThemes = [...PRESET_THEMES, ...customThemes];
-  const theme = allThemes.find(t => t.id === themeId);
-  if (!theme) return;
-
-  if (theme.uiStyle) {
-    root.dataset.themeStyle = theme.uiStyle;
-  } else {
-    delete root.dataset.themeStyle;
-  }
-
-  // Drop anything derived for the previous theme first. A theme whose colours
-  // can only be partly measured sets only part of the list, and a stale
-  // --text-on-active from a dark theme is exactly how near-white text ends up
-  // on a pale row.
-  DERIVED_THEME_PROPERTIES.forEach(prop => root.style.removeProperty(prop));
-
-  const isDark = isColorDark(theme.background, resolveCssColor);
-  if (isDark) {
-    document.documentElement.classList.add("theme-dark");
-    document.documentElement.classList.remove("theme-light");
-  } else {
-    document.documentElement.classList.add("theme-light");
-    document.documentElement.classList.remove("theme-dark");
-  }
-
-  root.style.setProperty("--bg-app", theme.background);
-  root.style.setProperty("--editor-bg", theme.background);
-  root.style.setProperty("--editor-text", theme.foreground);
-  root.style.setProperty("--preview-bg", theme.background);
-  root.style.setProperty("--preview-text", theme.foreground);
-  root.style.setProperty("--bg-sidebar", theme.sidebar || theme.background);
-  root.style.setProperty("--sidebar-bg", theme.sidebar || theme.background);
-  root.style.setProperty("--statusbar-bg", theme.sidebar || theme.background);
-  root.style.setProperty("--topbar-bg", theme.sidebar || theme.background);
-  root.style.setProperty("--dropdown-bg", theme.sidebar || theme.background);
-  root.style.setProperty("--border-color", theme.border || "rgba(128,128,128,0.2)");
-  root.style.setProperty("--text-primary", theme.foreground);
-  root.style.setProperty("--accent-color", theme.accent || "#3b82f6");
-  root.style.setProperty("--accent-hover", theme.accent || "#3b82f6");
-  root.style.setProperty("--bg-note-active", theme.selection || "rgba(59,130,246,0.15)");
-  root.style.setProperty("--border-note-active", theme.accent || "#3b82f6");
-
-  // Sidebar text tones are derived from the theme rather than inherited from
-  // the built-in palette, so preview snippets stay readable on every theme.
-  // This runs last so it can also refine --bg-note-active; themes whose colours
-  // aren't parseable keep the plain values set above.
-  const derived = deriveThemeSurfaceColors(theme, parseOpaqueThemeColor) || {};
-  Object.entries(derived).forEach(([prop, value]) => root.style.setProperty(prop, value));
-
-  // The active row rebinds its text to the on-active tones whether or not we
-  // could measure them, so anything left underived is pinned to the theme's own
-  // foreground. That keeps the row at the contrast its author chose instead of
-  // resolving to a built-in palette picked by a light/dark guess that cannot
-  // read this theme's colours either.
-  ACTIVE_TEXT_PROPERTIES
-    .filter(prop => !derived[prop])
-    .forEach(prop => root.style.setProperty(prop, theme.foreground));
-
-  if (themeBtnText) {
-    themeBtnText.textContent = `Theme: ${theme.name}`;
-  }
-  activeThemeMenuValue.textContent = theme.name;
-
-  renderThemeGrid();
-  syncClipboardPopupTheme({ document, invoke, isMac: clipboardHistoryIsMac });
-}
-
-function clearCustomThemeStyles() {
-  const root = document.documentElement;
-  const props = [
-    "--bg-app", "--editor-bg", "--editor-text", "--preview-bg", "--preview-text",
-    "--bg-sidebar", "--sidebar-bg", "--statusbar-bg", "--topbar-bg", "--dropdown-bg",
-    "--border-color", "--text-primary", "--accent-color", "--accent-hover",
-    "--border-note-active",
-    ...DERIVED_THEME_PROPERTIES
-  ];
-  props.forEach(p => root.style.removeProperty(p));
-  delete root.dataset.themeStyle;
-}
-
-function normalizeCustomTheme(theme, index = 0) {
-  if (!theme || typeof theme !== "object") return null;
-  if (!isValidColor(theme.background) || !isValidColor(theme.foreground)) return null;
-
-  return {
-    id: typeof theme.id === "string" && theme.id ? theme.id : `custom_saved_${index}`,
-    name: typeof theme.name === "string" && theme.name.trim() ? theme.name.trim() : `Custom Theme ${index + 1}`,
-    background: theme.background.trim(),
-    foreground: theme.foreground.trim(),
-    sidebar: isValidColor(theme.sidebar) ? theme.sidebar.trim() : theme.background.trim(),
-    accent: isValidColor(theme.accent) ? theme.accent.trim() : "#3b82f6",
-    border: isValidColor(theme.border) ? theme.border.trim() : "rgba(128,128,128,0.2)",
-    selection: isValidColor(theme.selection) ? theme.selection.trim() : "rgba(59,130,246,0.2)",
-    isCustom: true
-  };
-}
-
-async function promptImportError(title, message) {
-  if (window.__TAURI__) {
-    try {
-      await invoke("show_alert_dialog", { title, message });
-      return;
-    } catch (e) {}
-  }
-  alert(`${title}\n\n${message}`);
-}
-
-function renderThemeGrid() {
-  if (!themeGrid) return;
-  themeGrid.innerHTML = "";
-
-  const allThemes = [...PRESET_THEMES, ...customThemes];
-
-  allThemes.forEach(theme => {
-    const card = document.createElement("div");
-    card.className = `theme-card ${theme.id === activeThemeId ? "active" : ""}`;
-    card.tabIndex = 0;
-    card.setAttribute("role", "button");
-    card.setAttribute("aria-label", `Use ${theme.name} theme`);
-    card.setAttribute("aria-pressed", String(theme.id === activeThemeId));
-    
-    card.innerHTML = `
-      <div class="theme-card-header">
-        <span class="theme-card-name">${escapeHTML(theme.name)}</span>
-        ${theme.id === activeThemeId ? '<span class="theme-card-badge">Active</span>' : ''}
-      </div>
-      <div class="theme-card-preview" style="background-color: ${theme.background};">
-        <div class="theme-preview-sidebar" style="background-color: ${theme.sidebar || theme.background}; border-right: 1px solid ${theme.border || 'rgba(128,128,128,0.2)'};">
-          <div class="theme-preview-line" style="background-color: ${theme.accent}; width: 60%;"></div>
-          <div class="theme-preview-line" style="background-color: ${theme.foreground}; opacity: 0.5;"></div>
-          <div class="theme-preview-line" style="background-color: ${theme.foreground}; opacity: 0.3;"></div>
-        </div>
-        <div class="theme-preview-editor" style="background-color: ${theme.background};">
-          <div class="theme-preview-accent" style="background-color: ${theme.accent};"></div>
-          <div class="theme-preview-line" style="background-color: ${theme.foreground}; opacity: 0.8; width: 90%;"></div>
-          <div class="theme-preview-line" style="background-color: ${theme.foreground}; opacity: 0.5; width: 70%;"></div>
-        </div>
-      </div>
-      ${theme.isCustom ? `
-        <button class="theme-card-delete" title="Delete custom theme" aria-label="Delete ${escapeHTML(theme.name)} theme">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
-      ` : ''}
-    `;
-
-    card.addEventListener("click", () => {
-      applyTheme(theme.id);
+    await listen("quicknotes-focus-note", ({ payload }) => {
+      const note = notes.find(candidate => candidate.title === payload?.title);
+      if (!note) return;
+      if (isFocusMode) toggleFocusMode();
+      activeNoteId = note.id;
+      renderNoteList(searchInput.value);
+      loadActiveNote();
     });
-
-    card.addEventListener("keydown", (event) => {
-      if ((event.key === "Enter" || event.key === " ") && !event.target.closest(".theme-card-delete")) {
-        event.preventDefault();
-        applyTheme(theme.id);
-      }
+    await listen("quicknotes-open-menu", () => {
+      toggleActionsDropdown(true);
     });
+  } catch (error) {
+    console.error("Failed to register the Quick Notes handlers", error);
+  }
+}
 
-    if (theme.isCustom) {
-      const delBtn = card.querySelector(".theme-card-delete");
-      if (delBtn) {
-        delBtn.addEventListener("click", (e) => {
-          e.stopPropagation();
-          deleteCustomTheme(theme.id);
-        });
-      }
-    }
+function hideQuickNotes() {
+  invoke("qn_close").catch((error) => console.error("Could not hide Quick Notes", error));
+}
 
-    themeGrid.appendChild(card);
+function showMainWindow(section) {
+  invoke("show_main_window", { section }).catch((error) => {
+    console.error("Could not show the Sodilaud window", error);
   });
-}
-
-function deleteCustomTheme(themeId) {
-  customThemes = customThemes.filter(t => t.id !== themeId);
-  localStorage.setItem("sodilaud_custom_themes", JSON.stringify(customThemes));
-  if (activeThemeId === themeId) {
-    applyTheme("default-dark");
-  } else {
-    renderThemeGrid();
-  }
-}
-
-async function importThemeFile() {
-  try {
-    let fileContent = "";
-    let fileName = "";
-
-    if (window.__TAURI__) {
-      const selected = await invoke("import_file_native");
-      if (!selected || !selected.content) return;
-      fileContent = selected.content;
-      fileName = selected.title || "imported_theme.json";
-    } else {
-      const input = document.createElement("input");
-      input.type = "file";
-      input.accept = ".json,.toml,.yaml,.yml,.conf,.txt";
-      input.onchange = async (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        fileName = file.name;
-        fileContent = await file.text();
-        await processImportedTheme(fileContent, fileName);
-      };
-      input.click();
-      return;
-    }
-
-    await processImportedTheme(fileContent, fileName);
-  } catch (err) {
-    console.error("Theme import failed:", err);
-    await promptImportError("Theme Import Error", `Failed to read theme file: ${err}`);
-  }
-}
-
-async function processImportedTheme(content, fileName) {
-  if (!content || !content.trim()) {
-    await promptImportError(
-      "Theme Import Error",
-      `The file "${fileName}" is empty.`
-    );
-    return;
-  }
-
-  const result = parseThemeContent(content, fileName);
-  if (!result.success) {
-    await promptImportError(
-      "Invalid Theme File",
-      `Could not import "${fileName}".\n\nReason: ${result.error}\n\nPlease ensure your file is a valid JSON or TOML color scheme with valid HEX or RGB color codes for "background" and "foreground".`
-    );
-    return;
-  }
-
-  const theme = result.theme;
-  const existingIdx = customThemes.findIndex(t => t.id === theme.id || t.name.toLowerCase() === theme.name.toLowerCase());
-  if (existingIdx !== -1) {
-    customThemes[existingIdx] = theme;
-  } else {
-    customThemes.push(theme);
-  }
-
-  localStorage.setItem("sodilaud_custom_themes", JSON.stringify(customThemes));
-  applyTheme(theme.id);
-}
-
-function parseThemeContent(content, fileName) {
-  const cleanName = fileName.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " ");
-
-  // 1. Try JSON
-  try {
-    const data = JSON.parse(content);
-    if (typeof data !== "object" || data === null) {
-      return { success: false, error: "Root JSON is not an object" };
-    }
-
-    const colors = data.colors || data;
-    const bg = colors.background || colors["editor.background"] || colors.bg || colors.editor_bg;
-    const fg = colors.foreground || colors["editor.foreground"] || colors.fg || colors.editor_text;
-
-    if (!bg || !fg) {
-      return { success: false, error: "Missing required 'background' or 'foreground' color properties" };
-    }
-    if (!isValidColor(bg)) {
-      return { success: false, error: `Invalid background color value: "${bg}"` };
-    }
-    if (!isValidColor(fg)) {
-      return { success: false, error: `Invalid foreground color value: "${fg}"` };
-    }
-
-    const sb = colors.sidebar || colors["sideBar.background"] || colors.sidebar_bg || colors["activityBar.background"] || bg;
-    const accent = colors.accent || colors.cursor || colors["activityBar.foreground"] || colors["editorCursor.foreground"] || "#3b82f6";
-    const border = colors.border || colors["panel.border"] || colors["sideBar.border"] || "rgba(128,128,128,0.2)";
-    const sel = colors.selection || colors["editor.selectionBackground"] || colors["list.activeSelectionBackground"] || "rgba(59,130,246,0.2)";
-
-    return {
-      success: true,
-      theme: {
-        id: "custom_" + Date.now(),
-        name: typeof data.name === "string" && data.name.trim() ? data.name.trim() : cleanName,
-        background: bg,
-        foreground: fg,
-        sidebar: isValidColor(sb) ? sb : bg,
-        accent: isValidColor(accent) ? accent : "#3b82f6",
-        border: isValidColor(border) ? border : "rgba(128,128,128,0.2)",
-        selection: isValidColor(sel) ? sel : "rgba(59,130,246,0.2)",
-        isCustom: true
-      }
-    };
-  } catch (e) {
-    // If not valid JSON, proceed to TOML / Key-Value check
-  }
-
-  // 2. Try TOML / Key-Value / Alacritty / Ghostty style
-  const lines = content.split("\n");
-  const kv = {};
-  for (const line of lines) {
-    const clean = line.trim();
-    if (!clean || clean.startsWith("#")) continue;
-    const match = clean.match(/^([a-zA-Z0-9_.-]+)\s*[:=]\s*["']?([^"'\r\n#]+)["']?/);
-    if (match) {
-      kv[match[1].toLowerCase()] = match[2].trim();
-    }
-  }
-
-  const bg = kv.background || kv.bg || kv.editor_bg;
-  const fg = kv.foreground || kv.fg || kv.editor_text;
-
-  if (bg && fg) {
-    if (!isValidColor(bg)) {
-      return { success: false, error: `Invalid background color value: "${bg}"` };
-    }
-    if (!isValidColor(fg)) {
-      return { success: false, error: `Invalid foreground color value: "${fg}"` };
-    }
-
-    const sb = kv.sidebar || kv.sidebar_bg || bg;
-    const accent = kv.accent || kv.cursor || "#3b82f6";
-    const border = kv.border || "rgba(128,128,128,0.2)";
-    const sel = kv.selection || "rgba(59,130,246,0.2)";
-
-    return {
-      success: true,
-      theme: {
-        id: "custom_" + Date.now(),
-        name: typeof kv.name === "string" && kv.name.trim() ? kv.name.trim() : cleanName,
-        background: bg,
-        foreground: fg,
-        sidebar: isValidColor(sb) ? sb : bg,
-        accent: isValidColor(accent) ? accent : "#3b82f6",
-        border: isValidColor(border) ? border : "rgba(128,128,128,0.2)",
-        selection: isValidColor(sel) ? sel : "rgba(59,130,246,0.2)",
-        isCustom: true
-      }
-    };
-  }
-
-  return { 
-    success: false, 
-    error: "File could not be parsed as valid JSON or TOML/Key-Value color scheme with valid 'background' and 'foreground' color codes" 
-  };
-}
-
-function exportCurrentTheme() {
-  const allThemes = [...PRESET_THEMES, ...customThemes];
-  const active = allThemes.find(t => t.id === activeThemeId) || PRESET_THEMES[0];
-
-  const exportData = {
-    name: active.name,
-    background: active.background,
-    foreground: active.foreground,
-    sidebar: active.sidebar,
-    accent: active.accent,
-    border: active.border,
-    selection: active.selection
-  };
-
-  const jsonStr = JSON.stringify(exportData, null, 2);
-  const blob = new Blob([jsonStr], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `${active.name.toLowerCase().replace(/\s+/g, "-")}-theme.json`;
-  a.click();
-  URL.revokeObjectURL(url);
 }
 
 // Boot up!

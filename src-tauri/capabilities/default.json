@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window: the start page, settings, and (in a later change) the file editor. It cannot read or write notes; the Quick Notes window owns them.",
+  "description": "Capability for the main window: the start page, settings (including importing a theme file), and (in a later change) the file editor. It cannot read or write notes; the Quick Notes window owns them.",
   "windows": [
     "main"
   ],
@@ -9,6 +9,7 @@
     "core:default",
     "allow-confirm-and-open-url",
     "allow-show-alert-dialog",
+    "allow-import-file-native",
     "allow-clip-set-config",
     "allow-clip-set-theme",
     "allow-quit-handler-ready",

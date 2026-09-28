@@ -2,11 +2,11 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { bootApp } from "./helpers/app-harness.js";
+import { bootMainWindow } from "./helpers/app-harness.js";
 
 test("the native About menu opens the existing in-app About panel", async () => {
-  const app = await bootApp();
-  const editor = app.editor().contentDOM;
+  const app = await bootMainWindow();
+  const editor = document.getElementById("open-quicknotes-btn");
   const backdrop = document.getElementById("about-modal-backdrop");
   editor.focus();
 

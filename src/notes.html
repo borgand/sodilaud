@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Sodilaud</title>
+  <title>Quick Notes</title>
   <link rel="stylesheet" href="styles.css" />
   <!-- Offline-ready Markdown Parser -->
   <script src="vendor/marked.umd.js"></script>
@@ -14,10 +14,18 @@
   <script src="vendor/diff.min.js"></script>
   <script type="module" src="notes.js" defer></script>
 </head>
-<body>
+<body class="quicknotes-page">
+  <div class="quicknotes-header" id="quicknotes-header">
+    <span class="quicknotes-header-title">Quick Notes</span>
+    <button class="quicknotes-close-btn" id="quicknotes-close-btn" type="button" title="Hide Quick Notes (Cmd+W)" aria-label="Hide Quick Notes">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+      </svg>
+    </button>
+  </div>
   <div class="app-container" id="app">
     <!-- Sidebar for Drafts -->
-    <aside class="sidebar" id="sidebar">
+    <aside class="sidebar collapsed" id="sidebar">
       <div class="sidebar-header">
         <div class="brand">
           <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -53,11 +61,6 @@
         </ul>
       </div>
 
-      <div class="sidebar-footer">
-        <button class="sidebar-action-btn" id="theme-toggle" title="Color Themes & Palettes" aria-haspopup="dialog" aria-expanded="false">
-          <span class="btn-text" id="theme-btn-text">Theme: Default Dark</span>
-        </button>
-      </div>
     </aside>
 
     <!-- Main Workspace -->
@@ -65,7 +68,7 @@
       <!-- Top Bar / Header -->
       <header class="topbar">
         <div class="topbar-left" id="topbar-left">
-          <button class="icon-btn toggle-sidebar-btn" id="toggle-sidebar" title="Toggle Sidebar (Ctrl+Cmd+S)" aria-label="Toggle sidebar" aria-expanded="true">
+          <button class="icon-btn toggle-sidebar-btn" id="toggle-sidebar" title="Toggle Sidebar (Ctrl+Cmd+S)" aria-label="Toggle sidebar" aria-expanded="false">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h7" />
             </svg>
@@ -172,44 +175,16 @@
                 <button class="dropdown-item" id="export-btn">Export Markdown file</button>
               </div>
               <div class="dropdown-divider"></div>
-              <div class="dropdown-section" id="appearance-menu-section">
-                <div class="dropdown-section-title">Appearance</div>
-                <button class="dropdown-item dropdown-item-with-value" id="theme-picker-btn" aria-haspopup="dialog" aria-expanded="false">
-                  <span>Color theme</span>
-                  <span class="dropdown-item-value" id="active-theme-menu-value">Default Dark</span>
-                </button>
-                <div class="view-settings" id="view-settings" aria-label="Appearance settings">
+              <div class="dropdown-section" id="view-menu-section">
+                <div class="dropdown-section-title">Sidebar</div>
+                <div class="view-settings" id="view-settings" aria-label="Sidebar settings">
                   <div class="view-setting-row">
-                    <span class="view-setting-label">Sidebar preview lines</span>
+                    <span class="view-setting-label">Preview lines</span>
                     <div class="view-setting-controls">
                       <button class="view-setting-btn" id="preview-lines-decrease-btn" title="Show fewer note preview lines" aria-label="Show fewer note preview lines">−</button>
                       <button class="view-setting-value" id="preview-lines-value" title="Reset note preview lines" aria-label="Reset note preview lines">2</button>
                       <button class="view-setting-btn" id="preview-lines-increase-btn" title="Show more note preview lines" aria-label="Show more note preview lines">+</button>
                     </div>
-                  </div>
-                  <div class="view-setting-row">
-                    <span class="view-setting-label">Editor zoom</span>
-                    <div class="view-setting-controls">
-                      <button class="view-setting-btn" id="zoom-out-btn" title="Zoom Editor Out (Cmd+-)" aria-label="Zoom editor out">−</button>
-                      <button class="view-setting-value" id="zoom-reset-btn" title="Reset Editor Zoom (Cmd+0)" aria-label="Reset editor zoom to 100%">100%</button>
-                      <button class="view-setting-btn" id="zoom-in-btn" title="Zoom Editor In (Cmd++)" aria-label="Zoom editor in">+</button>
-                    </div>
-                  </div>
-                  <div class="view-setting-row">
-                    <span class="view-setting-label">Line spacing</span>
-                    <div class="view-setting-controls">
-                      <button class="view-setting-btn" id="line-spacing-decrease-btn" title="Decrease editor line spacing" aria-label="Decrease editor line spacing">−</button>
-                      <button class="view-setting-value" id="line-spacing-value" title="Reset editor line spacing" aria-label="Reset editor line spacing">1.6×</button>
-                      <button class="view-setting-btn" id="line-spacing-increase-btn" title="Increase editor line spacing" aria-label="Increase editor line spacing">+</button>
-                    </div>
-                  </div>
-                  <div class="view-setting-row">
-                    <span class="view-setting-label">Syntax highlighting</span>
-                    <button class="view-setting-toggle" id="syntax-highlighting-toggle" type="button" aria-label="Toggle syntax highlighting in the editor and preview" aria-pressed="true">On</button>
-                  </div>
-                  <div class="view-setting-row">
-                    <span class="view-setting-label">Line numbers</span>
-                    <button class="view-setting-toggle" id="line-numbers-toggle" type="button" aria-label="Toggle editor line numbers" aria-pressed="false">Off</button>
                   </div>
                 </div>
               </div>
@@ -223,19 +198,9 @@
                 <button class="dropdown-item" id="agent-access-config-btn" aria-haspopup="dialog">MCP Configuration</button>
               </div>
               <div class="dropdown-divider"></div>
-              <div class="dropdown-section" id="clipboard-history-menu-section" hidden>
-                <div class="dropdown-section-title">Clipboard history</div>
-                <div class="view-setting-row">
-                  <span class="view-setting-label">Clipboard history</span>
-                  <button class="view-setting-toggle" id="clipboard-history-toggle-btn" type="button" aria-label="Toggle clipboard history" aria-pressed="false">Off</button>
-                </div>
-                <button class="dropdown-item" id="clipboard-settings-btn" aria-haspopup="dialog">Clipboard settings</button>
-              </div>
-              <div class="dropdown-divider" id="clipboard-history-menu-divider" hidden></div>
-              <div class="dropdown-section" id="help-menu-section">
-                <div class="dropdown-section-title">Help</div>
-                <button class="dropdown-item" id="help-menu-btn" aria-haspopup="dialog">Help &amp; reference</button>
-                <button class="dropdown-item" id="about-menu-btn" aria-haspopup="dialog">About Sodilaud</button>
+              <div class="dropdown-section" id="settings-menu-section">
+                <div class="dropdown-section-title">Sodilaud</div>
+                <button class="dropdown-item" id="settings-menu-btn">Settings…</button>
               </div>
             </div>
           </div>
@@ -487,43 +452,6 @@
     </button>
   </div>
 
-  <!-- Clipboard History Settings Modal -->
-  <div class="help-modal-backdrop" id="clipboard-settings-modal-backdrop" style="display: none;" aria-hidden="true">
-    <div class="help-modal" id="clipboard-settings-modal" role="dialog" aria-modal="true" aria-labelledby="clipboard-settings-heading">
-      <div class="help-modal-header">
-        <h3 id="clipboard-settings-heading">Clipboard history</h3>
-        <button class="close-help-btn" id="close-clipboard-settings-btn" title="Close (Escape)" aria-label="Close clipboard settings">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-        </button>
-      </div>
-      <div class="help-modal-body">
-        <p>Keeps your recent text copies in memory only, never on disk. Entries are wiped when they expire, when you delete them, and when Sodilaud quits. Copies over 64 KiB are not kept.</p>
-        <div class="view-setting-row">
-          <label class="view-setting-label" for="clipboard-capacity-input">History size</label>
-          <input id="clipboard-capacity-input" type="number" min="1" max="50" step="1" class="clipboard-settings-input" />
-        </div>
-        <div class="view-setting-row">
-          <label class="view-setting-label" for="clipboard-ttl-input">Expire after (minutes)</label>
-          <input id="clipboard-ttl-input" type="number" min="1" max="120" step="1" class="clipboard-settings-input" />
-        </div>
-        <div class="view-setting-row">
-          <span class="view-setting-label">Hotkey</span>
-          <button class="view-setting-toggle" id="clipboard-hotkey-btn" type="button" aria-label="Change clipboard history hotkey">⌘⇧V</button>
-          <button class="view-setting-btn" id="clipboard-hotkey-reset-btn" type="button" title="Reset hotkey" aria-label="Reset hotkey">↺</button>
-        </div>
-        <div class="view-setting-row">
-          <span class="view-setting-label">Paste automatically after picking</span>
-          <button class="view-setting-toggle" id="clipboard-autopaste-toggle-btn" type="button" aria-label="Toggle automatic paste" aria-pressed="false">Off</button>
-        </div>
-        <div class="view-setting-row" id="clipboard-accessibility-row" hidden>
-          <span class="view-setting-label">Grant Accessibility in System Settings, then restart Sodilaud. Until then, picks are copied only.</span>
-          <button class="dropdown-item" id="clipboard-accessibility-open-btn" type="button">Open</button>
-        </div>
-        <p id="clipboard-settings-status" role="status" aria-live="polite"></p>
-      </div>
-    </div>
-  </div>
-
   <!-- MCP Configuration Modal -->
   <div class="help-modal-backdrop" id="mcp-config-modal-backdrop" style="display: none;" aria-hidden="true">
     <div class="help-modal mcp-config-modal" id="mcp-config-modal" role="dialog" aria-modal="true" aria-labelledby="mcp-config-modal-heading">
@@ -651,421 +579,5 @@
     </div>
   </div>
 
-  <!-- Help & Reference Modal -->
-  <div class="help-modal-backdrop" id="help-modal-backdrop" style="display: none;" aria-hidden="true">
-    <div class="help-modal" id="help-modal" role="dialog" aria-modal="true" aria-label="Help and reference">
-      <div class="help-modal-header">
-        <div class="help-tabs" role="tablist" aria-label="Help topics">
-          <button class="help-tab-btn active" id="tab-shortcuts-btn" role="tab" aria-selected="true" aria-controls="pane-shortcuts">⌨️ Keyboard Shortcuts</button>
-          <button class="help-tab-btn" id="tab-markdown-btn" role="tab" aria-selected="false" aria-controls="pane-markdown" tabindex="-1">📝 Markdown Cheatsheet</button>
-          <button class="help-tab-btn" id="tab-mcp-btn" role="tab" aria-selected="false" aria-controls="pane-mcp" tabindex="-1">🔌 MCP Functions</button>
-        </div>
-        <button class="close-help-btn" id="close-help-btn" title="Close (Escape)" aria-label="Close help">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
-      </div>
-
-      <div class="help-modal-body">
-        <!-- Shortcuts Pane -->
-        <div class="help-pane active" id="pane-shortcuts" role="tabpanel" aria-labelledby="tab-shortcuts-btn">
-          <div class="shortcuts-section">
-            <h4 class="shortcuts-heading">Workspace & Notes</h4>
-            <p class="shortcuts-note">Double-click the empty space below the scratchpad list to create a new scratchpad. Use the folder button in the sidebar to create collapsible folders. Pinned notes stay at the very top as ordinary notes, while unpinned notes without a folder remain below the folders. Drag notes onto folders to move them, or right-click a folder to add a note, rename, reorder, or safely remove it. Deleting a folder from the sidebar returns its notes to the top level.</p>
-            <p class="shortcuts-note">Right-click a note and choose <strong>Delete Note</strong> to move it to trash. Click the <strong>trash icon at the bottom right</strong> and choose <strong>Restore</strong> to recover it. Restored notes return to their original folder, or the top level if it no longer exists. Right-click the trash icon (or focus it and press Shift+F10), choose <strong>Empty Trash…</strong>, and confirm to permanently remove recovery copies. Each local collection or workspace has its own trash, which survives restarts and never expires automatically.</p>
-            <div class="shortcut-row">
-              <span class="shortcut-desc">New Sodilaud</span>
-              <div class="shortcut-keys"><kbd>Cmd</kbd><span class="key-plus">+</span><kbd>N</kbd></div>
-            </div>
-            <div class="shortcut-row">
-              <span class="shortcut-desc">Toggle Sidebar</span>
-              <div class="shortcut-keys"><kbd>Ctrl</kbd><span class="key-plus">+</span><kbd data-shortcut-off-mac="Alt">Cmd</kbd><span class="key-plus">+</span><kbd>S</kbd></div>
-            </div>
-            <div class="shortcut-row">
-              <span class="shortcut-desc">Dual-Note Split View (Side-by-Side)</span>
-              <div class="shortcut-keys"><kbd>Cmd</kbd><span class="key-plus">+</span><kbd>\</kbd></div>
-            </div>
-            <p class="shortcuts-note">When two notes are open side by side, choose <strong>Compare</strong> in the toolbar to highlight removed source text on the left and added source text on the right. The comparison refreshes after a brief pause in typing and turns off when split view closes.</p>
-            <p class="shortcuts-note">Sodilaud never contacts the internet on its own: there is no update check, account, or telemetry, and notes and workspace data stay on your device. New versions are published as releases in this fork’s repository.</p>
-            <div class="shortcut-row">
-              <span class="shortcut-desc">Move Active Note Up in Sidebar</span>
-              <div class="shortcut-keys"><kbd>Alt</kbd><span class="key-plus">+</span><kbd>↑</kbd></div>
-            </div>
-            <div class="shortcut-row">
-              <span class="shortcut-desc">Move Active Note Down in Sidebar</span>
-              <div class="shortcut-keys"><kbd>Alt</kbd><span class="key-plus">+</span><kbd>↓</kbd></div>
-            </div>
-            <div class="shortcut-row">
-              <span class="shortcut-desc">Toggle Focus Mode (Distraction-Free)</span>
-              <div class="shortcut-keys"><kbd>Cmd</kbd><span class="key-plus">+</span><kbd>Shift</kbd><span class="key-plus">+</span><kbd>F</kbd></div>
-            </div>
-            <div class="shortcut-row">
-              <span class="shortcut-desc">Help & Cheatsheet</span>
-              <div class="shortcut-keys"><kbd>Cmd</kbd><span class="key-plus">+</span><kbd>/</kbd><span class="key-plus">or</span><kbd>F1</kbd></div>
-            </div>
-            <div class="shortcut-row">
-              <span class="shortcut-desc">Zoom Editor In / Out</span>
-              <div class="shortcut-keys"><kbd>Cmd</kbd><span class="key-plus">+</span><kbd>+</kbd><span class="key-plus">/</span><kbd>−</kbd></div>
-            </div>
-            <div class="shortcut-row">
-              <span class="shortcut-desc">Reset Editor Zoom</span>
-              <div class="shortcut-keys"><kbd>Cmd</kbd><span class="key-plus">+</span><kbd>0</kbd></div>
-            </div>
-            <div class="shortcut-row">
-              <span class="shortcut-desc">Switch Help Topic</span>
-              <div class="shortcut-keys"><kbd>Tab</kbd><span class="key-plus">/</span><kbd>Shift</kbd><span class="key-plus">+</span><kbd>Tab</kbd></div>
-            </div>
-          </div>
-
-          <div class="shortcuts-section">
-            <h4 class="shortcuts-heading">Find & Replace</h4>
-            <div class="shortcut-row">
-              <span class="shortcut-desc">Find in Document</span>
-              <div class="shortcut-keys"><kbd>Cmd</kbd><span class="key-plus">+</span><kbd>F</kbd></div>
-            </div>
-            <div class="shortcut-row">
-              <span class="shortcut-desc">Find & Replace</span>
-              <div class="shortcut-keys"><kbd>Cmd</kbd><span class="key-plus">+</span><kbd>H</kbd></div>
-            </div>
-            <div class="shortcut-row">
-              <span class="shortcut-desc">Toggle Regular Expression Mode (<span class="code-mono">.*</span>)</span>
-              <div class="shortcut-keys"><kbd>Alt</kbd><span class="key-plus">+</span><kbd>R</kbd></div>
-            </div>
-            <div class="shortcut-row">
-              <span class="shortcut-desc">Toggle Match Case (<span class="code-mono">Aa</span>)</span>
-              <div class="shortcut-keys"><kbd>Alt</kbd><span class="key-plus">+</span><kbd>C</kbd></div>
-            </div>
-            <div class="shortcut-row">
-              <span class="shortcut-desc">Toggle Exact Match (<span class="code-mono">ab</span>)</span>
-              <div class="shortcut-keys"><kbd>Alt</kbd><span class="key-plus">+</span><kbd>W</kbd></div>
-            </div>
-            <div class="shortcut-row">
-              <span class="shortcut-desc">Jump to Next Match</span>
-              <div class="shortcut-keys"><kbd>Enter</kbd></div>
-            </div>
-            <div class="shortcut-row">
-              <span class="shortcut-desc">Jump to Previous Match</span>
-              <div class="shortcut-keys"><kbd>Shift</kbd><span class="key-plus">+</span><kbd>Enter</kbd></div>
-            </div>
-            <div class="shortcut-row">
-              <span class="shortcut-desc">Close Find Bar / Exit Focus Mode / Close Help</span>
-              <div class="shortcut-keys"><kbd>Esc</kbd></div>
-            </div>
-          </div>
-
-          <div class="shortcuts-section">
-            <h4 class="shortcuts-heading">Formatting</h4>
-            <div class="shortcut-row">
-              <span class="shortcut-desc">Bold</span>
-              <div class="shortcut-keys"><kbd>Cmd</kbd><span class="key-plus">+</span><kbd>B</kbd></div>
-            </div>
-            <div class="shortcut-row">
-              <span class="shortcut-desc">Italic</span>
-              <div class="shortcut-keys"><kbd>Cmd</kbd><span class="key-plus">+</span><kbd>I</kbd></div>
-            </div>
-            <div class="shortcut-row">
-              <span class="shortcut-desc">Strikethrough</span>
-              <div class="shortcut-keys"><kbd>Cmd</kbd><span class="key-plus">+</span><kbd>Shift</kbd><span class="key-plus">+</span><kbd>X</kbd></div>
-            </div>
-            <div class="shortcut-row">
-              <span class="shortcut-desc">Inline Code</span>
-              <div class="shortcut-keys"><kbd>Cmd</kbd><span class="key-plus">+</span><kbd>E</kbd></div>
-            </div>
-            <div class="shortcut-row">
-              <span class="shortcut-desc">Link</span>
-              <div class="shortcut-keys"><kbd>Cmd</kbd><span class="key-plus">+</span><kbd>K</kbd></div>
-            </div>
-            <div class="shortcut-row">
-              <span class="shortcut-desc">Heading 1 to 6 (again to remove)</span>
-              <div class="shortcut-keys"><kbd>Cmd</kbd><span class="key-plus">+</span><kbd>Alt</kbd><span class="key-plus">+</span><kbd>1</kbd><span class="key-plus">-</span><kbd>6</kbd></div>
-            </div>
-            <div class="shortcut-row">
-              <span class="shortcut-desc">Numbered List</span>
-              <div class="shortcut-keys"><kbd>Cmd</kbd><span class="key-plus">+</span><kbd>Shift</kbd><span class="key-plus">+</span><kbd>7</kbd></div>
-            </div>
-            <div class="shortcut-row">
-              <span class="shortcut-desc">Bullet List</span>
-              <div class="shortcut-keys"><kbd>Cmd</kbd><span class="key-plus">+</span><kbd>Shift</kbd><span class="key-plus">+</span><kbd>8</kbd></div>
-            </div>
-            <div class="shortcut-row">
-              <span class="shortcut-desc">Task List</span>
-              <div class="shortcut-keys"><kbd>Cmd</kbd><span class="key-plus">+</span><kbd>Shift</kbd><span class="key-plus">+</span><kbd>9</kbd></div>
-            </div>
-            <div class="shortcut-row">
-              <span class="shortcut-desc">Quote</span>
-              <div class="shortcut-keys"><kbd>Cmd</kbd><span class="key-plus">+</span><kbd>Shift</kbd><span class="key-plus">+</span><kbd>.</kbd></div>
-            </div>
-            <div class="shortcut-row">
-              <span class="shortcut-desc">Code Block</span>
-              <div class="shortcut-keys"><kbd>Cmd</kbd><span class="key-plus">+</span><kbd>Alt</kbd><span class="key-plus">+</span><kbd>C</kbd></div>
-            </div>
-            <p class="cheatsheet-note">The formatting buttons left of the mode buttons apply the same actions to the pane you last worked in, plus a heading menu, tables, and horizontal rules. Marks, headings, lists, and quotes toggle: applying one again removes it. Link inside an existing link selects its URL. Buttons that do not fit the window move into the <strong>»</strong> menu. The buttons are unavailable in Reading mode.</p>
-          </div>
-
-          <div class="shortcuts-section">
-            <h4 class="shortcuts-heading">Editing & Clipboard</h4>
-            <div class="shortcut-row">
-              <span class="shortcut-desc">Copy Selected Text</span>
-              <div class="shortcut-keys"><kbd>Cmd</kbd><span class="key-plus">+</span><kbd>C</kbd></div>
-            </div>
-            <div class="shortcut-row">
-              <span class="shortcut-desc">Cut Selected Text</span>
-              <div class="shortcut-keys"><kbd>Cmd</kbd><span class="key-plus">+</span><kbd>X</kbd></div>
-            </div>
-            <div class="shortcut-row">
-              <span class="shortcut-desc">Paste Text</span>
-              <div class="shortcut-keys"><kbd>Cmd</kbd><span class="key-plus">+</span><kbd>V</kbd></div>
-            </div>
-            <div class="shortcut-row">
-              <span class="shortcut-desc">Select All</span>
-              <div class="shortcut-keys"><kbd>Cmd</kbd><span class="key-plus">+</span><kbd>A</kbd></div>
-            </div>
-            <div class="shortcut-row">
-              <span class="shortcut-desc">Nest Lists / Navigate Table Cells / Indent</span>
-              <div class="shortcut-keys"><kbd>Tab</kbd><span class="key-plus">/</span><kbd>Shift</kbd><span class="key-plus">+</span><kbd>Tab</kbd></div>
-            </div>
-            <div class="shortcut-row">
-              <span class="shortcut-desc">Move List Item Up / Down</span>
-              <div class="shortcut-keys"><kbd>Alt</kbd><span class="key-plus">+</span><kbd>↑</kbd><span class="key-plus">/</span><kbd>↓</kbd></div>
-            </div>
-            <div class="shortcut-row">
-              <span class="shortcut-desc">Continue List, Quote, Fence, or Table</span>
-              <div class="shortcut-keys"><kbd>Enter</kbd></div>
-            </div>
-            <div class="shortcut-row">
-              <span class="shortcut-desc">Jump to List Content / Line Start</span>
-              <div class="shortcut-keys"><kbd>Home</kbd></div>
-            </div>
-            <p class="cheatsheet-note">Parentheses, brackets, braces, quotes, and backticks pair automatically. Backspace removes an empty pair or a list marker at the start of its content. Pasting a URL over selected text makes a link; pasting a rectangular spreadsheet range makes a table, while tab-indented text stays literal.</p>
-            <p class="cheatsheet-note">Choose <strong>Live</strong>, <strong>Source</strong>, or <strong>Reading</strong> with the mode buttons in the toolbar (hover an icon to see its name). Live formats Markdown inline and shows raw Markdown on the lines your cursor touches; Source shows plain Markdown; Reading is a read-only rendered view. In Live mode, Cmd-click a link to open it (Ctrl-click off macOS); a plain click places the cursor. In Reading mode a plain click opens a link.</p>
-          </div>
-        </div>
-
-        <!-- Markdown Cheatsheet Pane -->
-        <div class="help-pane" id="pane-markdown" role="tabpanel" aria-labelledby="tab-markdown-btn" aria-hidden="true">
-          <div class="cheatsheet-grid">
-            <div class="cheatsheet-card">
-              <div class="cheatsheet-card-title">Headings</div>
-              <pre class="cheatsheet-code"># Header 1
-## Header 2
-### Header 3
-#### Header 4</pre>
-            </div>
-
-            <div class="cheatsheet-card">
-              <div class="cheatsheet-card-title">Text Emphasis</div>
-              <pre class="cheatsheet-code">**Bold text**
-*Italic text*
-~~Strikethrough~~
-`inline_code()`</pre>
-            </div>
-
-            <div class="cheatsheet-card">
-              <div class="cheatsheet-card-title">Lists & Checkboxes</div>
-              <pre class="cheatsheet-code">- Unordered item
-* Alternative bullet
-1. Numbered item 1
-2. Numbered item 2
-- [ ] Incomplete task
-- [x] Completed task</pre>
-              <p class="cheatsheet-note">Enter continues a list and always creates an unchecked task. Press Enter on an empty item to outdent or exit. Tab at the start of an item nests it; Shift+Tab outdents it.</p>
-            </div>
-
-            <div class="cheatsheet-card">
-              <div class="cheatsheet-card-title">Code Blocks</div>
-              <pre class="cheatsheet-code">```javascript
-function hello() {
-  console.log("Hello, World!");
-}
-```</pre>
-              <p class="cheatsheet-note">A language label enables syntax highlighting in Reading mode. Typing a new fence and pressing Enter closes it automatically.</p>
-            </div>
-
-            <div class="cheatsheet-card">
-              <div class="cheatsheet-card-title">Blockquotes</div>
-              <pre class="cheatsheet-code">> Blockquote quotation
-> Multiple lines supported</pre>
-              <p class="cheatsheet-note">Enter preserves the current quote depth. Press Enter again on an empty quote line to exit.</p>
-            </div>
-
-            <div class="cheatsheet-card">
-              <div class="cheatsheet-card-title">Links & Images</div>
-              <pre class="cheatsheet-code">[Link Text](https://example.com)
-![Image Alt](data:image/png;base64,...)</pre>
-              <p class="cheatsheet-note">Paste a URL over selected text to make a link. For privacy, previews block images loaded from the internet.</p>
-            </div>
-
-            <div class="cheatsheet-card full-width">
-              <div class="cheatsheet-card-title">Tables & Dividers</div>
-              <pre class="cheatsheet-code">| Column 1 | Column 2 | Column 3 |
-| :--- | :---: | ---: |
-| Left | Center | Right |
-
----</pre>
-              <p class="cheatsheet-note">Enter after a header creates the separator and first row. Enter in the final cell or Tab past it adds a row. Press Enter or Backspace on an empty generated row to exit the table.</p>
-            </div>
-
-            <div class="cheatsheet-card full-width">
-              <div class="cheatsheet-card-title">Editor Assistance</div>
-              <p class="cheatsheet-note">Right-click in the editor and choose <strong>Insert</strong> for starter tables, task lists, code blocks, and links. Select text and type <span class="code-mono">*</span>, <span class="code-mono">_</span>, a backtick, or <span class="code-mono">~</span> to wrap it. Escape a Markdown trigger with a backslash when you want it to remain literal. Syntax highlighting and line numbers can be toggled under <strong>Sodilaud menu → Appearance</strong>.</p>
-            </div>
-          </div>
-        </div>
-
-        <!-- MCP Functions Pane -->
-        <div class="help-pane" id="pane-mcp" role="tabpanel" aria-labelledby="tab-mcp-btn" aria-hidden="true">
-          <div class="shortcuts-section">
-            <h4 class="shortcuts-heading">Connect an agent</h4>
-            <p class="shortcuts-note">Turn <strong>Sodilaud menu → Agent access</strong> On, then open <strong>MCP Configuration</strong> to copy the command, argument, or generic JSON example into a local stdio MCP client. Configuration remains available while access is off. Keep Sodilaud open; <strong>MCP listening</strong> appears beside the save status while the server is enabled, even if no client is connected.</p>
-            <p class="shortcuts-note">Every time access starts, all five Read functions are enabled and all eight Write functions are disabled. Select individual permissions or <strong>Select all</strong> within a section. Changes apply immediately to all connected clients. Disabling access disconnects clients and resets permissions; reconnect your client after enabling access again.</p>
-            <p class="shortcuts-note">Agents see the collection currently open, including unsaved edits, and may send returned content to their model provider. Only you can restore notes or empty trash. Agents cannot read trashed note bodies or replace an entire note.</p>
-            <h4 class="shortcuts-heading">Read functions</h4>
-            <div class="cheatsheet-grid mcp-functions-grid">
-              <div class="cheatsheet-card">
-                <div class="cheatsheet-card-title"><code>list_folders</code></div>
-                <p class="mcp-function-description">Lists folders in sidebar order with their IDs, revisions, and assigned-note counts.</p>
-                <p class="mcp-function-parameters"><strong>Optional:</strong> <code>limit</code> (1–200), <code>offset</code></p>
-              </div>
-              <div class="cheatsheet-card">
-                <div class="cheatsheet-card-title"><code>list_notes</code></div>
-                <p class="mcp-function-description">Lists note metadata and short previews in sidebar order. Use <code>get_note</code> for full content.</p>
-                <p class="mcp-function-parameters"><strong>Optional:</strong> <code>folderId</code> (omit for all, null for top level), <code>limit</code> (1–200), <code>offset</code></p>
-              </div>
-              <div class="cheatsheet-card">
-                <div class="cheatsheet-card-title"><code>search_notes</code></div>
-                <p class="mcp-function-description">Searches note titles and Markdown content for literal, case-insensitive text.</p>
-                <p class="mcp-function-parameters"><strong>Required:</strong> <code>query</code><br><strong>Optional:</strong> <code>folderId</code> (omit for all, null for top level), <code>limit</code> (1–200), <code>offset</code></p>
-              </div>
-              <div class="cheatsheet-card">
-                <div class="cheatsheet-card-title"><code>get_note</code></div>
-                <p class="mcp-function-description">Reads one note by ID and returns a character-addressed chunk of its Markdown content plus its current revision.</p>
-                <p class="mcp-function-parameters"><strong>Required:</strong> <code>id</code><br><strong>Optional:</strong> <code>offset</code>, <code>limit</code> (1–100,000)</p>
-              </div>
-              <div class="cheatsheet-card">
-                <div class="cheatsheet-card-title"><code>list_trash</code></div>
-                <p class="mcp-function-description">Lists deleted-note metadata. Agents cannot restore notes, read trashed content, or empty trash.</p>
-                <p class="mcp-function-parameters"><strong>Optional:</strong> <code>limit</code> (1–200), <code>offset</code></p>
-              </div>
-            </div>
-            <p class="shortcuts-note">List and search results include <code>nextOffset</code> when another page is available. Continue from that offset until it is absent. Content offsets count Unicode characters, not bytes. When reading a note in chunks, restart if its revision changes.</p>
-            <h4 class="shortcuts-heading">Write functions</h4>
-            <p class="shortcuts-note">Read the current <code>collectionId</code> before writing. Edits and deletions also require the current revision from <code>get_note</code> or <code>list_folders</code>. After a timeout or failed save, retry the <strong>same request ID and identical arguments</strong>. Accepted edits that fail to save remain in the editor with <strong>Save failed</strong>; retrying saves the current state without applying the change again. Switching collections or restarting invalidates old collection IDs.</p>
-            <div class="cheatsheet-grid mcp-functions-grid">
-              <div class="cheatsheet-card">
-                <div class="cheatsheet-card-title"><code>create_note</code></div>
-                <p class="mcp-function-description">Creates and saves a note without changing your selection. Requires write access.</p>
-                <p class="mcp-function-parameters"><strong>Required:</strong> <code>collectionId</code>, <code>requestId</code>, <code>title</code><br><strong>Optional:</strong> <code>content</code>, <code>folderId</code></p>
-              </div>
-              <div class="cheatsheet-card">
-                <div class="cheatsheet-card-title"><code>create_folder</code></div>
-                <p class="mcp-function-description">Creates and saves a folder. Duplicate and reserved names are rejected. Requires write access.</p>
-                <p class="mcp-function-parameters"><strong>Required:</strong> <code>collectionId</code>, <code>requestId</code>, <code>name</code>. Read the collection ID first; reuse the same request ID and arguments when retrying.</p>
-              </div>
-              <div class="cheatsheet-card">
-                <div class="cheatsheet-card-title"><code>append_to_note</code></div>
-                <p class="mcp-function-description">Appends exact text, including your supplied newlines. Requires separate permission and the current revision from <code>get_note</code>. Conflicts require rereading. Failed saves remain visibly unsaved; retry the same request to save without appending again.</p>
-                <p class="mcp-function-parameters"><strong>Required:</strong> <code>collectionId</code>, <code>requestId</code>, <code>noteId</code>, <code>expectedRevision</code>, <code>content</code></p>
-              </div>
-              <div class="cheatsheet-card">
-                <div class="cheatsheet-card-title"><code>rename_note</code></div>
-                <p class="mcp-function-description">Sets and locks a title without changing note content. Requires the current revision from <code>get_note</code>. Retry identical arguments after a save failure.</p>
-                <p class="mcp-function-parameters"><strong>Required:</strong> <code>collectionId</code>, <code>requestId</code>, <code>noteId</code>, <code>expectedRevision</code>, <code>title</code></p>
-              </div>
-              <div class="cheatsheet-card">
-                <div class="cheatsheet-card-title"><code>move_note</code></div>
-                <p class="mcp-function-description">Moves a note to an existing folder or the top level, preserving content and pin state. Requires the current revision from <code>get_note</code>. Retry identical arguments after a save failure.</p>
-                <p class="mcp-function-parameters"><strong>Required:</strong> <code>collectionId</code>, <code>requestId</code>, <code>noteId</code>, <code>expectedRevision</code>, <code>folderId</code> (null for top level)</p>
-              </div>
-              <div class="cheatsheet-card">
-                <div class="cheatsheet-card-title"><code>rename_folder</code></div>
-                <p class="mcp-function-description">Renames a folder while preserving its ID and note assignments. Requires the current revision from <code>list_folders</code>. Duplicate and reserved names are rejected. Retry identical arguments after a save failure.</p>
-                <p class="mcp-function-parameters"><strong>Required:</strong> <code>collectionId</code>, <code>requestId</code>, <code>folderId</code>, <code>expectedRevision</code>, <code>name</code></p>
-              </div>
-              <div class="cheatsheet-card">
-                <div class="cheatsheet-card-title"><code>delete_note</code></div>
-                <p class="mcp-function-description">Moves a note to persistent trash with revision checking. Retry identical arguments after a save failure. You can restore the note from the trash icon.</p>
-                <p class="mcp-function-parameters"><strong>Required:</strong> <code>collectionId</code>, <code>requestId</code>, <code>noteId</code>, <code>expectedRevision</code> from get_note</p>
-              </div>
-              <div class="cheatsheet-card">
-                <div class="cheatsheet-card-title"><code>delete_folder</code></div>
-                <p class="mcp-function-description">Deletes an empty folder with revision checking. Move all assigned notes first, including pinned notes.</p>
-                <p class="mcp-function-parameters"><strong>Required:</strong> <code>collectionId</code>, <code>requestId</code>, <code>folderId</code>, <code>expectedRevision</code> from list_folders</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Color Themes Modal -->
-  <div class="help-modal-backdrop" id="theme-modal-backdrop" style="display: none;" aria-hidden="true">
-    <div class="help-modal theme-modal" id="theme-modal" role="dialog" aria-modal="true" aria-labelledby="theme-modal-heading">
-      <div class="help-modal-header">
-        <div class="theme-modal-title">
-          <span class="theme-modal-icon">🎨</span>
-          <h3 id="theme-modal-heading">Color Themes</h3>
-        </div>
-        <div class="theme-modal-actions">
-          <button class="theme-action-btn" id="theme-import-btn" title="Import a .json or .toml theme file">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-            </svg>
-            <span>Import Theme...</span>
-          </button>
-          <button class="theme-action-btn" id="theme-export-btn" title="Export current theme as JSON">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-            </svg>
-            <span>Export Theme</span>
-          </button>
-          <button class="close-help-btn" id="close-theme-btn" title="Close (Escape)" aria-label="Close color themes">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-      </div>
-
-      <div class="help-modal-body">
-        <div class="theme-grid" id="theme-grid">
-          <!-- Dynamically populated theme cards -->
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- About Modal -->
-  <div class="help-modal-backdrop" id="about-modal-backdrop" style="display: none;" aria-hidden="true">
-    <div class="help-modal about-modal" id="about-modal" role="dialog" aria-modal="true" aria-labelledby="about-modal-heading">
-      <div class="help-modal-header">
-        <div class="about-modal-title">
-          <svg class="about-modal-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <h3 id="about-modal-heading">About Sodilaud</h3>
-        </div>
-        <button class="close-help-btn" id="close-about-btn" title="Close (Escape)" aria-label="Close About Sodilaud">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
-      </div>
-
-      <div class="help-modal-body about-modal-body">
-        <p class="about-description">Sodilaud is an open-source, local-first Markdown editor for notes, drafts, and code snippets. It pairs a focused desktop writing experience with live preview, flexible organization, and Markdown-aware editing tools.</p>
-        <p class="about-description">Built for macOS, Windows, and Linux, Sodilaud works without an account, cloud service, analytics, or telemetry. Notes and recoverable trash stay on your device. Optional MCP access lets connected agents read and, with your selected permissions, change the current collection; your agent may send returned content to its model provider. On macOS, an optional clipboard history keeps recent text copies in memory only and never writes them to disk.</p>
-        <div class="about-version-row">
-          <span>Program version</span>
-          <strong id="about-version">0.9.0</strong>
-        </div>
-        <nav class="about-links" aria-label="Sodilaud project links">
-          <a href="https://github.com/borgand/sodilaud" target="_blank" rel="noopener noreferrer">Repository <span aria-hidden="true">↗</span></a>
-          <a href="https://github.com/borgand/sodilaud/blob/main/RELEASE_NOTES.md" target="_blank" rel="noopener noreferrer">Release notes <span aria-hidden="true">↗</span></a>
-        </nav>
-      </div>
-    </div>
-  </div>
 </body>
 </html>
