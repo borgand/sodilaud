@@ -103,10 +103,9 @@ pub fn file_save_as_dialog(
         return Ok(None);
     };
     let path: PathBuf = files.grant(&chosen)?;
-    let hash = io::write_atomic(&path, &text, line_ending, bom)?;
+    let hash = files.write(&path, &text, line_ending, bom)?;
     let path_text = path.to_string_lossy().to_string();
     files.update_lists(|lists| lists.opened(&path_text));
-    files.record(&path, &hash);
     Ok(Some(Saved {
         name: io::file_name(&path),
         path: path_text,
@@ -133,9 +132,7 @@ pub fn file_write(
 ) -> Result<String, FileError> {
     require_main(&window)?;
     let path = files.require(&path)?;
-    let hash = io::write_atomic(&path, &text, line_ending, bom)?;
-    files.record(&path, &hash);
-    Ok(hash)
+    files.write(&path, &text, line_ending, bom)
 }
 
 #[tauri::command]

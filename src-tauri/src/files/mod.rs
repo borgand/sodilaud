@@ -148,6 +148,21 @@ impl Files {
         lock(&self.watcher).record(path, hash);
     }
 
+    /// Writes and records the write under the watcher's lock, so a poll can never
+    /// see Sodilaud's own write before it is known.
+    pub fn write(
+        &self,
+        path: &Path,
+        text: &str,
+        line_ending: io::LineEnding,
+        bom: bool,
+    ) -> Result<String, FileError> {
+        let mut watcher = lock(&self.watcher);
+        let hash = io::write_atomic(path, text, line_ending, bom)?;
+        watcher.record(path, &hash);
+        Ok(hash)
+    }
+
     pub fn take_pending(&self) -> Vec<String> {
         std::mem::take(&mut *lock(&self.pending))
     }
