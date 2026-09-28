@@ -48,9 +48,10 @@ pub fn save(path: &Path, lists: &FileLists) -> Result<(), String> {
     let parent = path
         .parent()
         .ok_or_else(|| "The file list path has no parent directory".to_string())?;
-    fs::create_dir_all(parent).map_err(|e| format!("Could not create the file list directory: {e}"))?;
-    let contents =
-        serde_json::to_vec_pretty(lists).map_err(|e| format!("Could not serialize the file list: {e}"))?;
+    fs::create_dir_all(parent)
+        .map_err(|e| format!("Could not create the file list directory: {e}"))?;
+    let contents = serde_json::to_vec_pretty(lists)
+        .map_err(|e| format!("Could not serialize the file list: {e}"))?;
     fs::write(path, contents).map_err(|e| format!("Could not write the file list: {e}"))?;
     crate::restrict_to_owner(path)
 }
@@ -75,10 +76,8 @@ mod tests {
 
     #[test]
     fn a_damaged_file_gives_empty_lists() {
-        let directory = std::env::temp_dir().join(format!(
-            "sodilaud-filelists-{}",
-            std::process::id()
-        ));
+        let directory =
+            std::env::temp_dir().join(format!("sodilaud-filelists-{}", std::process::id()));
         fs::create_dir_all(&directory).unwrap();
         let path = directory.join(FILE_NAME);
         fs::write(&path, b"[").unwrap();

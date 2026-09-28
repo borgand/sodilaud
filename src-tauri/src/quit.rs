@@ -47,9 +47,7 @@ impl QuitCoordinator {
     /// Starts a quit, or re-asks the windows that have not answered yet when one
     /// is already under way (a second Cmd+Q retries a window that stalled).
     pub fn begin(&mut self) -> Begin {
-        let pending = self
-            .pending
-            .get_or_insert_with(|| self.registered.clone());
+        let pending = self.pending.get_or_insert_with(|| self.registered.clone());
         if pending.is_empty() {
             self.pending = None;
             Begin::ExitNow
@@ -138,9 +136,9 @@ pub fn quit_handler_ready(window: Window) {
 pub fn quit_window_done(window: Window, ok: bool) {
     let app = window.app_handle().clone();
     let label = window.label().to_string();
-    let (step, windows) = app.state::<QuitState>().with(|coordinator| {
-        (coordinator.report(&label, ok), coordinator.registered())
-    });
+    let (step, windows) = app
+        .state::<QuitState>()
+        .with(|coordinator| (coordinator.report(&label, ok), coordinator.registered()));
     match step {
         QuitStep::Exit => exit(&app),
         QuitStep::Cancel => {

@@ -55,11 +55,7 @@ pub fn level_and_behavior(
             shared | NSWindowCollectionBehavior::Transient,
             NSWindowStyleMask::empty(),
         ),
-        PanelStyle::Floating => (
-            NSFloatingWindowLevel,
-            shared,
-            NSWindowStyleMask::Resizable,
-        ),
+        PanelStyle::Floating => (NSFloatingWindowLevel, shared, NSWindowStyleMask::Resizable),
     }
 }
 

@@ -22,12 +22,12 @@ use tauri::{
 
 use super::commands::POPUP_LABEL;
 use super::layout::{popup_height, popup_origin, Rect, WIDTH};
-use crate::platform::panel::{self, PanelStyle};
 use super::popup_state::{
     accepts_hidden, accepts_shown, create_plan, hide_script, is_open, show_script, toggle_action,
     window_background, CreatePlan, PopupState, ToggleAction,
 };
 use super::runtime::{frontmost_pid, own_pid, should_paste, ClipboardRuntime};
+use crate::platform::panel::{self, PanelStyle};
 
 const PASTE_DELAY: Duration = Duration::from_millis(120);
 const KEY_V: u16 = 9;

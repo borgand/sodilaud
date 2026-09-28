@@ -46,12 +46,18 @@ impl FileError {
     pub fn not_granted(path: &Path) -> Self {
         Self::new(
             FileErrorCode::NotGranted,
-            format!("{} was not opened in Sodilaud. Open it again with Open File.", io::file_name(path)),
+            format!(
+                "{} was not opened in Sodilaud. Open it again with Open File.",
+                io::file_name(path)
+            ),
         )
     }
 
     pub fn not_found(path: &Path) -> Self {
-        Self::new(FileErrorCode::NotFound, format!("{} is no longer on disk.", io::file_name(path)))
+        Self::new(
+            FileErrorCode::NotFound,
+            format!("{} is no longer on disk.", io::file_name(path)),
+        )
     }
 
     pub fn not_utf8() -> Self {
@@ -64,19 +70,28 @@ impl FileError {
     pub fn too_large(path: &Path) -> Self {
         Self::new(
             FileErrorCode::TooLarge,
-            format!("{} is larger than 10 MB, which Sodilaud does not open.", io::file_name(path)),
+            format!(
+                "{} is larger than 10 MB, which Sodilaud does not open.",
+                io::file_name(path)
+            ),
         )
     }
 
     pub fn wrong_window() -> Self {
-        Self::new(FileErrorCode::WrongWindow, "Files open only in the main window.".to_string())
+        Self::new(
+            FileErrorCode::WrongWindow,
+            "Files open only in the main window.".to_string(),
+        )
     }
 
     pub fn io(path: &Path, error: &std::io::Error) -> Self {
         if error.kind() == std::io::ErrorKind::NotFound {
             return Self::not_found(path);
         }
-        Self::new(FileErrorCode::Io, format!("{}: {error}", io::file_name(path)))
+        Self::new(
+            FileErrorCode::Io,
+            format!("{}: {error}", io::file_name(path)),
+        )
     }
 }
 
@@ -176,7 +191,11 @@ pub fn start(app: &AppHandle) {
         thread::sleep(watch::INTERVAL);
         let changes = lock(&app.state::<Files>().watcher).poll();
         for change in changes {
-            let _ = app.emit_to(crate::quicknotes::window::MAIN_LABEL, watch::CHANGED_EVENT, change);
+            let _ = app.emit_to(
+                crate::quicknotes::window::MAIN_LABEL,
+                watch::CHANGED_EVENT,
+                change,
+            );
         }
     });
 }
@@ -199,7 +218,11 @@ pub fn open_from_system(app: &AppHandle, paths: Vec<PathBuf>) {
     }
     lock(&files.pending).extend(granted);
     crate::quicknotes::window::show_main(app, None);
-    let _ = app.emit_to(crate::quicknotes::window::MAIN_LABEL, commands::OPEN_REQUEST_EVENT, ());
+    let _ = app.emit_to(
+        crate::quicknotes::window::MAIN_LABEL,
+        commands::OPEN_REQUEST_EVENT,
+        (),
+    );
 }
 
 /// The files named on a command line, skipping flags and the program itself.
@@ -212,7 +235,10 @@ pub fn paths_from_args<I: IntoIterator<Item = String>>(args: I) -> Vec<PathBuf> 
         .map(PathBuf::from)
         .filter(|path| {
             matches!(
-                path.extension().and_then(|ext| ext.to_str()).map(str::to_ascii_lowercase).as_deref(),
+                path.extension()
+                    .and_then(|ext| ext.to_str())
+                    .map(str::to_ascii_lowercase)
+                    .as_deref(),
                 Some("md" | "markdown" | "txt")
             )
         })
@@ -226,11 +252,20 @@ mod tests {
 
     #[test]
     fn a_second_launch_passes_only_its_text_files() {
-        let args = ["sodilaud", "--flag", "/home/u/Notes.MD", "/home/u/photo.png", "readme.txt"]
-            .map(String::from);
+        let args = [
+            "sodilaud",
+            "--flag",
+            "/home/u/Notes.MD",
+            "/home/u/photo.png",
+            "readme.txt",
+        ]
+        .map(String::from);
         assert_eq!(
             paths_from_args(args),
-            vec![PathBuf::from("/home/u/Notes.MD"), PathBuf::from("readme.txt")]
+            vec![
+                PathBuf::from("/home/u/Notes.MD"),
+                PathBuf::from("readme.txt")
+            ]
         );
     }
 }

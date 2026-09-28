@@ -88,7 +88,9 @@ mod tests {
         fs::write(directory.join("secret.md"), "s").unwrap();
         let mut grants = Grants::default();
         grants.grant(&chosen).unwrap();
-        assert!(grants.require(&directory.join("sub/../sub/chosen.md")).is_ok());
+        assert!(grants
+            .require(&directory.join("sub/../sub/chosen.md"))
+            .is_ok());
         assert_eq!(
             grants
                 .require(&directory.join("sub/../secret.md"))

@@ -162,8 +162,17 @@ mod tests {
         let file = read(&path).unwrap();
         assert_eq!(file.text, "# Title\n\n- one\n");
         assert_eq!(file.line_ending, LineEnding::Crlf);
-        write_atomic(&path, &format!("{}- two\n", file.text), file.line_ending, file.bom).unwrap();
-        assert_eq!(fs::read(&path).unwrap(), b"# Title\r\n\r\n- one\r\n- two\r\n");
+        write_atomic(
+            &path,
+            &format!("{}- two\n", file.text),
+            file.line_ending,
+            file.bom,
+        )
+        .unwrap();
+        assert_eq!(
+            fs::read(&path).unwrap(),
+            b"# Title\r\n\r\n- one\r\n- two\r\n"
+        );
     }
 
     #[test]
@@ -193,7 +202,10 @@ mod tests {
         fs::write(&path, b"secret\n").unwrap();
         fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
         write_atomic(&path, "still secret\n", LineEnding::Lf, false).unwrap();
-        assert_eq!(fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+        assert_eq!(
+            fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
     }
 
     #[test]

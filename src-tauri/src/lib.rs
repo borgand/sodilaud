@@ -992,7 +992,9 @@ pub fn run(context: tauri::Context<tauri::Wry>) {
             #[cfg(target_os = "macos")]
             tauri::RunEvent::Opened { urls } => files::open_from_system(
                 app,
-                urls.iter().filter_map(|url| url.to_file_path().ok()).collect(),
+                urls.iter()
+                    .filter_map(|url| url.to_file_path().ok())
+                    .collect(),
             ),
             // Tauri has unregistered the label by now, so a popup re-enabled while
             // the old one was being destroyed can be created.

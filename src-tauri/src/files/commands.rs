@@ -68,7 +68,10 @@ fn open_granted(files: &Files, path: &Path) -> Result<FileText, FileError> {
 
 /// Open File: the native dialog, then the chosen file.
 #[tauri::command]
-pub fn file_open_dialog(window: Window, files: State<'_, Files>) -> Result<Option<FileText>, FileError> {
+pub fn file_open_dialog(
+    window: Window,
+    files: State<'_, Files>,
+) -> Result<Option<FileText>, FileError> {
     require_main(&window)?;
     let Some(chosen) = rfd::FileDialog::new()
         .set_title("Open File")
@@ -115,7 +118,11 @@ pub fn file_save_as_dialog(
 
 /// Reopens a file the user opened before (from the recent list, or at start-up).
 #[tauri::command]
-pub fn file_read(window: Window, files: State<'_, Files>, path: String) -> Result<FileText, FileError> {
+pub fn file_read(
+    window: Window,
+    files: State<'_, Files>,
+    path: String,
+) -> Result<FileText, FileError> {
     require_main(&window)?;
     let path = files.require(&path)?;
     open_granted(&files, &path)
@@ -144,7 +151,11 @@ pub fn file_lists(window: Window, files: State<'_, Files>) -> Result<Lists, File
 /// The files open in the main window, in sidebar order. Only granted paths are
 /// kept, and they are the ones watched for outside edits.
 #[tauri::command]
-pub fn file_set_open(window: Window, files: State<'_, Files>, paths: Vec<String>) -> Result<(), FileError> {
+pub fn file_set_open(
+    window: Window,
+    files: State<'_, Files>,
+    paths: Vec<String>,
+) -> Result<(), FileError> {
     require_main(&window)?;
     let granted: Vec<PathBuf> = paths
         .iter()
@@ -161,13 +172,20 @@ pub fn file_set_open(window: Window, files: State<'_, Files>, paths: Vec<String>
 
 /// Files handed over from Finder or a launch argument, already granted.
 #[tauri::command]
-pub fn file_take_pending(window: Window, files: State<'_, Files>) -> Result<Vec<String>, FileError> {
+pub fn file_take_pending(
+    window: Window,
+    files: State<'_, Files>,
+) -> Result<Vec<String>, FileError> {
     require_main(&window)?;
     Ok(files.take_pending())
 }
 
 #[tauri::command]
-pub fn file_forget_recent(window: Window, files: State<'_, Files>, path: String) -> Result<(), FileError> {
+pub fn file_forget_recent(
+    window: Window,
+    files: State<'_, Files>,
+    path: String,
+) -> Result<(), FileError> {
     require_main(&window)?;
     files.update_lists(|lists| lists.forget_recent(&path));
     Ok(())
@@ -190,7 +208,9 @@ pub fn file_confirm_discard(window: Window, name: String) -> Result<DiscardChoic
     const CANCEL: &str = "Cancel";
     let choice = rfd::MessageDialog::new()
         .set_title("Save changes?")
-        .set_description(format!("{name} has not been saved. Save it before closing?"))
+        .set_description(format!(
+            "{name} has not been saved. Save it before closing?"
+        ))
         .set_buttons(rfd::MessageButtons::YesNoCancelCustom(
             SAVE.to_string(),
             DISCARD.to_string(),
