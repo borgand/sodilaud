@@ -4,7 +4,7 @@
 [![Latest release](https://img.shields.io/github/v/release/borgand/sodilaud?include_prereleases)](https://github.com/borgand/sodilaud/releases)
 [![License: GPL v3 or later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 
-Sodilaud is a lightweight, open-source, local-first desktop editor for notes, snippets, and Markdown. Your notes live in **Quick Notes**, a floating panel one hotkey away that stays on top while you work in other apps. It runs on macOS, Windows, and Linux with no account, cloud service, or telemetry. On macOS it also keeps an in-memory clipboard history one hotkey away.
+Sodilaud is a lightweight, open-source, local-first desktop editor for notes, snippets, and Markdown. Your notes live in **Quick Notes**, a floating panel one hotkey away that stays on top while you work in other apps, and the main window edits Markdown and text files on disk. It runs on macOS, Windows, and Linux with no account, cloud service, or telemetry. On macOS it also keeps an in-memory clipboard history one hotkey away.
 
 [Visit the Sodilaud website](https://borgand.github.io/sodilaud/) for an OS-aware download and SHA-256 checksums.
 
@@ -35,6 +35,16 @@ New in v0.10: press `⌘⇧N` (`Ctrl+Shift+N` on Windows and Linux) in any app t
 
 The main Sodilaud window opens on a start page that explains both halves of the app and links the Quick Notes Welcome note. Change the hotkey in **Sodilaud menu → Quick Notes**. See [Quick Notes](docs/quick-notes.md) for the details.
 
+## Markdown files
+
+New in v0.10: the main window edits `.md`, `.markdown`, and `.txt` files on disk with the same Live, Source, and Reading editor. Open one with `Cmd/Ctrl+O`, from the start page's Recent list, or from Finder with **Open With → Sodilaud**. Changes save automatically; new files are saved with `Cmd/Ctrl+S`.
+
+- **Your file, unchanged.** Saves are atomic and keep the file's permissions, byte-order mark, and CRLF line endings. Sodilaud never reformats a file.
+- **Outside edits handled.** A file changed by another app reloads if you have not edited it, and asks **Reload** or **Keep mine** if you have.
+- **Scoped access.** The main window can reach only files you chose, and agents cannot see files at all.
+
+See [editing files](docs/files.md) for the details and limits.
+
 ## Clipboard history (macOS)
 
 New in v0.8: press `⌘⇧V` in any app to open your recent text copies, newest first. Pick one with `1`-`9`/`0`, the arrow keys, `j`/`k`, or the mouse to put it back on the clipboard. Press `⌘↵` to paste it into the app you came from, or turn on auto-paste to make every pick paste.
@@ -53,6 +63,7 @@ Clipboard history is off by default. Turn it on in **Sodilaud menu → Clipboard
 ## Features
 
 - Quick Notes: a floating, always-on-top notes panel on a global hotkey that stays open while you work in other apps
+- A Markdown file editor with autosave, recent files, Finder "Open With", and outside-edit detection
 - Clipboard history on macOS: press `⌘⇧V` in any app to pick from your recent copies, with secrets masked, entries kept in memory only, and automatic expiry
 - Optional local MCP agent access with five read tools, eight individually enabled write tools, and a live listening indicator
 - Multiple notes with automatic saving, titles derived from the first line, and quick creation by double-clicking empty sidebar space
@@ -135,6 +146,9 @@ The app displays `Cmd` on macOS and `Ctrl` on Windows or Linux.
 | `⌘⇧N` (`Ctrl + Shift + N` off macOS, configurable) | Show or hide Quick Notes from any app |
 | `Cmd/Ctrl + W` (Quick Notes) | Hide Quick Notes |
 | `Cmd/Ctrl + N` (Quick Notes) | Create a note |
+| `Cmd/Ctrl + N` / `Cmd/Ctrl + O` (main window) | Create or open a file |
+| `Cmd/Ctrl + S` / `Cmd/Ctrl + Shift + S` (main window) | Save, or Save As |
+| `Cmd/Ctrl + W` (main window) | Close the active file |
 | `⌘⇧V` (macOS, configurable) | Open the clipboard history popup |
 | `⌘↵` (macOS, clipboard popup) | Paste the focused entry into the previous app |
 | `Ctrl + Cmd + S` (`Ctrl + Alt + S` off macOS) | Toggle the sidebar |

@@ -47,7 +47,11 @@ Later: Vim motions (`@replit/codemirror-vim`), not in the first version.
 
 ## 2. Rust-owned document model
 
-Status: designed
+Status: designed, no longer a prerequisite for Quick Notes
+
+Since 0.10 the Quick Notes panel is the only window that edits notes, so a note has one writer
+besides agents, and Quick Notes shipped on the window-owned model. This item is still needed
+for agent co-editing (item 5) and for three-way merges of files.
 
 Move the workspace collection (notes, folders, trash, order, pins) from `main.js` into a Rust
 document registry. Every client sends versioned changes instead of full-text snapshots.
@@ -62,25 +66,37 @@ Depends on: 1. Unblocks everything below.
 
 ## 3. Quick Notes popover and agent push
 
-Status: planned, priority
+Status: panel done in 0.10; agent push not started
 
-A popover window, modeled on the clipboard popup (warm panel, non-activating, hotkey), for
-glancing at and copying from short-lived notes. An agent can push a note there: "complete plan
-5, test it, then put build instructions for me in a Sodilaud quick note."
+Design: [`docs/superpowers/specs/2026-09-28-quick-notes-and-files-design.md`](docs/superpowers/specs/2026-09-28-quick-notes-and-files-design.md)
 
-- v1: rendered Markdown, read-only, with a copy button per code block, plus keep, delete and
-  "open in main window".
-- v2: editable in place (a compact CM6 surface).
-- New MCP tool `push_quick_note`.
+Decided 2026-09-28: Quick Notes is the whole notes collection, not a subset. The panel carries
+today's full notes UI and is editable from the start; the main window became a file editor.
+What remains of this item is agent push: an agent puts a note there ("complete plan 5, test
+it, then put build instructions for me in a Sodilaud quick note").
 
-Depends on: 2.
-Open: Quick Notes scope (reserved folder, separate workspace, or tag). Whether
-`push_quick_note` is on by default, given that write tools reset to off at every start
+- New MCP tool `push_quick_note`, creating a note and optionally showing the panel.
+
+Depends on: nothing (the panel shipped without item 2).
+Open: whether `push_quick_note` is on by default, given that write tools reset to off at every start
 (needs a security review).
 
 ## 4. External files and folders
 
-Status: planned
+Status: files done in 0.10; folders, merge and the rest not started
+
+Shipped: New, Open, Save As, autosave, open and recent lists across restarts, outside-edit
+detection (reload a clean file, Reload / Keep mine for an edited one), `.md`, `.markdown` and
+`.txt`, and Finder "Open With". The file list lives in the main window's sidebar, not in
+`doc-*` windows. Still to do, in this order:
+
+- Open Folder and the Folders section below
+- 3-way merge of outside edits (needs item 2)
+- `.csv` and `.tsv`
+- MCP `open_document` and drafts
+- Find and replace, split view and compare for files
+
+The original plan follows.
 
 Open arbitrary `.md` files and folders outside the workspace, as a Typora replacement.
 Autosave (atomic write) with a watcher that 3-way merges external changes. Files are never
@@ -110,9 +126,7 @@ Sidebar model (decided 2026-09-27): file first, folder on demand, like Typora.
   the folder. Also rejected: files only, with siblings reachable only through Open….
 
 Depends on: 1, 2.
-Open: whether open files and folders live in the main window's sidebar (leaning this way: one
-place, and the popover is already the lightweight surface) or in separate windows per folder
-root. The spec currently assumes separate `doc-*` windows.
+Decided 2026-09-28: open files and folders live in the main window's sidebar.
 
 ## 5. Agent co-editing with comments
 

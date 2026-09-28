@@ -212,7 +212,8 @@ copy is stale by nature, and version-based merging handles that.
 
 1. Comment storage for external files: Sodilaud app data keyed by path (default, writes nothing
    into your repos) or a sidecar file next to the document.
-2. Quick Notes scope: a reserved folder in the main workspace, a separate workspace, or a tag.
+2. Quick Notes scope: resolved 2026-09-28. Quick Notes is the whole notes collection, and the
+   main window edits files. See `2026-09-28-quick-notes-and-files-design.md`.
 3. MCP permissions for pushes: write tools are reset to off at every start, which blocks
    "put build instructions in a quick note" unless you re-enable them each session. Options:
    `push_quick_note` on by default because it can only create in the Quick Notes scope, or
