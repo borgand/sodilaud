@@ -10,7 +10,6 @@ import { readFile } from "node:fs/promises";
 import { JSDOM } from "jsdom";
 import * as Diff from "diff";
 import { polyfillLayout } from "./cm-dom.js";
-import { EditorView } from "../../src/vendor/codemirror.js";
 
 export const settle = (ms = 50) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -75,6 +74,10 @@ export async function bootApp({ storage = {}, handlers = {}, instance = 1, windo
   });
 
   beforeBoot?.(dom);
+  // CodeMirror reads navigator.platform once, when its module first loads, to
+  // pick Cmd or Ctrl for Mod. Load it only after the booted navigator is in
+  // place, or it reports the host OS instead of the `platform` asked for.
+  const { EditorView } = await import("../../src/vendor/codemirror.js");
   await import(`${new URL("../../src/main.js", import.meta.url).href}?boot=${instance}`);
   await settle();
 
