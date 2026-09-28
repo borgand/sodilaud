@@ -17,7 +17,7 @@ test("editor and sidebar view settings are adjustable and persistent", async () 
       sodilaud_notes: [{
         id: "preview-note",
         title: "Preview note",
-        content: "First detail\nSecond detail\nThird detail",
+        content: "# First detail\nSecond detail\nThird detail",
         updatedAt: 1,
         isTitleLocked: true
       }]
@@ -55,7 +55,7 @@ test("editor and sidebar view settings are adjustable and persistent", async () 
   assert.equal(root.style.getPropertyValue("zoom"), "", "the application UI is not scaled");
   assert.match(
     styles,
-    /\.editor-textarea,\s*\.editor-backdrop,\s*\.editor-line-numbers\s*\{[^}]*font-size:\s*var\(--editor-font-size\)/s
+    /\.editor-host \.cm-editor \.cm-content\s*\{[^}]*font-size:\s*var\(--editor-font-size\)[^}]*line-height:\s*var\(--editor-line-height\)/s
   );
   assert.equal(root.style.getPropertyValue("--editor-font-size"), "1.2rem");
   assert.equal(root.style.getPropertyValue("--editor-line-height"), "1.8");
@@ -65,13 +65,16 @@ test("editor and sidebar view settings are adjustable and persistent", async () 
   assert.equal(document.getElementById("preview-lines-value").textContent, "2");
   assert.equal(document.getElementById("syntax-highlighting-toggle").textContent, "On");
   assert.equal(document.getElementById("syntax-highlighting-toggle").getAttribute("aria-pressed"), "true");
-  assert.equal(root.classList.contains("syntax-highlighting-enabled"), true);
+  assert.ok(document.querySelector("#editor-host .cm-content .syntax-heading"), "headings are highlighted");
   assert.equal(document.getElementById("line-numbers-toggle").textContent, "On");
   assert.equal(document.getElementById("line-numbers-toggle").getAttribute("aria-pressed"), "true");
   assert.equal(root.classList.contains("editor-line-numbers-enabled"), true);
+  assert.ok(document.querySelector("#editor-host .cm-lineNumbers"));
+  assert.ok(document.querySelector("#secondary-editor-host .cm-lineNumbers"));
   assert.deepEqual(
-    [...document.querySelectorAll("#editor-line-numbers .editor-line-number-row")]
-      .map(row => row.dataset.lineNumber),
+    [...document.querySelectorAll("#editor-host .cm-lineNumbers .cm-gutterElement")]
+      .filter(element => element.style.visibility !== "hidden")
+      .map(element => element.textContent),
     ["1", "2", "3"]
   );
   assert.equal(document.querySelector(".note-item-snippet").textContent, "First detail\nSecond detail");
@@ -92,10 +95,12 @@ test("editor and sidebar view settings are adjustable and persistent", async () 
   assert.equal(app.storage.getItem("sodilaud_note_preview_lines"), "3");
   assert.equal(app.storage.getItem("sodilaud_syntax_highlighting"), "false");
   assert.equal(app.storage.getItem("sodilaud_editor_line_numbers"), "false");
-  assert.equal(root.classList.contains("syntax-highlighting-enabled"), false);
   assert.equal(document.getElementById("syntax-highlighting-toggle").textContent, "Off");
   assert.equal(document.getElementById("line-numbers-toggle").textContent, "Off");
   assert.equal(root.classList.contains("editor-line-numbers-enabled"), false);
+  assert.equal(document.querySelector("#editor-host .cm-lineNumbers"), null);
+  assert.equal(document.querySelector("#secondary-editor-host .cm-lineNumbers"), null);
+  assert.equal(document.querySelector("#editor-host .cm-content .syntax-heading"), null);
   assert.equal(document.querySelector(".note-item-snippet").textContent, "First detail\nSecond detail\nThird detail");
 
   for (let index = 0; index < 12; index += 1) {

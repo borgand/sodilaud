@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { bootApp, settle } from "./helpers/app-harness.js";
+import { undo } from "../src/vendor/codemirror.js";
 
 test("appending uses live revisions, preserves selection, and retries failed saves without duplication", async () => {
   const seed = { id: "n", title: "Original", content: "Original text", updatedAt: 1, isTitleLocked: true, folderId: null };
@@ -27,7 +28,9 @@ test("appending uses live revisions, preserves selection, and retries failed sav
       }
     }
   });
-  const editor = document.getElementById("editor-textarea");
+  const view = app.editor();
+  const text = () => view.state.doc.toString();
+  const typeAtEnd = insert => view.dispatch({ changes: { from: view.state.doc.length, insert }, userEvent: "input.type" });
   const snapshot = () => app.invocations.findLast(i => i.command === "update_mcp_snapshot").args;
   let ticket = 0;
   const send = async args => {
@@ -46,27 +49,34 @@ test("appending uses live revisions, preserves selection, and retries failed sav
   app.click("mcp-permission-append_to_note");
   await settle();
   assert.equal(document.getElementById("mcp-permissions-summary").textContent, "5 read · 3 write functions enabled");
-  editor.focus();
-  editor.setSelectionRange(2, 5);
+  view.focus();
+  view.dispatch({ selection: { anchor: 2, head: 5 } });
   const result = await send(args);
   assert.equal(result.ok, true);
-  assert.equal(editor.value, "Original text\n\nAppended 📝");
-  assert.equal(document.activeElement, editor);
-  assert.equal(editor.selectionStart, 2);
-  assert.equal(editor.selectionEnd, 5);
+  assert.equal(text(), "Original text\n\nAppended 📝");
+  assert.equal(document.activeElement, view.contentDOM);
+  assert.equal(view.state.selection.main.anchor, 2);
+  assert.equal(view.state.selection.main.head, 5);
   assert.equal(document.getElementById("note-title").value, "Original");
-  assert.equal(app.read("sodilaud_notes")[0].content, editor.value);
+  assert.equal(app.read("sodilaud_notes")[0].content, text());
   assert.equal(snapshot().noteRevisions.n, result.revision);
   assert.equal((await send(args)).revision, result.revision);
-  assert.equal(editor.value.match(/Appended/g).length, 1);
+  assert.equal(text().match(/Appended/g).length, 1);
+
+  view.dispatch({ changes: { from: 0, insert: "Typed " }, userEvent: "input.type" });
+  await settle(100);
+  const afterTyping = await send({ ...args, requestId: "after-typing", expectedRevision: app.invocations.findLast(i => i.command === "update_mcp_note").args.revision, content: "\nAgent line" });
+  assert.equal(afterTyping.ok, true, afterTyping.error);
+  assert.equal(text(), "Typed Original text\n\nAppended 📝\nAgent line");
+  assert.equal(undo(view), true);
+  assert.equal(text(), "Original text\n\nAppended 📝\nAgent line", "undo removes the user edit and keeps the agent's text");
 
   // Conflict against typing before its 50ms MCP snapshot debounce has fired.
-  editor.value += "\nUnsaved typing";
-  editor.dispatchEvent(new app.dom.window.Event("input"));
+  typeAtEnd("\nUnsaved typing");
   const conflict = await send({ ...args, requestId: "stale", expectedRevision: result.revision });
   assert.equal(conflict.ok, false);
   assert.match(conflict.error, /Revision conflict/);
-  assert.equal(editor.value.match(/Appended/g).length, 1);
+  assert.equal(text().match(/Appended/g).length, 1);
 
   app.click("db-connect-btn");
   await settle(100);
@@ -74,23 +84,22 @@ test("appending uses live revisions, preserves selection, and retries failed sav
   hold = {};
   const pending = send(dbArgs);
   await settle(20);
-  assert.equal(editor.value, "Original text\nDatabase append", "append is visible while saving");
-  editor.value += "\nTyped during write";
-  editor.dispatchEvent(new app.dom.window.Event("input"));
+  assert.equal(text(), "Original text\nDatabase append", "append is visible while saving");
+  typeAtEnd("\nTyped during write");
   const release = hold.release;
   hold = null;
   release();
   assert.equal((await pending).ok, true);
   await settle(600);
   assert.equal(disk.notes[0].content, "Original text\nDatabase append\nTyped during write");
-  assert.equal(editor.value, disk.notes[0].content);
+  assert.equal(text(), disk.notes[0].content);
   await send(dbArgs); // refresh current full snapshot and verify original retry
   const failureArgs = { ...dbArgs, requestId: "failed", expectedRevision: snapshot().noteRevisions.n, content: "\nRetained on failure" };
   fail = true;
   const failed = await send(failureArgs);
   assert.equal(failed.ok, false);
   assert.match(failed.error, /applied in the editor but save failed/);
-  assert.ok(editor.value.endsWith("\nRetained on failure"));
+  assert.ok(text().endsWith("\nRetained on failure"));
   assert.ok(!disk.notes[0].content.includes("Retained on failure"));
   assert.equal(document.getElementById("save-status").textContent, "Save failed");
   fail = false;
@@ -104,7 +113,7 @@ test("appending uses live revisions, preserves selection, and retries failed sav
   assert.equal((await send(failureArgs)).ok, false);
   app.click("db-connect-btn");
   await settle(100);
-  assert.equal(editor.value, disk.notes[0].content);
+  assert.equal(text(), disk.notes[0].content);
   app.click("mcp-permission-append_to_note");
   await settle();
   assert.equal(document.getElementById("mcp-permissions-summary").textContent, "5 read · 2 write functions enabled");

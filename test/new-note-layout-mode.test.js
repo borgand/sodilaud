@@ -17,44 +17,44 @@ const app = await bootApp({
 });
 
 const appContainer = () => document.getElementById("app");
-const mode = () => (
-  appContainer().classList.contains("mode-preview") ? "preview"
-    : appContainer().classList.contains("mode-split") ? "split"
-      : "edit"
-);
+const mode = () => ["live", "source", "reading"]
+  .filter(name => appContainer().classList.contains(`mode-${name}`))
+  .join(" ");
 
-test("a blank scratchpad opens in edit mode instead of an empty preview", () => {
-  assert.equal(mode(), "preview", "the remembered mode is restored on launch");
+test("a blank scratchpad opens in live mode instead of an empty reading view", () => {
+  assert.equal(mode(), "reading", "the remembered legacy preview mode is restored as reading");
 
   document.getElementById("new-note-btn").click();
 
-  assert.equal(mode(), "edit");
-  assert.equal(document.getElementById("mode-edit").getAttribute("aria-pressed"), "true");
-  assert.equal(document.getElementById("mode-preview").getAttribute("aria-pressed"), "false");
+  assert.equal(mode(), "live");
+  assert.equal(document.getElementById("mode-live").getAttribute("aria-pressed"), "true");
+  assert.equal(document.getElementById("mode-reading").getAttribute("aria-pressed"), "false");
   // The buttons and the remembered mode have to agree, or the next launch
   // reopens in a mode the toolbar was not showing.
-  assert.equal(app.storage.getItem("sodilaud_layout_mode"), "edit");
+  assert.equal(app.storage.getItem("sodilaud_layout_mode"), "live");
 });
 
-// Split still shows an editor, so a new scratchpad there is already typable and
+// Source still shows an editor, so a new scratchpad there is already typable and
 // switching would discard a layout the user picked deliberately.
-test("split mode is left alone", () => {
-  document.getElementById("mode-split").click();
+test("source mode is left alone", () => {
+  document.getElementById("mode-source").click();
   document.getElementById("new-note-btn").click();
 
-  assert.equal(mode(), "split");
-  assert.equal(app.storage.getItem("sodilaud_layout_mode"), "split");
+  assert.equal(mode(), "source");
+  assert.equal(app.editor().dom.classList.contains("cm-mode-source"), true);
+  assert.equal(app.editor("secondary").dom.classList.contains("cm-mode-source"), true);
+  assert.equal(app.storage.getItem("sodilaud_layout_mode"), "source");
 });
 
-// An import arrives with Markdown worth rendering, so preview is the right view.
-test("a scratchpad created with content keeps preview", async () => {
-  document.getElementById("mode-preview").click();
-  assert.equal(mode(), "preview");
+// An import arrives with Markdown worth rendering, so reading is the right view.
+test("a scratchpad created with content keeps reading mode", async () => {
+  document.getElementById("mode-reading").click();
+  assert.equal(mode(), "reading");
 
   document.getElementById("import-btn").click();
   await app.settle();
 
-  assert.equal(document.getElementById("editor-textarea").value, "# Imported heading");
-  assert.equal(mode(), "preview");
-  assert.equal(app.storage.getItem("sodilaud_layout_mode"), "preview");
+  assert.equal(app.editorText(), "# Imported heading");
+  assert.equal(mode(), "reading");
+  assert.equal(app.storage.getItem("sodilaud_layout_mode"), "reading");
 });

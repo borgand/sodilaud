@@ -4,8 +4,8 @@
   "version": "0.8.2",
   "identifier": "io.github.borgand.sodilaud.dev",
   "build": {
-    "beforeBuildCommand": "npm run vendor:marked",
-    "beforeDevCommand": "npm run vendor:marked",
+    "beforeBuildCommand": "npm run vendor:marked && npm run vendor:codemirror",
+    "beforeDevCommand": "npm run vendor:marked && npm run vendor:codemirror",
     "frontendDist": "../src"
   },
   "app": {

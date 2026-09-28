@@ -154,7 +154,7 @@ test("a global shortcut keydown does not reach the app while the settings modal 
   app.click("clipboard-settings-btn");
   const sidebar = document.getElementById("sidebar");
   assert.equal(sidebar.classList.contains("collapsed"), false);
-  document.dispatchEvent(new KeyboardEvent("keydown", { key: "b", metaKey: true, bubbles: true }));
+  document.dispatchEvent(new KeyboardEvent("keydown", { key: "s", code: "KeyS", ctrlKey: true, metaKey: true, bubbles: true }));
   await settle();
   assert.equal(sidebar.classList.contains("collapsed"), false);
 });

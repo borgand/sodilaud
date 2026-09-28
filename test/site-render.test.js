@@ -58,7 +58,7 @@ test("the landing page describes current Markdown assistance", () => {
   assert.match(markdownFeature.textContent, /smart list and table helpers/);
   assert.match(markdownFeature.textContent, /right-click starter templates/);
   assert.match(markdownFeature.textContent, /optional line numbers/);
-  assert.match(markdownFeature.textContent, /language-aware code previews/);
+  assert.match(markdownFeature.textContent, /language-aware code highlighting in Reading mode/);
 });
 
 test("the landing page features clipboard history with its privacy promises", () => {

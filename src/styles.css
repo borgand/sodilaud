@@ -737,6 +737,7 @@ body {
   align-items: center;
   gap: 12px;
   flex: 1;
+  min-width: 226px;
   max-width: 40%;
 }
 
@@ -762,8 +763,165 @@ body {
   border-bottom-color: var(--accent-color);
 }
 
+.topbar-left .note-title-input {
+  min-width: 0;
+}
+
+.topbar-center {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 1 auto;
+  min-width: 0;
+  margin: 0 8px;
+}
+
+/* Shrinks before the title does; main.js moves buttons that do not fit into
+   the More formatting menu, and overflow: hidden only covers a resize in flight. */
+.format-controls {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  column-gap: 1px;
+  flex: 0 1 auto;
+  /* One button plus padding and border, so the More button always stays reachable. */
+  min-width: 36px;
+  overflow: hidden;
+  background-color: var(--bg-input);
+  padding: 3px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+}
+
+.format-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  min-width: 28px;
+  height: 30px;
+  padding: 0 4px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.format-btn[hidden],
+.format-separator[hidden] {
+  display: none;
+}
+
+.format-btn:hover:not(:disabled) {
+  background-color: var(--bg-sidebar);
+  color: var(--text-primary);
+}
+
+.format-btn:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.format-btn svg {
+  width: 17px;
+  height: 17px;
+}
+
+.format-glyph {
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.format-glyph-bold {
+  font-weight: 700;
+}
+
+.format-glyph-italic {
+  font-family: Georgia, "Times New Roman", serif;
+  font-style: italic;
+  font-weight: 600;
+}
+
+.format-glyph-strike {
+  text-decoration: line-through;
+}
+
+.format-heading-btn {
+  gap: 1px;
+}
+
+.format-heading-btn .format-caret {
+  width: 11px;
+  height: 11px;
+}
+
+.format-separator {
+  flex-shrink: 0;
+  width: 1px;
+  height: 18px;
+  margin: 0 4px;
+  background-color: var(--border-color);
+}
+
+.format-menu {
+  position: absolute;
+  top: 100%;
+  margin-top: 6px;
+  max-height: calc(100vh - var(--topbar-height) - 16px);
+  overflow-y: auto;
+  min-width: 170px;
+  padding: 4px;
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  background-color: var(--dropdown-bg);
+  border-radius: 8px;
+  box-shadow: var(--dropdown-shadow);
+  z-index: 100;
+}
+
+.format-menu[hidden] {
+  display: none;
+}
+
+.format-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  min-height: 32px;
+  padding: 4px 12px;
+  white-space: nowrap;
+}
+
+.format-menu-shortcut {
+  color: var(--text-muted);
+  font-size: 0.76rem;
+}
+
+.format-heading-item {
+  display: block;
+  min-height: 32px;
+  padding: 4px 12px;
+}
+
+.format-heading-sample {
+  font-weight: 600;
+}
+
+.format-heading-sample-1 { font-size: 1.3rem; }
+.format-heading-sample-2 { font-size: 1.15rem; }
+.format-heading-sample-3 { font-size: 1.02rem; }
+.format-heading-sample-4 { font-size: 0.92rem; }
+.format-heading-sample-5 { font-size: 0.85rem; }
+.format-heading-sample-6 { font-size: 0.8rem; color: var(--text-secondary); }
+
 .layout-controls {
   display: flex;
+  flex-shrink: 0;
   background-color: var(--bg-input);
   padding: 3px;
   border-radius: 8px;
@@ -776,11 +934,19 @@ body {
   font-family: var(--font-sans);
   font-size: 0.85rem;
   font-weight: 500;
-  padding: 6px 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 9px;
   border-radius: 6px;
   cursor: pointer;
   color: var(--text-secondary);
   transition: background-color 0.15s, color 0.15s;
+}
+
+.layout-btn svg {
+  width: 17px;
+  height: 17px;
 }
 
 .layout-btn:hover {
@@ -1098,9 +1264,8 @@ button.view-setting-value:hover {
   flex: 1 1 auto;
 }
 
-/* Force disable markdown preview and dividers in Dual-Note Split Mode */
-.panes-container.dual-split-mode .preview-wrapper,
-.panes-container.dual-split-mode .editor-divider {
+/* Force disable markdown preview in Dual-Note Split Mode */
+.panes-container.dual-split-mode .preview-wrapper {
   display: none !important;
 }
 
@@ -1110,6 +1275,12 @@ button.view-setting-value:hover {
 
 .app-container.dual-note-active .layout-controls {
   display: none;
+}
+
+/* The title lives in the pane header in split view, so the top bar only keeps the sidebar button. */
+.app-container.dual-note-active .topbar-left {
+  flex: 0 0 auto;
+  min-width: 0;
 }
 
 /* Split Drop Overlay */
@@ -1223,7 +1394,6 @@ button.view-setting-value:hover {
 }
 
 .editor-wrapper {
-  --editor-line-number-gutter: calc(1ch + 1.5em);
   flex: 1;
   height: 100%;
   overflow: hidden;
@@ -1240,214 +1410,134 @@ button.view-setting-value:hover {
   flex-direction: column;
 }
 
-/* Editor Specifics */
-.editor-textarea,
-.editor-backdrop,
-.editor-line-numbers {
+.editor-host {
   position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
+  inset: 0;
+}
+
+/* CodeMirror injects its base theme after this sheet, so these rules carry an
+   extra class to win at equal specificity. */
+.editor-host .cm-editor {
   height: 100%;
+  background: var(--editor-bg);
+  color: var(--editor-text);
+}
+
+.editor-host .cm-editor.cm-focused {
+  outline: none;
+}
+
+.editor-host .cm-editor .cm-scroller {
+  scrollbar-gutter: stable;
+  line-height: var(--editor-line-height);
+}
+
+.editor-host .cm-editor .cm-content {
   padding: 24px;
-  font-family: var(--font-mono);
   font-size: var(--editor-font-size);
   line-height: var(--editor-line-height);
-  tab-size: 4;
-  border: none;
-  box-sizing: border-box;
-  margin: 0;
-  white-space: pre-wrap;
-  word-wrap: break-word;
-  /* Keep both text layers the same width when wrapping creates a scrollbar. */
-  scrollbar-gutter: stable;
-}
-
-.editor-line-numbers {
-  display: none;
-  color: transparent;
-  overflow-y: hidden;
-  pointer-events: none;
-  user-select: none;
-  z-index: 3;
-}
-
-.editor-line-numbers-enabled .editor-line-numbers {
-  display: block;
-}
-
-/* Compare reuses the aligned gutter mirror as a marker rail without exposing
-   line numbers or changing editor padding when the line-number setting is off. */
-.app-container.compare-mode .editor-line-numbers {
-  display: block;
-}
-
-html:not(.editor-line-numbers-enabled) .app-container.compare-mode .editor-line-number-row::before {
-  display: none;
-}
-
-.editor-line-numbers-enabled .editor-wrapper::before {
-  content: "";
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: var(--editor-line-number-gutter);
-  background-color: color-mix(in srgb, var(--bg-input) 55%, var(--editor-bg));
-  border-right: 1px solid color-mix(in srgb, var(--border-color) 65%, transparent);
-  box-sizing: border-box;
-  pointer-events: none;
-  z-index: 2;
-}
-
-.editor-line-numbers-enabled .editor-textarea,
-.editor-line-numbers-enabled .editor-backdrop,
-.editor-line-numbers-enabled .editor-line-numbers {
-  padding-left: calc(24px + var(--editor-line-number-gutter));
-}
-
-.editor-line-number-row {
-  position: relative;
-  min-height: 1lh;
-}
-
-.editor-line-number-row::before {
-  content: attr(data-line-number);
-  position: absolute;
-  top: 0;
-  left: calc(0px - var(--editor-line-number-gutter) - 24px);
-  width: calc(var(--editor-line-number-gutter) - 0.7em);
-  color: var(--text-muted);
-  text-align: right;
-  opacity: 0.42;
-}
-
-.editor-line-number-row.editor-line-number-diff-added::after,
-.editor-line-number-row.editor-line-number-diff-removed::after {
-  content: "";
-  position: absolute;
-  top: 0.15lh;
-  bottom: 0.15lh;
-  left: -20px;
-  width: 3px;
-  border-radius: 2px;
-}
-
-.editor-line-numbers-enabled .editor-line-number-row.editor-line-number-diff-added::after,
-.editor-line-numbers-enabled .editor-line-number-row.editor-line-number-diff-removed::after {
-  left: calc(0px - var(--editor-line-number-gutter) - 20px);
-}
-
-.editor-line-number-row.editor-line-number-diff-added::after {
-  background-color: #22a559;
-}
-
-.editor-line-number-row.editor-line-number-diff-removed::after {
-  background-color: #e05263;
-}
-
-.editor-textarea {
-  background: transparent;
-  color: var(--editor-text);
-  z-index: 2;
-  outline: none;
-  resize: none;
-  overflow-y: auto;
-}
-
-.editor-backdrop {
-  background-color: var(--editor-bg);
-  color: transparent; /* hide duplicate text, show mark highlights only */
-  z-index: 1;
-  overflow-y: hidden; /* scroll synced via JS */
-  pointer-events: none; /* passes all pointer interactions to textarea */
-}
-
-.editor-backdrop mark {
-  background-color: rgba(139, 92, 246, 0.3); /* Purple for general matches */
-  color: transparent;
-  border-radius: 2px;
-}
-
-.editor-backdrop mark.active-match {
-  background-color: rgba(234, 179, 8, 0.5) !important; /* Yellow for active match */
-}
-
-.editor-textarea::selection {
-  background-color: rgba(139, 92, 246, 0.35) !important;
-}
-
-/* The textarea remains the editable surface; its color-only backdrop supplies
-   syntax colors without changing selection, caret, wrapping, or undo behavior. */
-.syntax-highlighting-enabled .editor-textarea {
-  color: transparent;
   caret-color: var(--editor-text);
 }
 
-.syntax-highlighting-enabled .editor-textarea::placeholder {
+.editor-host .cm-editor .cm-gutters {
+  font-family: var(--font-mono);
+  font-size: var(--editor-font-size);
+  line-height: var(--editor-line-height);
+  background-color: color-mix(in srgb, var(--bg-input) 55%, var(--editor-bg));
+  border-right: 1px solid color-mix(in srgb, var(--border-color) 65%, transparent);
   color: var(--text-muted);
 }
 
-.syntax-highlighting-enabled .editor-backdrop {
-  color: var(--editor-text);
+.editor-host .cm-editor .cm-gutterElement {
+  padding: 0 8px 0 12px;
 }
 
-.syntax-highlighting-enabled .editor-backdrop mark {
-  color: inherit;
+.editor-host .cm-editor .cm-placeholder {
+  color: var(--text-muted);
 }
 
-.editor-backdrop .syntax-punctuation {
+/* CodeMirror's light base theme paints the focused selection with a
+   six-class selector; the host ids outrank it in both states. */
+:is(#editor-host, #secondary-editor-host) .cm-selectionBackground {
+  background-color: color-mix(in srgb, var(--accent-color) 35%, transparent);
+}
+
+.editor-host .cm-editor .cm-cursor {
+  border-left-color: var(--editor-text);
+}
+
+/* Compare keeps the gutter as a change rail while line numbers are off. The
+   digits collapse (the gutter sizes itself from them) so only a narrow rail
+   shows and the text barely moves when compare turns on. */
+html:not(.editor-line-numbers-enabled) .app-container.compare-mode .editor-host .cm-editor .cm-lineNumbers .cm-gutterElement {
+  min-width: 0;
+  padding: 0 0 0 4px;
+  font-size: 0;
+  color: transparent;
+}
+
+.editor-host .cm-editor .cm-gutterElement.cm-diff-line-added {
+  box-shadow: inset 3px 0 #22a559;
+}
+
+.editor-host .cm-editor .cm-gutterElement.cm-diff-line-removed {
+  box-shadow: inset 3px 0 #e05263;
+}
+
+.cm-editor .cm-find-match {
+  background-color: rgba(139, 92, 246, 0.3);
+  border-radius: 2px;
+}
+
+.cm-editor .cm-find-match.cm-find-active {
+  background-color: rgba(234, 179, 8, 0.5);
+}
+
+.cm-editor .syntax-punctuation {
   color: var(--syntax-muted);
 }
 
-.editor-backdrop .syntax-heading {
+.cm-editor .syntax-heading {
   color: var(--accent-color);
 }
 
-.editor-backdrop .syntax-emphasis {
+.cm-editor .syntax-emphasis {
   color: var(--accent-hover);
 }
 
-.editor-backdrop .syntax-link {
+.cm-editor .syntax-link {
   color: var(--accent-hover);
 }
 
-.editor-backdrop .syntax-code,
-.editor-backdrop .syntax-code-block {
+.cm-editor .syntax-code {
   color: var(--syntax-code);
 }
 
-.editor-backdrop .diff-line-added,
-.editor-backdrop .diff-line-removed,
-.editor-backdrop .diff-text-added,
-.editor-backdrop .diff-text-removed {
+.cm-editor .diff-line-added,
+.cm-editor .diff-line-removed,
+.cm-editor .diff-text-added,
+.cm-editor .diff-text-removed {
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
   border-radius: 2px;
 }
 
-.editor-backdrop .diff-line-added {
+.cm-editor .diff-line-added {
   background-color: color-mix(in srgb, #22a559 14%, transparent);
 }
 
-.editor-backdrop .diff-line-removed {
+.cm-editor .diff-line-removed {
   background-color: color-mix(in srgb, #e05263 14%, transparent);
 }
 
-.editor-backdrop .diff-text-added {
+.cm-editor .diff-text-added {
   background-color: color-mix(in srgb, #22a559 30%, transparent);
   box-shadow: inset 0 -1px color-mix(in srgb, #22a559 70%, transparent);
 }
 
-.editor-backdrop .diff-text-removed {
+.cm-editor .diff-text-removed {
   background-color: color-mix(in srgb, #e05263 30%, transparent);
   box-shadow: inset 0 -1px color-mix(in srgb, #e05263 70%, transparent);
-}
-
-/* Divider block between edit and preview (visible in split) */
-.editor-divider {
-  width: 1px;
-  height: 100%;
-  background-color: var(--border-color);
-  display: none;
 }
 
 /* Markdown Preview Area */
@@ -1639,21 +1729,12 @@ html:not(.editor-line-numbers-enabled) .app-container.compare-mode .editor-line-
    App Layout Adjustments (Splits, Previews, Focus)
    ---------------------------------------------------- */
 
-/* Split Screen Layout overrides */
-.app-container.mode-split .editor-divider {
-  display: block;
-}
-
-.app-container.mode-split .preview-wrapper {
-  display: flex;
-}
-
-/* Preview Only Layout overrides */
-.app-container.mode-preview .editor-wrapper {
+/* Reading mode shows the rendered preview instead of the editor */
+.app-container.mode-reading .editor-wrapper {
   display: none;
 }
 
-.app-container.mode-preview .preview-wrapper {
+.app-container.mode-reading .preview-wrapper {
   display: flex;
   border-left: none;
 }
@@ -3011,6 +3092,7 @@ kbd {
 }
 
 :root[data-theme-style="windows-classic"] .layout-controls,
+:root[data-theme-style="windows-classic"] .format-controls,
 :root[data-theme-style="windows-classic"] .topbar .icon-btn,
 :root[data-theme-style="windows-classic"] .find-btn,
 :root[data-theme-style="windows-classic"] .find-action-btn,
@@ -3023,7 +3105,8 @@ kbd {
   box-shadow: none;
 }
 
-:root[data-theme-style="windows-classic"] .layout-btn {
+:root[data-theme-style="windows-classic"] .layout-btn,
+:root[data-theme-style="windows-classic"] .format-btn {
   color: #000000;
   border-radius: 0;
 }
@@ -3050,6 +3133,7 @@ kbd {
 }
 
 :root[data-theme-style="windows-classic"] .dropdown-content,
+:root[data-theme-style="windows-classic"] .format-menu,
 :root[data-theme-style="windows-classic"] .custom-context-menu,
 :root[data-theme-style="windows-classic"] .help-modal {
   border: 2px solid;
@@ -3089,6 +3173,7 @@ kbd {
 }
 
 :root[data-theme-style="mac-os-9"] .layout-controls,
+:root[data-theme-style="mac-os-9"] .format-controls,
 :root[data-theme-style="mac-os-9"] .icon-btn,
 :root[data-theme-style="mac-os-9"] .find-btn,
 :root[data-theme-style="mac-os-9"] .find-action-btn,
@@ -3153,3 +3238,96 @@ kbd {
 .trash-list span { margin-top: 4px; font-size: 0.75rem; color: var(--text-muted); }
 .trash-confirm-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 .trash-empty-btn { color: var(--danger-color, #ef4444); }
+
+/* Editor: live preview */
+.cm-editor.cm-mode-live .cm-content { font-family: var(--font-sans); }
+.cm-editor.cm-mode-source .cm-content { font-family: var(--font-mono); }
+
+.cm-mode-live .cm-lp-h1,
+.cm-mode-live .cm-lp-h2,
+.cm-mode-live .cm-lp-h3,
+.cm-mode-live .cm-lp-h4,
+.cm-mode-live .cm-lp-h5,
+.cm-mode-live .cm-lp-h6 {
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--text-primary);
+}
+.cm-mode-live .cm-lp-h1 { font-size: 1.8em; }
+.cm-mode-live .cm-lp-h2 { font-size: 1.45em; }
+.cm-mode-live .cm-lp-h3 { font-size: 1.25em; }
+.cm-mode-live .cm-lp-h4 { font-size: 1.1em; }
+.cm-mode-live .cm-lp-h5 { font-size: 1.05em; }
+.cm-mode-live .cm-lp-h6 { font-size: 1em; }
+
+.cm-mode-live .cm-lp-code {
+  background-color: var(--preview-code-bg);
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+
+.cm-mode-live .cm-lp-codeblock {
+  background-color: var(--preview-code-bg);
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+
+.cm-mode-live .cm-lp-link {
+  color: var(--accent-color);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+}
+
+.cm-mode-live .cm-lp-quote {
+  border-left: 4px solid var(--preview-quote-border);
+  background-color: var(--preview-quote-bg);
+  padding-left: 12px;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.cm-mode-live .cm-lp-task {
+  margin: 0 0.4em 0 0;
+  vertical-align: middle;
+  cursor: pointer;
+  accent-color: var(--accent-color);
+}
+
+.cm-mode-live .cm-lp-bullet {
+  color: var(--text-muted);
+}
+
+.cm-mode-live .cm-lp-hr-widget {
+  display: inline-block;
+  width: 100%;
+  height: 1px;
+  border: none;
+  background-color: var(--preview-hr);
+  vertical-align: middle;
+  margin: 0;
+}
+
+.cm-mode-live .cm-lp-image {
+  max-width: 100%;
+  border-radius: 6px;
+  vertical-align: bottom;
+}
+
+.cm-mode-live .cm-lp-image-blocked {
+  color: var(--text-muted);
+}
+
+.cm-mode-live .cm-lp-table.markdown-preview {
+  flex: none;
+  overflow: visible;
+  padding: 4px 0;
+  font-family: var(--font-sans);
+  font-size: inherit;
+  cursor: text;
+}
+
+.cm-mode-live .cm-lp-table.markdown-preview table {
+  margin-bottom: 0;
+}

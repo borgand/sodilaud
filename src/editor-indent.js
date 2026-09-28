@@ -9,7 +9,6 @@ import {
   isInsideFencedCode,
   parseListLine
 } from "./editor-context.js";
-import { applyEditorEdit } from "./editor-edit.js";
 import { getTableTabEdit } from "./editor-tables.js";
 
 function getSelectedLineStarts(value, selectionStart, selectionEnd) {
@@ -165,23 +164,4 @@ export function getIndentEdit(value, selectionStart, selectionEnd, outdent = fal
     selectionStart: mapPositionThroughEdits(selectionStart, edits),
     selectionEnd: mapPositionThroughEdits(selectionEnd, edits)
   };
-}
-
-export function handleEditorTab(event) {
-  if (event.key !== "Tab" || event.metaKey || event.ctrlKey || event.altKey) return;
-
-  const textarea = event.currentTarget;
-  const edit = getIndentEdit(
-    textarea.value,
-    textarea.selectionStart,
-    textarea.selectionEnd,
-    event.shiftKey
-  );
-
-  event.preventDefault();
-  if (edit.value === textarea.value) {
-    textarea.setSelectionRange(edit.selectionStart, edit.selectionEnd);
-  } else {
-    applyEditorEdit(textarea, edit);
-  }
 }

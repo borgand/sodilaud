@@ -5,7 +5,9 @@
   "description": "A lightweight, offline-first Markdown scratchpad for the desktop.",
   "license": "GPL-3.0-or-later",
   "author": "Laas Toom",
-  "contributors": ["crims0n"],
+  "contributors": [
+    "crims0n"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/borgand/sodilaud.git"
@@ -21,14 +23,22 @@
   "scripts": {
     "tauri": "tauri",
     "vendor:marked": "node scripts/vendor-marked.mjs",
+    "vendor:codemirror": "node scripts/vendor-codemirror.mjs",
     "check:versions": "node scripts/check-versions.mjs",
-    "check:js": "node --check src/main.js && node --check src/mcp-writes.js && node --check src/trash.js && node --check src/trash-ui.js && node --check src/folders.js && node --check src/editor-autocomplete.js && node --check src/editor-context.js && node --check src/editor-edit.js && node --check src/editor-indent.js && node --check src/editor-line-numbers.js && node --check src/editor-position.js && node --check src/editor-render-scheduler.js && node --check src/editor-smart.js && node --check src/editor-tables.js && node --check src/find.js && node --check src/markdown-insert.js && node --check src/markdown.js && node --check src/note-compare.js && node --check src/note-order.js && node --check src/note-preview.js && node --check src/preset-themes.js && node --check src/theme-colors.js && node --check src/css-color.js && node --check src/storage.js && node --check src/syntax-highlighting.js && node --check src/view-preferences.js && node --check src/welcome-note.js && node --check src/clipboard.js && node --check src/clipboard-settings.js && node --check src/clipboard-settings-ui.js && node --check site/app.js && node --check site/release-ui.js && node --check scripts/generate-release-manifest.mjs",
+    "check:js": "node --check src/main.js && node --check src/mcp-writes.js && node --check src/trash.js && node --check src/trash-ui.js && node --check src/folders.js && node --check src/editor-autocomplete.js && node --check src/editor-commands.js && node --check src/editor-context.js && node --check src/editor-edit.js && node --check src/editor-indent.js && node --check src/editor-smart.js && node --check src/editor-tables.js && node --check src/editor-view.js && node --check src/editor-live-preview.js && node --check src/find.js && node --check src/format-toolbar-fit.js && node --check src/markdown-format.js && node --check src/markdown-insert.js && node --check src/markdown.js && node --check src/note-compare.js && node --check src/note-order.js && node --check src/note-preview.js && node --check src/preset-themes.js && node --check src/theme-colors.js && node --check src/css-color.js && node --check src/storage.js && node --check src/syntax-highlighting.js && node --check src/view-preferences.js && node --check src/welcome-note.js && node --check src/clipboard.js && node --check src/clipboard-settings.js && node --check src/clipboard-settings-ui.js && node --check site/app.js && node --check site/release-ui.js && node --check scripts/generate-release-manifest.mjs && node --check scripts/vendor-codemirror.mjs",
     "test": "node --test",
     "check:egress": "node scripts/check-no-egress.mjs",
     "check": "npm run check:versions && npm run check:js && npm run check:egress && npm test"
   },
   "devDependencies": {
+    "@codemirror/commands": "6.11.1",
+    "@codemirror/language": "6.12.4",
+    "@codemirror/state": "6.7.6",
+    "@codemirror/view": "6.43.13",
+    "@lezer/highlight": "1.2.4",
+    "@lezer/markdown": "1.7.2",
     "@tauri-apps/cli": "^2",
+    "esbuild": "0.28.2",
     "jsdom": "26.1.0",
     "semver": "^7.8.5"
   },

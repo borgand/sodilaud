@@ -44,8 +44,8 @@ Clipboard history is off by default. Turn it on in **Sodilaud menu → Clipboard
 - Clipboard history on macOS: press `⌘⇧V` in any app to pick from your recent copies, with secrets masked, entries kept in memory only, and automatic expiry
 - Optional local MCP agent access with five read tools, eight individually enabled write tools, and a live listening indicator
 - Multiple scratchpads with automatic saving, titles derived from the first line, and quick creation by double-clicking empty sidebar space
-- Edit, synchronized edit/preview, and full Markdown preview layouts
-- Optional Markdown editor coloring and language-aware fenced-code highlighting in previews
+- Live, Source, and Reading editing modes, with inline Markdown rendering and per-line raw source in Live mode
+- Optional Markdown editor coloring and language-aware fenced-code highlighting in Reading mode
 - Optional, theme-aware source line numbers in either editor pane
 - Markdown-aware continuation for lists, task lists, blockquotes, code fences, and tables
 - Pair completion, selection wrapping, and smart URL or spreadsheet paste
@@ -71,7 +71,7 @@ Local notes and workspace notes are two separate collections, each with its own 
 
 Pending workspace changes are flushed before the desktop window closes; if that save fails, Sodilaud cancels the close and reports the error. If a workspace cannot be opened at start-up, Sodilaud reports it and falls back to your local notes, leaving the workspace file untouched.
 
-Sodilaud has no analytics, advertising, accounts, or sync service. Markdown is parsed on-device, preview HTML is sanitized, and remote images are blocked so merely previewing a note does not contact an image host. Links in the preview open in your default browser rather than inside the app; following one is an explicit network action and may contact that destination.
+Sodilaud has no analytics, advertising, accounts, or sync service. Markdown is parsed on-device, rendered HTML is sanitized, and remote images never load, so viewing a note does not contact an image host. Rendered links open in your default browser rather than inside the app, after a confirmation dialog; following one is an explicit network action and may contact that destination.
 
 This fork contains no update check and makes no outbound request of any kind: it links no HTTP client, and `npm run check:egress` fails the build if network capability reappears. New versions are published as releases in this repository; download them yourself when you choose to.
 
@@ -123,7 +123,7 @@ The app displays `Cmd` on macOS and `Ctrl` on Windows or Linux.
 | `Cmd/Ctrl + N` | Create a scratchpad |
 | `⌘⇧V` (macOS, configurable) | Open the clipboard history popup |
 | `⌘↵` (macOS, clipboard popup) | Paste the focused entry into the previous app |
-| `Cmd/Ctrl + B` | Toggle the sidebar |
+| `Ctrl + Cmd + S` (`Ctrl + Alt + S` off macOS) | Toggle the sidebar |
 | `Cmd/Ctrl + \` | Toggle two-note side-by-side editing |
 | `Alt + ↑` / `Alt + ↓` | Move a list branch, or the active sidebar note outside a list |
 | `Cmd/Ctrl + F` | Open or close Find |
@@ -138,11 +138,20 @@ The app displays `Cmd` on macOS and `Ctrl` on Windows or Linux.
 | `Cmd/Ctrl + +` / `Cmd/Ctrl + -` | Zoom the editor in or out |
 | `Cmd/Ctrl + 0` | Reset editor zoom to 100% |
 | `Cmd/Ctrl + Shift + F` | Toggle Focus Mode |
+| `Cmd/Ctrl + B` / `I` / `E` | Toggle bold, italic, or inline code |
+| `Cmd/Ctrl + Shift + X` | Toggle strikethrough |
+| `Cmd/Ctrl + K` | Make the selection a link, or insert a link; inside an existing link, select its URL |
+| `Cmd/Ctrl + Alt + 1` to `6` | Set heading level 1 to 6; the same level again removes it |
+| `Cmd/Ctrl + Shift + 7` / `8` / `9` | Toggle a numbered, bullet, or task list |
+| `Cmd/Ctrl + Shift + .` | Toggle a blockquote |
+| `Cmd/Ctrl + Alt + C` | Insert a code block, or fence the selected lines |
 | `Cmd/Ctrl + /` or `F1` | Open or close Help and Reference |
 | `Tab` / `Shift + Tab` | Switch topics while Help is open |
 | `Escape` | Close the active modal or Find bar, or leave Focus Mode |
 
 ## Markdown editing
+
+Sodilaud has three editing modes, chosen with the mode buttons in the toolbar (icons; hover one to see its name): **Live** (default), **Source**, and **Reading**. Live renders Markdown inline - headings, emphasis, links, task checkboxes, and tables display formatted - while the line your cursor or selection touches shows its raw Markdown. In Live mode, `Cmd`-click a link (`Ctrl`-click off macOS) to open it; a plain click just places the cursor. In Reading mode a plain click opens a link. Tables render as a formatted table until you click into one, which reveals the raw pipe source. Source mode shows raw Markdown in a monospace font with the same editing features as Live. Reading mode is a read-only rendered view. Remote images never load in any mode; only `data:` images render.
 
 Sodilaud keeps its Markdown assistance lightweight and works directly in the native text editor:
 
@@ -152,9 +161,10 @@ Sodilaud keeps its Markdown assistance lightweight and works directly in the nat
 - Parentheses, brackets, braces, quotes, and inline backticks pair automatically. Typing an existing closing character advances past it, and Backspace removes an empty pair. Selecting text before typing `*`, `_`, <code>`</code>, or `~` wraps the selection.
 - Finishing a table header creates its separator and first row. `Enter` in the final cell or `Tab` past it adds a row; `Enter` or Backspace on an empty generated row exits the table.
 - Pasting a URL over selected text makes a Markdown link. Pasting a rectangular tab-separated spreadsheet range makes a Markdown table; ragged or uniformly indented tab-separated text stays literal.
+- The formatting buttons to the left of the mode buttons apply bold, italic, strikethrough, inline code, links, headings (from a menu, including **Paragraph** to remove one), bullet, numbered, and task lists, quotes, code blocks, tables, and horizontal rules to the pane you last worked in. Marks, headings, lists, and quotes toggle: applying one again removes it. Link inside an existing link selects its URL. Hover a button to see its shortcut. Buttons that do not fit the window move into the **»** (More formatting) menu. The buttons are unavailable in Reading mode.
 - Right-click in either editor and choose **Insert** for a starter table, task list, fenced code block, inline link, or reference-style link. The first useful placeholder is selected so typing replaces it immediately.
 
-Syntax highlighting is enabled by default. Open **Sodilaud menu → Appearance → Syntax highlighting** to toggle both the editor’s Markdown coloring and language-aware Preview highlighting. Preview code highlighting requires a supported language after the opening fence, such as <code>```javascript</code>; unknown and unlabeled fences remain plain code.
+Syntax highlighting is enabled by default. Open **Sodilaud menu → Appearance → Syntax highlighting** to toggle both the editor’s Markdown coloring and language-aware highlighting in Reading mode. Reading mode code highlighting requires a supported language after the opening fence, such as <code>```javascript</code>; unknown and unlabeled fences remain plain code.
 
 Source line numbers are off by default. Open **Sodilaud menu → Appearance → Line numbers** to show a subtle, theme-aware gutter in both editor panes; the preference is remembered between launches.
 

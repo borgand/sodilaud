@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { JSDOM } from "jsdom";
+import { bootApp } from "./helpers/app-harness.js";
 
 const html = await readFile(new URL("../src/index.html", import.meta.url), "utf8");
 const document = new JSDOM(html).window.document;
@@ -20,6 +21,13 @@ test("interactive controls have an accessible name", () => {
     .map((element) => element.id || element.outerHTML);
 
   assert.deepEqual(unnamed, []);
+});
+
+test("both editors expose their content element with an accessible name", async () => {
+  const app = await bootApp();
+  assert.equal(app.editor().contentDOM.getAttribute("aria-label"), "Sodilaud content");
+  assert.equal(app.editor("secondary").contentDOM.getAttribute("aria-label"), "Secondary scratchpad content");
+  assert.ok(app.editor().contentDOM.matches(".cm-content"));
 });
 
 test("help, theme, about, MCP, clipboard, and trash overlays expose modal dialog semantics", () => {
@@ -43,7 +51,9 @@ test("help and reference documents current Markdown editing behavior", () => {
   assert.match(shortcuts, /Jump to List Content \/ Line Start/);
   assert.match(shortcuts, /Continue List, Quote, Fence, or Table/);
   assert.match(shortcuts, /Pasting a URL over selected text makes a link/);
-  assert.match(markdown, /A language label enables Preview highlighting/);
+  assert.match(shortcuts, /Live.*Source.*Reading/);
+  assert.match(shortcuts, /In Live mode, Cmd-click a link to open it/);
+  assert.match(markdown, /A language label enables syntax highlighting in Reading mode/);
   assert.match(markdown, /Sodilaud menu → Appearance/);
   assert.match(markdown, /Right-click in the editor/);
   assert.match(markdown, /empty generated row to exit the table/);

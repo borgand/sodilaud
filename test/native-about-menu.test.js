@@ -6,7 +6,7 @@ import { bootApp } from "./helpers/app-harness.js";
 
 test("the native About menu opens the existing in-app About panel", async () => {
   const app = await bootApp();
-  const editor = document.getElementById("editor-textarea");
+  const editor = app.editor().contentDOM;
   const backdrop = document.getElementById("about-modal-backdrop");
   editor.focus();
 

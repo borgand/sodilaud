@@ -5,6 +5,15 @@ import test from "node:test";
 import * as Diff from "diff";
 import { bootApp, settle } from "./helpers/app-harness.js";
 
+function typeInto(app, pane, text) {
+  const view = app.editor(pane);
+  view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text }, userEvent: "input.type" });
+}
+
+function texts(document, selector) {
+  return [...document.querySelectorAll(selector)].map((node) => node.textContent);
+}
+
 const NOTES = [
   {
     id: "note-one",
@@ -67,8 +76,8 @@ test("compare mode highlights live note differences and clears with split view",
   const splitButton = document.getElementById("split-note-btn");
   const compareButton = document.getElementById("compare-notes-btn");
   const compareCount = document.getElementById("compare-notes-count");
-  const primaryBackdrop = document.getElementById("editor-backdrop");
-  const secondaryBackdrop = document.getElementById("secondary-editor-backdrop");
+  const primary = document.getElementById("editor-host");
+  const secondary = document.getElementById("secondary-editor-host");
 
   assert.equal(compareButton.hidden, true);
   splitButton.click();
@@ -78,35 +87,31 @@ test("compare mode highlights live note differences and clears with split view",
   compareButton.click();
   assert.equal(compareButton.getAttribute("aria-pressed"), "true");
   assert.equal(compareCount.textContent, "1 changed line");
-  assert.equal(
-    [...primaryBackdrop.querySelectorAll(".diff-text-removed")].map((node) => node.textContent).join(" "),
-    "Left old"
-  );
-  assert.equal(
-    [...secondaryBackdrop.querySelectorAll(".diff-text-added")].map((node) => node.textContent).join(" "),
-    "Right new"
-  );
-  assert.equal(primaryBackdrop.querySelector(".syntax-heading").textContent, "Shared heading");
-  assert.equal(document.querySelectorAll("#editor-line-numbers .editor-line-number-diff-removed").length, 1);
-  assert.equal(document.querySelectorAll("#secondary-editor-line-numbers .editor-line-number-diff-added").length, 1);
+  assert.equal(texts(primary, ".cm-editor .diff-text-removed").join(" "), "Left old");
+  assert.equal(texts(secondary, ".cm-editor .diff-text-added").join(" "), "Right new");
+  assert.deepEqual(texts(primary, ".cm-line .diff-line-removed").join(""), "Left old wording");
+  assert.deepEqual(texts(secondary, ".cm-line .diff-line-added").join(""), "Right new wording");
+  assert.match(primary.querySelector(".syntax-heading").textContent, /Shared heading/);
+  assert.deepEqual(texts(primary, ".cm-lineNumbers .cm-gutterElement.cm-diff-line-removed"), ["2"]);
+  assert.deepEqual(texts(secondary, ".cm-lineNumbers .cm-gutterElement.cm-diff-line-added"), ["2"]);
 
-  const secondaryEditor = document.getElementById("secondary-editor-textarea");
-  secondaryEditor.value = document.getElementById("editor-textarea").value;
-  secondaryEditor.dispatchEvent(new app.dom.window.Event("input", { bubbles: true }));
+  typeInto(app, "secondary", app.editorText("primary"));
   await settle(180);
   assert.equal(compareCount.textContent, "No differences");
-  assert.equal(primaryBackdrop.querySelector(".diff-line-removed"), null);
-  assert.equal(secondaryBackdrop.querySelector(".diff-line-added"), null);
+  assert.equal(primary.querySelectorAll(".diff-line-removed").length, 0);
+  assert.equal(secondary.querySelectorAll(".diff-line-added").length, 0);
+  assert.equal(document.querySelectorAll(".cm-diff-line-removed, .cm-diff-line-added").length, 0);
 
-  secondaryEditor.value = "Different again";
-  secondaryEditor.dispatchEvent(new app.dom.window.Event("input", { bubbles: true }));
+  typeInto(app, "secondary", "Different again");
   await settle(180);
-  assert.ok(primaryBackdrop.querySelector(".diff-line-removed"));
+  assert.ok(primary.querySelectorAll(".diff-line-removed").length > 0);
 
   document.getElementById("close-secondary-btn").click();
   assert.equal(compareButton.hidden, true);
   assert.equal(compareButton.getAttribute("aria-pressed"), "false");
-  assert.equal(primaryBackdrop.querySelector(".diff-line-removed"), null);
+  assert.equal(primary.querySelectorAll(".diff-line-removed").length, 0);
+  assert.equal(primary.querySelectorAll(".cm-diff-line-removed").length, 0);
+  assert.ok(primary.querySelectorAll(".cm-lineNumbers").length > 0, "line numbers stay on after compare closes");
 });
 
 test("switching the secondary pane to the primary note stops comparison cleanly", async () => {
@@ -117,10 +122,13 @@ test("switching the secondary pane to the primary note stops comparison cleanly"
   });
   const { document } = app.dom.window;
   const compareButton = document.getElementById("compare-notes-btn");
+  const primary = document.getElementById("editor-host");
+  const secondary = document.getElementById("secondary-editor-host");
 
   document.getElementById("split-note-btn").click();
   compareButton.click();
-  assert.ok(document.getElementById("editor-backdrop").querySelector(".diff-line-removed"));
+  assert.ok(primary.querySelectorAll(".diff-line-removed").length > 0);
+  assert.ok(secondary.querySelectorAll(".cm-diff-line-added").length > 0);
 
   const secondarySelect = document.getElementById("secondary-note-select");
   secondarySelect.value = "note-one";
@@ -128,8 +136,10 @@ test("switching the secondary pane to the primary note stops comparison cleanly"
 
   assert.equal(compareButton.disabled, true);
   assert.equal(compareButton.getAttribute("aria-pressed"), "false");
-  assert.equal(document.getElementById("editor-backdrop").querySelector(".diff-line-removed"), null);
-  assert.equal(document.getElementById("secondary-editor-backdrop").querySelector(".diff-line-added"), null);
+  assert.equal(app.editorText("secondary"), "First note");
+  assert.equal(primary.querySelectorAll(".diff-line-removed").length, 0);
+  assert.equal(secondary.querySelectorAll(".diff-line-added").length, 0);
+  assert.equal(document.querySelectorAll(".cm-diff-line-removed, .cm-diff-line-added").length, 0);
 });
 
 test("compare shows a change rail for blank lines when line numbers are off", async () => {
@@ -144,19 +154,20 @@ test("compare shows a change rail for blank lines when line numbers are off", as
     handlers: { load_workspace_preference: () => null }
   });
   const { document } = app.dom.window;
+  const secondary = document.getElementById("secondary-editor-host");
 
   assert.equal(document.documentElement.classList.contains("editor-line-numbers-enabled"), false);
   document.getElementById("split-note-btn").click();
+  assert.equal(secondary.querySelectorAll(".cm-lineNumbers").length, 0);
   document.getElementById("compare-notes-btn").click();
 
-  const secondaryGutter = document.getElementById("secondary-editor-line-numbers");
-  const blankLineMarker = secondaryGutter.querySelector(".editor-line-number-diff-added");
-  assert.ok(blankLineMarker);
-  assert.equal(blankLineMarker.dataset.lineNumber, "2");
+  assert.ok(secondary.querySelectorAll(".cm-lineNumbers").length > 0, "the gutter shows while comparing");
+  assert.deepEqual(texts(secondary, ".cm-gutterElement.cm-diff-line-added"), ["2"]);
   assert.equal(document.getElementById("compare-notes-count").textContent, "1 changed line");
 
   document.getElementById("compare-notes-btn").click();
-  assert.equal(secondaryGutter.childNodes.length, 0);
+  assert.equal(secondary.querySelectorAll(".cm-lineNumbers").length, 0);
+  assert.equal(document.querySelectorAll(".cm-lineNumbers").length, 0);
 });
 
 test("compare is unavailable when both panes show the same note", async () => {
@@ -193,38 +204,37 @@ test("compare debounces changed text and reuses cached results for redraws", asy
       return Diff.diffLines(...args);
     }
   };
+  const primary = document.getElementById("editor-host");
 
   document.getElementById("split-note-btn").click();
   document.getElementById("compare-notes-btn").click();
   assert.equal(diffCalls, 1);
+  assert.ok(primary.querySelectorAll(".diff-line-removed").length > 0);
 
-  const primaryEditor = document.getElementById("editor-textarea");
   for (const value of ["Shared\nFirst edit", "Shared\nSecond edit", "Shared\nFinal edit"]) {
-    primaryEditor.value = value;
-    primaryEditor.dispatchEvent(new app.dom.window.Event("input", { bubbles: true }));
+    typeInto(app, "primary", value);
   }
 
   assert.equal(diffCalls, 1);
   assert.equal(document.getElementById("compare-notes-count").textContent, "Updating comparison…");
   await settle(30);
   assert.equal(diffCalls, 1);
-  assert.equal(document.getElementById("editor-backdrop").textContent, "Shared\nFinal edit\n");
-  assert.equal(document.querySelector(".diff-line-removed, .diff-line-added"), null);
+  assert.equal(app.editorText("primary"), "Shared\nFinal edit");
+  assert.equal(document.querySelectorAll(".diff-line-removed, .diff-line-added").length, 0);
+  assert.equal(document.querySelectorAll(".cm-diff-line-removed, .cm-diff-line-added").length, 0);
 
   await settle(180);
   assert.equal(diffCalls, 2);
   assert.notEqual(document.getElementById("compare-notes-count").textContent, "Updating comparison…");
-  assert.ok(document.getElementById("editor-backdrop").querySelector(".diff-line-removed"));
+  assert.ok(primary.querySelectorAll(".diff-line-removed").length > 0);
 
   const findInput = document.getElementById("find-input");
   findInput.value = "Shared";
   findInput.dispatchEvent(new app.dom.window.Event("input", { bubbles: true }));
   assert.equal(diffCalls, 2);
 
-  const secondaryEditor = document.getElementById("secondary-editor-textarea");
   for (const value of ["Shared\nAnother edit", "Shared\nFinal secondary edit"]) {
-    secondaryEditor.value = value;
-    secondaryEditor.dispatchEvent(new app.dom.window.Event("input", { bubbles: true }));
+    typeInto(app, "secondary", value);
   }
   assert.equal(diffCalls, 2);
   await settle(180);
@@ -251,13 +261,45 @@ test("closing compare cancels a pending comparison", async () => {
   document.getElementById("compare-notes-btn").click();
   assert.equal(diffCalls, 1);
 
-  const primaryEditor = document.getElementById("editor-textarea");
-  primaryEditor.value = "Pending edit";
-  primaryEditor.dispatchEvent(new app.dom.window.Event("input", { bubbles: true }));
+  typeInto(app, "primary", "Pending edit");
   document.getElementById("close-secondary-btn").click();
 
   await settle(180);
   assert.equal(diffCalls, 1);
   assert.equal(document.getElementById("compare-notes-btn").getAttribute("aria-pressed"), "false");
-  assert.equal(document.querySelector(".diff-line-removed, .diff-line-added"), null);
+  assert.equal(document.querySelectorAll(".diff-line-removed, .diff-line-added").length, 0);
+  assert.equal(document.querySelectorAll(".cm-diff-line-removed, .cm-diff-line-added").length, 0);
+});
+
+test("reverting an edit inside the compare debounce restores the diff marks", async () => {
+  const app = await bootApp({
+    instance: 8,
+    storage: {
+      sodilaud_notes: [
+        { ...NOTES[0], content: "Shared\nLeft wording" },
+        { ...NOTES[1], content: "Shared\nRight wording" }
+      ]
+    },
+    handlers: { load_workspace_preference: () => null }
+  });
+  const { document } = app.dom.window;
+  const primary = document.getElementById("editor-host");
+  const secondary = document.getElementById("secondary-editor-host");
+  const count = document.getElementById("compare-notes-count");
+
+  document.getElementById("split-note-btn").click();
+  document.getElementById("compare-notes-btn").click();
+  assert.equal(count.textContent, "1 changed line");
+  assert.ok(primary.querySelectorAll(".diff-line-removed").length > 0);
+
+  typeInto(app, "primary", "Shared\nLeft wordingX");
+  assert.equal(count.textContent, "Updating comparison…");
+  typeInto(app, "primary", "Shared\nLeft wording");
+  await settle(180);
+
+  assert.equal(count.textContent, "1 changed line");
+  assert.ok(primary.querySelectorAll(".diff-line-removed").length > 0);
+  assert.ok(secondary.querySelectorAll(".diff-line-added").length > 0);
+  assert.deepEqual(texts(primary, ".cm-gutterElement.cm-diff-line-removed"), ["2"]);
+  assert.deepEqual(texts(secondary, ".cm-gutterElement.cm-diff-line-added"), ["2"]);
 });
