@@ -80,5 +80,7 @@ Run these in a built app, since they depend on AppKit behavior the automated tes
 4. Put an app in full screen, then press the hotkey there. The panel appears over it.
 5. Move and resize the panel, hide it, quit, relaunch, and show it: same frame, same note.
 6. Open a workspace file from the panel's menu; the dialog appears in front of the panel.
-7. Upgrade from 0.9.x with existing notes: they appear in Quick Notes, and the start page shows
+7. With the panel focused, `⌘Q` quits Sodilaud (not the app behind it) after saving, and
+   `⌘W` hides the panel.
+8. Upgrade from 0.9.x with existing notes: they appear in Quick Notes, and the start page shows
    the one-time banner.

@@ -41,6 +41,29 @@ is not mixed with the notes collection. Doing both at once covers roadmap items 
 | Release | Both parts ship together as 0.10.0, in two pull requests |
 | Document model | Stays window-owned (Shape A). The panel is the only notes writer, so roadmap item 2 is no longer a prerequisite |
 
+## Changes made during implementation (2026-09-28)
+
+Decided while planning and building PR 1, for the owner to confirm in review:
+
+1. **Agent access stays in the Quick Notes menu.** The MCP enable flow seeds the snapshot
+   before the server starts, revokes permissions before the native call, and waits on the
+   notes save queue. Splitting that across two webviews would put those orderings behind an
+   IPC race. The main window's menu has **Agent access…**, which shows the panel with its menu
+   open. MCP still works while the panel is hidden.
+2. **Quick Notes hotkey, panel frame and window state live in Rust**, in `quicknotes.json` in
+   the app config dir, so the hotkey is registered before any page loads.
+3. **The upgrade banner is decided in Rust**, not from a localStorage flag. On the first launch
+   of 0.10, `quicknotes.json` is missing while the older `sodilaud-preferences.json` exists.
+   Both pages boot together, and the panel seeds the Welcome note into an empty collection, so
+   a page-side check would race.
+4. **Windows and Linux have no tray** (it needs `libayatana-appindicator` on Linux). There,
+   closing the main window quits after both windows save. The global shortcut plugin is now
+   cross-platform, so the Quick Notes hotkey works everywhere.
+5. **Help and About live in the main window.** `⌘/` and the help button in the panel open it
+   there.
+6. **A cancelled quit is broadcast** (`sodilaud-quit-cancelled`). A window that saved for a quit
+   another window cancelled goes back to accepting agent writes.
+
 ## Guardrails and definition of done
 
 - Work happens on feature branches in `.claude/worktrees/`. The owner runs push and PR
