@@ -14,7 +14,7 @@ const SELF = "scripts/check-no-egress.mjs";
 const ALLOWED = new Map([
   ["src/markdown.js", ["remote url"]],
   ["src/markdown-insert.js", ["remote url"]],
-  ["src/index.html", ["remote url"]],
+  ["src/notes.html", ["remote url"]],
   ["src/welcome-note.js", ["remote url"]],
   ["scripts/generate-release-manifest.mjs", ["remote url"]]
 ]);

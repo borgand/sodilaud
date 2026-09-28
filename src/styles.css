@@ -777,7 +777,7 @@ body {
   margin: 0 8px;
 }
 
-/* Shrinks before the title does; main.js moves buttons that do not fit into
+/* Shrinks before the title does; notes.js moves buttons that do not fit into
    the More formatting menu, and overflow: hidden only covers a resize in flight. */
 .format-controls {
   box-sizing: border-box;

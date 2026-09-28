@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 test("the snapshot sent to agents carries no workspace path", async () => {
-  const main = await readFile("src/main.js", "utf8");
+  const main = await readFile("src/notes.js", "utf8");
   const snapshot = main.slice(main.indexOf("function mcpSnapshotArguments"), main.indexOf("function mcpSnapshotArguments") + 900);
   assert.doesNotMatch(snapshot, /dbPath/);
 });

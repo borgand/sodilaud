@@ -6,7 +6,7 @@ import test from "node:test";
 import { JSDOM } from "jsdom";
 import { bootApp } from "./helpers/app-harness.js";
 
-const html = await readFile(new URL("../src/index.html", import.meta.url), "utf8");
+const html = await readFile(new URL("../src/notes.html", import.meta.url), "utf8");
 const document = new JSDOM(html).window.document;
 
 test("interactive controls have an accessible name", () => {

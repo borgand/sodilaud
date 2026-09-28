@@ -34,12 +34,10 @@ test("clipboard.js and clipboard.html never contain a URL-looking string", async
 });
 
 test("no updater module or update command survives", async () => {
-  const [lib, html, main] = await Promise.all([
-    readFile("src-tauri/src/lib.rs", "utf8"),
-    readFile("src/index.html", "utf8"),
-    readFile("src/main.js", "utf8")
-  ]);
-  for (const source of [lib, html, main]) {
+  const sources = await Promise.all([
+    "src-tauri/src/lib.rs", "src/index.html", "src/app.js", "src/notes.html", "src/notes.js"
+  ].map((path) => readFile(path, "utf8")));
+  for (const source of sources) {
     assert.doesNotMatch(source, /check_for_updates|get_update_info|open_update_release|createUpdateUi|update-automatic/);
   }
   await assert.rejects(() => readFile("src/updates.js", "utf8"));

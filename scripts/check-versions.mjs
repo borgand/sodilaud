@@ -8,7 +8,7 @@ const tauriConfig = JSON.parse(await readFile(new URL("../src-tauri/tauri.conf.j
 const cargoManifest = await readFile(new URL("../src-tauri/Cargo.toml", import.meta.url), "utf8");
 const cargoLock = await readFile(new URL("../src-tauri/Cargo.lock", import.meta.url), "utf8");
 const releaseNotes = await readFile(new URL("../RELEASE_NOTES.md", import.meta.url), "utf8");
-const appHtml = await readFile(new URL("../src/index.html", import.meta.url), "utf8");
+const appHtml = await readFile(new URL("../src/notes.html", import.meta.url), "utf8");
 const cargoVersion = cargoManifest.match(/^version\s*=\s*"([^"]+)"/m)?.[1];
 const aboutVersion = appHtml.match(/id="about-version">([^<]+)</)?.[1]?.trim();
 
@@ -20,7 +20,7 @@ const versions = new Map([
   ["src-tauri/Cargo.toml", cargoVersion],
   ["src-tauri/Cargo.lock", cargoLock.match(/\[\[package\]\]\nname = "sodilaud"\nversion = "([^"]+)"/)?.[1]],
   ["RELEASE_NOTES.md", releaseNotes.match(/^# Sodilaud(?: Beta)? v(\S+)/)?.[1]],
-  ["src/index.html About dialog", aboutVersion]
+  ["src/notes.html About dialog", aboutVersion]
 ]);
 
 const uniqueVersions = new Set(versions.values());
