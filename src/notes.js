@@ -2197,7 +2197,10 @@ function attachEventListeners() {
 
   // Layout mode controls
   for (const [mode, button] of Object.entries(layoutModeButtons)) {
-    button.addEventListener("click", () => setLayoutMode(mode));
+    button.addEventListener("click", () => {
+      setLayoutMode(mode);
+      broadcastPreference(window, "sodilaud_layout_mode");
+    });
   }
 
   // Markdown preview links

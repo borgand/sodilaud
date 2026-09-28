@@ -11,8 +11,7 @@ import { broadcastPreference, onPreferenceChange } from "./preferences.js";
 import { trapModalFocus } from "./modal-focus.js";
 import { applyPlatformShortcutLabels } from "./platform-labels.js";
 import { resolveLinkAction } from "./markdown.js";
-
-export const WELCOME_NOTE_LINK_TITLE = "Welcome to Quick Notes";
+import { WELCOME_NOTE_TITLE } from "./welcome-note.js";
 
 const HOTKEY_MESSAGES = {
   HotkeyInvalid: "That shortcut is not supported. The previous hotkey is still active.",
@@ -302,7 +301,7 @@ function attachListeners() {
   });
   $("open-welcome-note-link").addEventListener("click", () => {
     dismissUpgradeIntro();
-    showQuickNotes(WELCOME_NOTE_LINK_TITLE);
+    showQuickNotes(WELCOME_NOTE_TITLE);
   });
   $("upgrade-banner-open-btn").addEventListener("click", () => {
     dismissUpgradeIntro();

@@ -1,8 +1,9 @@
 # MCP agent access
 
 Sodilaud includes an MCP stdio mode in the desktop executable. There is
-no separate server executable or runtime to install. Open **Sodilaud menu →
-Agent access → On** while the app is running. Choose **MCP Configuration** to
+no separate server executable or runtime to install. Open Quick Notes, then its menu
+(top right) **→ Agent access → On** while the app is running. The main window's
+**Sodilaud menu → Agent access…** opens it for you. Choose **MCP Configuration** to
 copy connection values and select function permissions. Configuration is also
 available while access is off; copying it does not start the server.
 
@@ -52,7 +53,9 @@ the command.
 
 The client launches a background instance of the same binary. This instance
 does not open a window, load note storage, or automatically enable access. It
-relays MCP messages to the open editor, which owns the current collection.
+relays MCP messages to the Quick Notes panel, which owns the current collection.
+The panel's page stays loaded while it is hidden, so agents work whether or not
+it is on screen.
 Multiple clients can connect independently. Diagnostics go to stderr; stdout
 contains only MCP messages. Closing the client's input or disabling access
 ends the background instance. Reconnect the client after restarting Sodilaud
@@ -83,7 +86,7 @@ to filter to that folder, or pass `null` to include only top-level notes.
 
 ### Function permissions
 
-The Agent access section of the actions menu contains only the global
+The Agent access section of the Quick Notes menu contains only the global
 **Agent access On/Off** toggle and **MCP Configuration**. Configuration
 is always available: while access is off, you can copy connection details without
 starting the server. Permission controls become available when access is enabled.

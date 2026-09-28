@@ -283,6 +283,10 @@ a:focus-visible {
   align-items: center;
 }
 
+.spotlight-text-only {
+  grid-template-columns: minmax(0, 760px);
+}
+
 .spotlight-copy > p {
   max-width: 560px;
   margin: 20px 0 0;
