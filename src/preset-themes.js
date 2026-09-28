@@ -176,5 +176,15 @@ export const PRESET_THEMES = [
     accent: "#58a6ff",
     border: "#30363d",
     selection: "#1f6feb"
+  },
+  {
+    id: "executive",
+    name: "Executive",
+    background: "#181e21",
+    foreground: "#fdc78e",
+    sidebar: "#242e2e",
+    accent: "#1e959d",
+    border: "#543529",
+    selection: "#1b676b"
   }
 ];

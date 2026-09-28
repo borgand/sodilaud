@@ -120,7 +120,7 @@ test("built-in themes keep the classification they have always had", () => {
     return isDarkSurface([(rgb >> 16) & 0xff, (rgb >> 8) & 0xff, rgb & 0xff]);
   };
 
-  assert.equal(PRESET_THEMES.length, 17);
+  assert.equal(PRESET_THEMES.length, 18);
   PRESET_THEMES.forEach((theme) => {
     assert.match(theme.background, /^#[0-9a-f]{6}$/i, `${theme.id} is hex`);
     assert.equal(dark(theme.background), previously(theme.background), theme.id);

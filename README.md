@@ -162,7 +162,7 @@ Open two notes side by side, then choose **Compare** in the toolbar to highlight
 
 ## Themes
 
-Sodilaud includes Default Dark and Light, Dracula, Catppuccin Mocha, Nord, Tokyo Night, Monokai Pro, One Dark Pro, Solarized Dark and Light, Amber CRT, Green CRT, Pastel Daydream, Macintosh System 6, Mac OS 9 Platinum, Windows Classic, and GitHub Dark.
+Sodilaud includes Default Dark and Light, Dracula, Catppuccin Mocha, Nord, Tokyo Night, Monokai Pro, One Dark Pro, Solarized Dark and Light, Amber CRT, Green CRT, Pastel Daydream, Macintosh System 6, Mac OS 9 Platinum, Windows Classic, GitHub Dark, and Executive.
 
 A custom JSON theme requires `background` and `foreground`. Other colors receive defaults when omitted:
 
