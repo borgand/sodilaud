@@ -47,6 +47,15 @@ fn main() {
             "qn_dismiss_intro",
             "qn_show",
             "show_main_window",
+            "file_open_dialog",
+            "file_save_as_dialog",
+            "file_read",
+            "file_write",
+            "file_lists",
+            "file_set_open",
+            "file_take_pending",
+            "file_forget_recent",
+            "file_confirm_discard",
         ]),
     ))
     .expect("failed to run tauri-build");

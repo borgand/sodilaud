@@ -28,7 +28,7 @@ test("the main window's appearance settings are adjustable, persistent and share
   assert.deepEqual(
     [...document.querySelectorAll("#actions-dropdown-content > .dropdown-section > .dropdown-section-title")]
       .map(label => label.textContent),
-    ["Appearance", "Quick Notes", "Agent access", "Clipboard history", "Help"]
+    ["File", "Appearance", "Quick Notes", "Agent access", "Clipboard history", "Help"]
   );
   assert.equal(document.getElementById("theme-picker-btn").firstElementChild.textContent, "Color theme");
   assert.equal(document.getElementById("active-theme-menu-value").textContent, "Default Dark");

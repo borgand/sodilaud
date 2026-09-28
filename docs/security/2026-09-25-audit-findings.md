@@ -207,6 +207,20 @@ fall back to `default-src`. Fixed in Task 3.
 | `db_path` (F2) | Full fix: Rust owns the path |
 | Secrets at rest (F5, F6) | Guardrails now: 0600, `secure_delete`, and a rule plus guard that clipboard data never reaches MCP |
 
+## Addendum 2026-09-28: files and Quick Notes (0.10)
+
+- **File access is granted, not trusted.** The main window can read and write user files, so
+  `file_*` commands take paths from the renderer. They follow the F2 fix: Rust keeps the set of
+  paths the user chose (Open or Save dialog, Finder, a launch argument, or its own
+  `files.json` from an earlier session) and every command canonicalizes the path, resolving
+  `..` and symbolic links, before checking it. There is no command that lists a directory or
+  reads an unchosen path. Writes are atomic and keep the file mode.
+- **Notes moved to their own window.** The notes, workspace and MCP snapshot commands are
+  granted only to the `quicknotes` window; the file commands only to `main`. An XSS in one
+  window cannot reach the other's data through commands.
+- **No new egress.** The file watcher polls metadata; the single-instance plugin (Windows and
+  Linux) talks only to the local running instance.
+
 ## Reading order for reviewers
 
 `docs/mcp.md:335-355` and `README.md:50-62` already describe the intended privacy boundary

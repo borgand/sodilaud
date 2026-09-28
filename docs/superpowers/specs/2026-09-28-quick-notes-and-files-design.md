@@ -61,7 +61,13 @@ Decided while planning and building PR 1, for the owner to confirm in review:
    cross-platform, so the Quick Notes hotkey works everywhere.
 5. **Help and About live in the main window.** `⌘/` and the help button in the panel open it
    there.
-6. **A cancelled quit is broadcast** (`sodilaud-quit-cancelled`). A window that saved for a quit
+6. **Files are watched by polling**, once a second, instead of with the `notify` crate. Only a
+   handful of files are ever open, and polling needs no native dependency tree.
+   `tauri-plugin-single-instance` is added for Windows and Linux as planned.
+7. **RELEASE_NOTES.md is not changed** in these PRs: `check-versions` requires its heading to
+   match the package version, which the release PR bumps. The 0.10.0 notes are drafted in the
+   PR 2 description.
+8. **A cancelled quit is broadcast** (`sodilaud-quit-cancelled`). A window that saved for a quit
    another window cancelled goes back to accepting agent writes.
 
 ## Guardrails and definition of done

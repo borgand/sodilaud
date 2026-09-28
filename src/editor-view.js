@@ -254,6 +254,24 @@ export function createMarkdownEditor(options) {
   const getText = () => view.state.doc.toString();
   const clamp = position => Math.max(0, Math.min(Number(position) || 0, view.state.doc.length));
 
+  // The whole editor state, undo history included, so a page that shows several
+  // documents in one editor can switch between them without losing either.
+  function getState() {
+    return view.state;
+  }
+
+  function restoreState(state) {
+    view.setState(state);
+    view.dispatch({
+      effects: [
+        modeCompartment.reconfigure(modeExtension(mode)),
+        highlightCompartment.reconfigure(highlightExtension()),
+        gutterCompartment.reconfigure(gutterExtension())
+      ]
+    });
+    onSelectionChange?.();
+  }
+
   function loadText(text) {
     view.setState(EditorState.create({ doc: String(text ?? ""), extensions: currentExtensions() }));
     view.scrollDOM.scrollTop = 0;
@@ -344,6 +362,8 @@ export function createMarkdownEditor(options) {
     view,
     getText,
     loadText,
+    getState,
+    restoreState,
     setText,
     getSelection,
     setSelection,
