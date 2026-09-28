@@ -152,7 +152,10 @@ mod tests {
 
         let ours = io::write_atomic(&path, "ours, longer", io::LineEnding::Lf, false).unwrap();
         watcher.record(&path, &ours);
-        assert!(watcher.poll().is_empty(), "Sodilaud's own write is not reported");
+        assert!(
+            watcher.poll().is_empty(),
+            "Sodilaud's own write is not reported"
+        );
 
         fs::write(&path, "theirs, a different length").unwrap();
         assert_eq!(

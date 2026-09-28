@@ -145,7 +145,10 @@ pub fn clamp_frame(saved: Option<Frame>, screens: &[Screen], pointer: &Screen) -
         }
     };
     let Some(frame) = saved.filter(Frame::is_usable) else {
-        return centered(DEFAULT_WIDTH * pointer.scale, DEFAULT_HEIGHT * pointer.scale);
+        return centered(
+            DEFAULT_WIDTH * pointer.scale,
+            DEFAULT_HEIGHT * pointer.scale,
+        );
     };
     let best_visible = screens
         .iter()
@@ -179,7 +182,9 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        std::env::temp_dir().join(format!("sodilaud-qn-{name}-{nanos}")).join(FILE_NAME)
+        std::env::temp_dir()
+            .join(format!("sodilaud-qn-{name}-{nanos}"))
+            .join(FILE_NAME)
     }
 
     #[test]
