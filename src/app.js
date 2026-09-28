@@ -45,9 +45,27 @@ function attachStartPageListeners() {
   $("open-welcome-note-link").addEventListener("click", () => showQuickNotes(WELCOME_NOTE_LINK_TITLE));
 }
 
+// Rust waits for this window's answer before quitting. Nothing here is unsaved
+// yet; file buffers are flushed here once the main window edits files.
+async function registerQuitHandler() {
+  const listen = window.__TAURI__?.event?.listen;
+  if (typeof listen !== "function") return;
+  try {
+    await listen("sodilaud-quit-requested", () => {
+      invoke("quit_window_done", { ok: true }).catch((error) => {
+        console.error("Failed to quit Sodilaud", error);
+      });
+    });
+    await invoke("quit_handler_ready");
+  } catch (error) {
+    console.error("Failed to register the quit handler", error);
+  }
+}
+
 async function startApp() {
   document.documentElement.classList.add("theme-dark");
   attachStartPageListeners();
+  await registerQuitHandler();
   await loadQuickNotesConfig();
 }
 

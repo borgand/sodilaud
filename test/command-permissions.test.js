@@ -49,3 +49,36 @@ test("popup commands are granted only to the clipboard window", async () => {
   assert.ok(main.permissions.includes("allow-clip-set-config"));
   assert.ok(main.permissions.includes("allow-clip-set-theme"));
 });
+
+const NOTE_COMMANDS = [
+  "load_workspace_preference", "set_last_workspace", "save_file_native", "import_file_native",
+  "select_db_file", "vacuum_workspace", "load_db_notes", "load_db_folders", "load_db_trash",
+  "save_note_db", "save_notes_db", "save_folders_db", "save_workspace_db",
+  "update_mcp_snapshot", "update_mcp_note", "get_mcp_connection_info", "start_mcp_server",
+  "set_mcp_permissions", "complete_mcp_write", "stop_mcp_server"
+];
+const grant = (command) => `allow-${command.replaceAll("_", "-")}`;
+
+test("only the Quick Notes window can read, write or expose notes", async () => {
+  const caps = await capabilities();
+  const quicknotes = caps.find(cap => cap.identifier === "quicknotes");
+  assert.deepEqual(quicknotes.windows, ["quicknotes"]);
+  for (const command of NOTE_COMMANDS) {
+    const holders = caps.filter(cap => cap.permissions.includes(grant(command))).map(cap => cap.identifier);
+    assert.deepEqual(holders, ["quicknotes"], `${command} must be granted to the Quick Notes window only`);
+  }
+});
+
+test("settings commands belong to the main window and panel commands to the panel", async () => {
+  const caps = await capabilities();
+  const holders = (command) => caps.filter(cap => cap.permissions.includes(grant(command))).map(cap => cap.identifier).sort();
+  for (const command of ["clip_set_config", "clip_set_theme", "qn_set_hotkey", "qn_dismiss_intro", "qn_show"]) {
+    assert.deepEqual(holders(command), ["default"], command);
+  }
+  for (const command of ["qn_close", "qn_start_drag", "show_main_window"]) {
+    assert.deepEqual(holders(command), ["quicknotes"], command);
+  }
+  for (const command of ["quit_handler_ready", "quit_window_done", "qn_get_config"]) {
+    assert.deepEqual(holders(command), ["default", "quicknotes"], command);
+  }
+});

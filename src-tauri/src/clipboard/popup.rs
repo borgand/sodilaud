@@ -22,7 +22,7 @@ use tauri::{
 
 use super::commands::POPUP_LABEL;
 use super::layout::{popup_height, popup_origin, Rect, WIDTH};
-use super::panel;
+use crate::platform::panel::{self, PanelStyle};
 use super::popup_state::{
     accepts_hidden, accepts_shown, create_plan, hide_script, is_open, show_script, toggle_action,
     window_background, CreatePlan, PopupState, ToggleAction,
@@ -70,7 +70,7 @@ pub fn ensure_created(app: &AppHandle) -> Option<WebviewWindow> {
             .visible(false)
             .build()
             .ok()?;
-    let converted = panel::make_floating_panel(&window);
+    let converted = panel::make_floating_panel(&window, PanelStyle::Popup);
     // The clipboard panic hook hides this message, but in a debug build the panic
     // still stops the app, so a refused swap cannot hide behind the fallback.
     debug_assert!(converted.is_ok(), "popup panel refused: {converted:?}");

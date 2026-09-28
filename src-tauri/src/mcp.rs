@@ -1336,8 +1336,9 @@ impl SodilaudServer {
             }
         }
         let _guard = PendingGuard(writes, ticket.clone());
+        // The Quick Notes page owns the notes and stays loaded while hidden.
         app.emit_to(
-            "main",
+            crate::quicknotes::window::LABEL,
             "mcp-write-request",
             WriteEvent {
                 ticket,

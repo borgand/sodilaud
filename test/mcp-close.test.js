@@ -3,9 +3,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { bootApp, settle } from "./helpers/app-harness.js";
 
-test("closing drains an in-flight creation and rejects additional writes", async () => {
-  let closeHandler;
-  let destroyed = false;
+test("quitting drains an in-flight creation and rejects additional writes until cancelled", async () => {
   let release;
   let savedNotes = [];
   let hold = true;
@@ -18,11 +16,7 @@ test("closing drains an in-flight creation and rejects additional writes", async
         if (hold) await new Promise(resolve => { release = resolve; });
         savedNotes = structuredClone(notes);
       }
-    },
-    windowApi: { getCurrentWindow: () => ({
-      onCloseRequested: async handler => { closeHandler = handler; },
-      destroy: async () => { destroyed = true; }
-    }) }
+    }
   });
   app.click("agent-access-toggle-btn");
   await settle();
@@ -37,15 +31,22 @@ test("closing drains an in-flight creation and rejects additional writes", async
   const first = send("first", "Keep on close");
   await settle(20);
   assert.equal(typeof release, "function");
-  const closing = closeHandler({ preventDefault() {} });
+  const quitting = app.emit("sodilaud-quit-requested");
   await send("late", "Too late");
   const late = app.invocations.findLast(i => i.command === "complete_mcp_write" && i.args.ticket === "late");
   assert.equal(late.args.result.ok, false);
-  assert.equal(destroyed, false);
+  assert.ok(!app.invocations.some(i => i.command === "quit_window_done"));
   hold = false;
   release();
-  await Promise.all([first, closing]);
-  assert.equal(destroyed, true);
+  await Promise.all([first, quitting]);
+  await settle();
+  assert.deepEqual(app.invocations.filter(i => i.command === "quit_window_done").map(i => i.args.ok), [true]);
   assert.ok(savedNotes.some(n => n.title === "Keep on close"));
   assert.ok(!savedNotes.some(n => n.title === "Too late"));
+
+  // Another window failed to save, so the app stays open and writes resume.
+  await app.emit("sodilaud-quit-cancelled");
+  await send("after", "After cancel");
+  const after = app.invocations.findLast(i => i.command === "complete_mcp_write" && i.args.ticket === "after");
+  assert.equal(after.args.result.ok, true);
 });

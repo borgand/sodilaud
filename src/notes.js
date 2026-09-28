@@ -306,7 +306,6 @@ const noteSaveDebounceTimers = new Map();
 let previewDebounceTimer = null;
 let nativeAboutUnlisten = null;
 let dbSaveQueue = Promise.resolve();
-let isClosing = false;
 let localMirrorFailureNotified = false;
 let notificationSequence = 0;
 let activeNotification = null;
@@ -639,7 +638,6 @@ async function init() {
     nativeAboutUnlisten?.();
   }, { once: true });
   await registerNativeAboutHandler();
-  await registerCloseHandler();
   await registerQuitHandler();
   try {
     clipboardHistoryIsMac = Boolean(window.__TAURI__) && isMacPlatform(navigator);
@@ -1513,51 +1511,8 @@ function persistLocalMirrorBeforePageExit() {
   }
 }
 
-async function registerCloseHandler() {
-  const getCurrentWindow = window.__TAURI__?.window?.getCurrentWindow;
-  if (typeof getCurrentWindow !== "function") return;
-
-  try {
-    const appWindow = getCurrentWindow();
-    await appWindow.onCloseRequested(async (event) => {
-      if (isClosing) return;
-
-      event.preventDefault();
-      if (isClosePending) return;
-      isClosePending = true;
-      await dbSaveQueue;
-      const saved = await flushPendingSaves();
-      if (!saved) {
-        setSaveFailedState();
-        isClosePending = false;
-        showNotification("Could not save the latest changes; close cancelled");
-        return;
-      }
-
-      try {
-        if (await invoke("hide_main_window")) {
-          isClosePending = false;
-          return;
-        }
-      } catch (error) {
-        console.error("Failed to hide Sodilaud", error);
-      }
-
-      isClosing = true;
-      try {
-        await appWindow.destroy();
-      } catch (error) {
-        isClosing = false;
-        isClosePending = false;
-        console.error("Failed to close Sodilaud after saving", error);
-        showNotification("Could not close Sodilaud");
-      }
-    });
-  } catch (error) {
-    console.error("Failed to register the close-save handler", error);
-  }
-}
-
+// The panel is never closed, only hidden, so its page keeps running; a quit is
+// the one time it must finish saving. Rust waits for every window's answer.
 async function registerQuitHandler() {
   const listen = window.__TAURI__?.event?.listen;
   if (typeof listen !== "function") return;
@@ -1567,23 +1522,33 @@ async function registerQuitHandler() {
     await listen("sodilaud-quit-requested", async () => {
       if (quitting) return;
       quitting = true;
+      isClosePending = true;
+      let saved = false;
       try {
         await dbSaveQueue;
-        const saved = await flushPendingSaves();
+        saved = await flushPendingSaves();
         if (!saved) {
           setSaveFailedState();
           showNotification("Could not save the latest changes; quit cancelled");
-          return;
         }
-        await invoke("quit_app");
       } catch (error) {
-        console.error("Failed to quit Sodilaud", error);
-        showNotification("Could not quit Sodilaud");
+        console.error("Failed to save before quitting", error);
+        showNotification("Could not save the latest changes; quit cancelled");
       } finally {
+        if (!saved) isClosePending = false;
         quitting = false;
       }
+      try {
+        await invoke("quit_window_done", { ok: saved });
+      } catch (error) {
+        isClosePending = false;
+        console.error("Failed to quit Sodilaud", error);
+        showNotification("Could not quit Sodilaud");
+      }
     });
-    // Until this runs, Rust quits without asking this window to flush first.
+    // Another window could not save, so the app keeps running: accept writes again.
+    await listen("sodilaud-quit-cancelled", () => { isClosePending = false; });
+    // Until this runs, Rust quits without asking this window to save first.
     await invoke("quit_handler_ready");
   } catch (error) {
     console.error("Failed to register the quit handler", error);

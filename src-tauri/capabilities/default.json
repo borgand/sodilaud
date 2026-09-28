@@ -1,38 +1,22 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window",
-  "windows": ["main"],
+  "description": "Capability for the main window: the start page, settings, and (in a later change) the file editor. It cannot read or write notes; the Quick Notes window owns them.",
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:default",
-    "core:window:allow-destroy",
     "allow-confirm-and-open-url",
-    "allow-load-workspace-preference",
-    "allow-set-last-workspace",
-    "allow-save-file-native",
-    "allow-import-file-native",
-    "allow-select-db-file",
-    "allow-vacuum-workspace",
-    "allow-load-db-notes",
-    "allow-load-db-folders",
-    "allow-load-db-trash",
-    "allow-save-note-db",
-    "allow-save-notes-db",
-    "allow-save-folders-db",
-    "allow-save-workspace-db",
     "allow-show-alert-dialog",
-    "allow-update-mcp-snapshot",
-    "allow-update-mcp-note",
-    "allow-get-mcp-connection-info",
-    "allow-start-mcp-server",
-    "allow-set-mcp-permissions",
-    "allow-complete-mcp-write",
-    "allow-stop-mcp-server",
     "allow-clip-set-config",
     "allow-clip-set-theme",
-    "allow-hide-main-window",
-    "allow-quit-app",
     "allow-quit-handler-ready",
-    "allow-open-accessibility-settings"
+    "allow-quit-window-done",
+    "allow-open-accessibility-settings",
+    "allow-qn-get-config",
+    "allow-qn-set-hotkey",
+    "allow-qn-dismiss-intro",
+    "allow-qn-show"
   ]
 }
