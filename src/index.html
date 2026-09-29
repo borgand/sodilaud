@@ -559,7 +559,7 @@ function hello() {
             <h4 class="shortcuts-heading">Connect an agent</h4>
             <p class="shortcuts-note">Open Quick Notes, turn <strong>Agent access</strong> On in its menu (or choose <strong>Sodilaud menu → Agent access…</strong> here), then open <strong>MCP Configuration</strong> to copy the command, argument, or generic JSON example into a local stdio MCP client. Configuration remains available while access is off. Keep Sodilaud open; Quick Notes may stay hidden. <strong>MCP listening</strong> appears beside its save status while the server is enabled, even if no client is connected.</p>
             <p class="shortcuts-note">Every time access starts, all five Read functions are enabled and all eight Write functions are disabled. Select individual permissions or <strong>Select all</strong> within a section. Changes apply immediately to all connected clients. Disabling access disconnects clients and resets permissions; reconnect your client after enabling access again.</p>
-            <p class="shortcuts-note">Agents see the collection currently open, including unsaved edits, and may send returned content to their model provider. Only you can restore notes or empty trash. Agents cannot read trashed note bodies or replace an entire note.</p>
+            <p class="shortcuts-note">Agents see the collection currently open, including what you typed moments ago, and may send returned content to their model provider. Only you can restore notes or empty trash. Agents cannot read trashed note bodies or replace an entire note.</p>
             <h4 class="shortcuts-heading">Read functions</h4>
             <div class="cheatsheet-grid mcp-functions-grid">
               <div class="cheatsheet-card">
@@ -604,7 +604,7 @@ function hello() {
               </div>
               <div class="cheatsheet-card">
                 <div class="cheatsheet-card-title"><code>append_to_note</code></div>
-                <p class="mcp-function-description">Appends exact text, including your supplied newlines. Requires separate permission and the current revision from <code>get_note</code>. Conflicts require rereading. Failed saves remain visibly unsaved; retry the same request to save without appending again.</p>
+                <p class="mcp-function-description">Appends exact text, including your supplied newlines. Requires separate permission and the current revision from <code>get_note</code>. Conflicts require rereading. The text appears in an open editor without moving your cursor. Retrying the same request never appends twice.</p>
                 <p class="mcp-function-parameters"><strong>Required:</strong> <code>collectionId</code>, <code>requestId</code>, <code>noteId</code>, <code>expectedRevision</code>, <code>content</code></p>
               </div>
               <div class="cheatsheet-card">

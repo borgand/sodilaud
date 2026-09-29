@@ -5,7 +5,7 @@ import test from "node:test";
 
 import { bootApp, settle } from "./helpers/app-harness.js";
 
-test("agent access shares the live collection and can be turned off", async () => {
+test("agent access sends unsent typing to Rust first and can be turned off", async () => {
   const app = await bootApp({
     storage: {
       sodilaud_notes: [{
@@ -27,6 +27,11 @@ test("agent access shares the live collection and can be turned off", async () =
     }
   });
 
+  const editor = app.editor();
+  editor.dispatch({
+    changes: { from: 0, to: editor.state.doc.length, insert: "Typed just before" },
+    userEvent: "input.type"
+  });
   app.click("actions-btn");
   app.click("agent-access-toggle-btn");
   await settle(30);
@@ -36,12 +41,9 @@ test("agent access shares the live collection and can be turned off", async () =
   assert.equal(document.getElementById("actions-dropdown-content").classList.contains("show"), true);
   assert.equal(document.getElementById("actions-btn").getAttribute("aria-expanded"), "true");
   assert.notEqual(document.getElementById("agent-access-config-btn").style.display, "none");
-  assert.deepEqual(
-    app.invocations.slice(-3).map(({ command }) => command),
-    ["update_mcp_snapshot", "start_mcp_server", "update_mcp_snapshot"]
-  );
-  assert.equal(app.invocations.at(-3).args.collectionName, "Local notes");
-  assert.equal(app.invocations.at(-3).args.notes[0].content, "Saved body");
+  const commands = app.invocations.map(({ command }) => command);
+  assert.ok(commands.lastIndexOf("doc_push") < commands.indexOf("start_mcp_server"), "the agent never reads text older than the editor's");
+  assert.equal(app.registry.workspace().notes[0].content, "Typed just before");
 
   const copiedValues = [];
   Object.defineProperty(navigator, "clipboard", {
@@ -77,17 +79,6 @@ test("agent access shares the live collection and can be turned off", async () =
   assert.equal(document.getElementById("mcp-config-command").value, "");
   assert.equal(document.getElementById("mcp-config-args").value, "");
   assert.equal(document.getElementById("mcp-config-example-code").textContent, "");
-
-  const editor = app.editor();
-  editor.dispatch({
-    changes: { from: 0, to: editor.state.doc.length, insert: "Unsaved agent-visible body" },
-    userEvent: "input.type"
-  });
-  await settle(100);
-
-  const noteUpdate = app.invocations.findLast(({ command }) => command === "update_mcp_note");
-  assert.equal(noteUpdate.args.note.content, "Unsaved agent-visible body");
-  assert.equal(JSON.parse(app.storage.getItem("sodilaud_notes"))[0].content, "Saved body");
 
   app.click("actions-btn");
   app.click("agent-access-toggle-btn");

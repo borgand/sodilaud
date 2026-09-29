@@ -10,6 +10,7 @@ import { readFile } from "node:fs/promises";
 import { JSDOM } from "jsdom";
 import * as Diff from "diff";
 import { polyfillLayout } from "./cm-dom.js";
+import { createFakeRegistry } from "./fake-registry.js";
 
 export const settle = (ms = 50) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -29,7 +30,10 @@ export function bootMainWindow(options = {}) {
   return bootPage({ ...options, page: "index.html", script: "app.js", label: "main" });
 }
 
-async function bootPage({ page, script, label, storage = {}, handlers = {}, instance = 1, windowApi = {}, globals = {}, platform, beforeBoot } = {}) {
+// `registry` seeds the fake Rust notes registry: `{ seed, files, open, fallback }`
+// (see fake-registry.js). Unless `seed.imported` is set, the page imports what
+// `storage` holds under the old local-storage keys, as a first launch of 0.11 does.
+async function bootPage({ page, script, label, storage = {}, handlers = {}, registry: registryOptions = {}, instance = 1, windowApi = {}, globals = {}, platform, beforeBoot } = {}) {
   const html = await readFile(new URL(`../../src/${page}`, import.meta.url), "utf8");
   const dom = new JSDOM(html, { url: "http://localhost/", pretendToBeVisual: true });
 
@@ -37,16 +41,23 @@ async function bootPage({ page, script, label, storage = {}, handlers = {}, inst
     Object.defineProperty(dom.window.navigator, "platform", { value: platform, configurable: true });
   }
 
+  const eventListeners = new Map();
+  // Tauri delivers events asynchronously, after the command that caused them.
+  const registry = createFakeRegistry({
+    ...registryOptions,
+    emit: (name, payload) => setTimeout(() => eventListeners.get(name)?.({ payload: structuredClone(payload) }), 0)
+  });
+
   const invocations = [];
   async function invoke(command, args) {
     invocations.push({ command, args });
     const handler = handlers[command];
     if (typeof handler === "function") return handler(args);
-    if (command === "load_db_folders" || command === "load_db_trash") return [];
+    const fake = registry.commands[command];
+    if (fake) return structuredClone(fake(structuredClone(args ?? {})) ?? null);
     return null;
   }
 
-  const eventListeners = new Map();
   const emitted = [];
   dom.window.__TAURI__ = {
     core: { invoke },
@@ -104,6 +115,20 @@ async function bootPage({ page, script, label, storage = {}, handlers = {}, inst
     emit: (name, payload) => eventListeners.get(name)?.({ payload }),
     emitted,
     invocations,
+    registry,
+    // What Rust has saved, once pending writes and events have settled.
+    savedNotes: async () => {
+      await settle();
+      return registry.workspace().notes.map(({ updates, version, rev, ...note }) => note);
+    },
+    savedFolders: async () => {
+      await settle();
+      return registry.workspace().folders.map(({ rev, ...folder }) => folder);
+    },
+    savedTrash: async () => {
+      await settle();
+      return registry.workspace().trash;
+    },
     settle,
     storage: dom.window.localStorage,
     // Everything local storage holds, ready to seed the next launch.

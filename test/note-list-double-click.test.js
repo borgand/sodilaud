@@ -24,20 +24,20 @@ const doubleClick = (element) => element.dispatchEvent(new app.dom.window.MouseE
 ));
 const noteCount = () => document.querySelectorAll(".note-item").length;
 
-test("double-clicking the empty space below the list creates a scratchpad", () => {
+test("double-clicking the empty space below the list creates a scratchpad", async () => {
   assert.equal(noteCount(), 2);
 
   doubleClick(document.getElementById("note-list-container"));
 
   assert.equal(noteCount(), 3);
-  const created = app.read("sodilaud_notes").find(note => note.title === "Untitled Scratchpad");
+  const created = (await app.savedNotes()).find(note => note.title === "Untitled Scratchpad");
   assert.ok(created, "a blank scratchpad was stored");
   assert.equal(document.querySelector(".note-item.active").dataset.id, created.id);
   assert.equal(document.getElementById("note-title").value, "Untitled Scratchpad");
   assert.equal(app.editorText(), "");
 });
 
-test("gaps between rows count as empty space", () => {
+test("gaps between rows count as empty space", async () => {
   const before = noteCount();
   doubleClick(document.getElementById("note-list"));
   assert.equal(noteCount(), before + 1);
@@ -46,7 +46,7 @@ test("gaps between rows count as empty space", () => {
 // The gesture rides on the list container, so anything inside it that owns its
 // own double-click has to be left alone -- otherwise selecting a word of a
 // folder name, or double-clicking a note to open it, also spawns a scratchpad.
-test("double-clicking a note, a folder header or its input creates nothing", () => {
+test("double-clicking a note, a folder header or its input creates nothing", async () => {
   const before = noteCount();
 
   doubleClick(document.querySelector('.note-item[data-id="loose"]'));

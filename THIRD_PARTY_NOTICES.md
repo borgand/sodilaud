@@ -131,7 +131,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ## CodeMirror and Lezer
 
 Sodilaud includes [CodeMirror 6](https://codemirror.net/) (`@codemirror/state`,
-`@codemirror/view`, `@codemirror/language`, `@codemirror/commands`) and
+`@codemirror/view`, `@codemirror/language`, `@codemirror/commands`,
+`@codemirror/collab`) and
 [Lezer](https://lezer.codemirror.net/) (`@lezer/markdown`, `@lezer/highlight`,
 and their dependencies `@lezer/common`, `@lezer/lr`, `style-mod`,
 `w3c-keyname`, `crelt`, and `@marijn/find-cluster-break`), under the MIT

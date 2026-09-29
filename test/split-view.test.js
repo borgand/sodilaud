@@ -33,8 +33,7 @@ const NOTES = [
 
 test("closing split view immediately clears its enabled notification", async () => {
   const app = await bootApp({
-    storage: { sodilaud_notes: NOTES },
-    handlers: { load_workspace_preference: () => null }
+    storage: { sodilaud_notes: NOTES }
   });
   const { document } = app.dom.window;
   const splitButton = document.getElementById("split-note-btn");
@@ -69,8 +68,7 @@ test("compare mode highlights live note differences and clears with split view",
         { ...NOTES[0], content: "# Shared heading\nLeft old wording\nSame ending" },
         { ...NOTES[1], content: "# Shared heading\nRight new wording\nSame ending" }
       ]
-    },
-    handlers: { load_workspace_preference: () => null }
+    }
   });
   const { document } = app.dom.window;
   const splitButton = document.getElementById("split-note-btn");
@@ -117,8 +115,7 @@ test("compare mode highlights live note differences and clears with split view",
 test("switching the secondary pane to the primary note stops comparison cleanly", async () => {
   const app = await bootApp({
     instance: 3,
-    storage: { sodilaud_notes: NOTES },
-    handlers: { load_workspace_preference: () => null }
+    storage: { sodilaud_notes: NOTES }
   });
   const { document } = app.dom.window;
   const compareButton = document.getElementById("compare-notes-btn");
@@ -150,8 +147,7 @@ test("compare shows a change rail for blank lines when line numbers are off", as
         { ...NOTES[0], content: "first\nlast" },
         { ...NOTES[1], content: "first\n\nlast" }
       ]
-    },
-    handlers: { load_workspace_preference: () => null }
+    }
   });
   const { document } = app.dom.window;
   const secondary = document.getElementById("secondary-editor-host");
@@ -173,8 +169,7 @@ test("compare shows a change rail for blank lines when line numbers are off", as
 test("compare is unavailable when both panes show the same note", async () => {
   const app = await bootApp({
     instance: 5,
-    storage: { sodilaud_notes: [NOTES[0]] },
-    handlers: { load_workspace_preference: () => null }
+    storage: { sodilaud_notes: [NOTES[0]] }
   });
   const compareButton = app.dom.window.document.getElementById("compare-notes-btn");
 
@@ -192,8 +187,7 @@ test("compare debounces changed text and reuses cached results for redraws", asy
         { ...NOTES[0], content: "Shared\nLeft wording" },
         { ...NOTES[1], content: "Shared\nRight wording" }
       ]
-    },
-    handlers: { load_workspace_preference: () => null }
+    }
   });
   const { document } = app.dom.window;
   let diffCalls = 0;
@@ -244,8 +238,7 @@ test("compare debounces changed text and reuses cached results for redraws", asy
 test("closing compare cancels a pending comparison", async () => {
   const app = await bootApp({
     instance: 7,
-    storage: { sodilaud_notes: NOTES },
-    handlers: { load_workspace_preference: () => null }
+    storage: { sodilaud_notes: NOTES }
   });
   const { document } = app.dom.window;
   let diffCalls = 0;
@@ -279,8 +272,7 @@ test("reverting an edit inside the compare debounce restores the diff marks", as
         { ...NOTES[0], content: "Shared\nLeft wording" },
         { ...NOTES[1], content: "Shared\nRight wording" }
       ]
-    },
-    handlers: { load_workspace_preference: () => null }
+    }
   });
   const { document } = app.dom.window;
   const primary = document.getElementById("editor-host");

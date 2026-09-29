@@ -12,8 +12,7 @@ test("an upgrading user's local notes open in Quick Notes without a new welcome 
     { id: "b", title: "Plan", content: "Plan\n1. ship", updatedAt: 1, isTitleLocked: false }
   ];
   const app = await bootApp({
-    storage: { sodilaud_notes: notes },
-    handlers: { load_workspace_preference: () => null }
+    storage: { sodilaud_notes: notes }
   });
 
   assert.deepEqual(app.sidebarTitles(), ["Groceries", "Plan"]);
