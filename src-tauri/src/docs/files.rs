@@ -148,6 +148,15 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
+/// The earliest autosave that may run, skipping files that changed on disk.
+fn earliest_due(docs: &HashMap<PathBuf, FileDoc>) -> Option<(Instant, PathBuf)> {
+    docs.iter()
+        .filter(|(_, doc)| doc.external.is_none())
+        .filter_map(|(path, doc)| doc.save.due.map(|due| (due, path)))
+        .min_by_key(|(due, _)| *due)
+        .map(|(due, path)| (due, path.clone()))
+}
+
 impl Registry {
     fn file_docs(&self) -> MutexGuard<'_, HashMap<PathBuf, FileDoc>> {
         lock(&self.files.docs)
@@ -303,15 +312,44 @@ impl Registry {
         self.file_docs().remove(path);
     }
 
-    /// The document whose autosave is due at `now`, the earliest first.
-    pub(crate) fn file_due(&self, now: Instant) -> Option<PathBuf> {
-        self.file_docs()
+    /// Writes every pending save, as a quit does. Returns the failures.
+    pub(crate) fn file_flush_all(&self, disk: &dyn Disk) -> Vec<FileError> {
+        let paths: Vec<PathBuf> = self.file_docs().keys().cloned().collect();
+        paths
             .iter()
-            .filter(|(_, doc)| doc.external.is_none())
-            .filter_map(|(path, doc)| doc.save.due.map(|due| (due, path)))
+            .filter_map(|path| self.file_save(path, disk).err())
+            .filter(|error| error.code != FileErrorCode::NotOpen)
+            .collect()
+    }
+
+    /// Blocks until an autosave is due and returns its document.
+    pub(crate) fn file_next_due(&self) -> PathBuf {
+        let mut docs = self.file_docs();
+        loop {
+            let now = Instant::now();
+            docs = match earliest_due(&docs) {
+                Some((due, path)) if due <= now => return path,
+                Some((due, _)) => {
+                    self.files
+                        .wake
+                        .wait_timeout(docs, due - now)
+                        .unwrap_or_else(PoisonError::into_inner)
+                        .0
+                }
+                None => self
+                    .files
+                    .wake
+                    .wait(docs)
+                    .unwrap_or_else(PoisonError::into_inner),
+            };
+        }
+    }
+
+    #[cfg(test)]
+    fn file_due(&self, now: Instant) -> Option<PathBuf> {
+        earliest_due(&self.file_docs())
             .filter(|(due, _)| *due <= now)
-            .min_by_key(|(due, _)| *due)
-            .map(|(_, path)| path.clone())
+            .map(|(_, path)| path)
     }
 }
 
@@ -436,6 +474,124 @@ mod tests {
         assert_eq!(fs::read(&path).unwrap(), b"one two", "close flushes");
         let error = registry.file_push(&path, 1, vec![]).unwrap_err();
         assert_eq!(error.code, FileErrorCode::NotOpen);
+    }
+
+    struct FailingDisk;
+
+    impl Disk for FailingDisk {
+        fn read(&self, path: &Path) -> Result<Vec<u8>, FileError> {
+            io::read_bytes(path)
+        }
+        fn write(&self, _: &Path, _: &str, _: LineEnding, _: bool) -> Result<String, FileError> {
+            Err(FileError::other("disk full".into()))
+        }
+    }
+
+    /// Types into the document while the write is under way.
+    struct TypingDisk<'a>(&'a Registry);
+
+    impl Disk for TypingDisk<'_> {
+        fn read(&self, path: &Path) -> Result<Vec<u8>, FileError> {
+            io::read_bytes(path)
+        }
+        fn write(
+            &self,
+            path: &Path,
+            text: &str,
+            line_ending: LineEnding,
+            bom: bool,
+        ) -> Result<String, FileError> {
+            let version = self.0.file_open(path, &TestDisk).unwrap().version;
+            let length = crate::docs::changes::utf16_len(text);
+            self.0
+                .file_push(path, version, vec![update(json!([length, [0, "+"]]))])
+                .unwrap();
+            io::write_atomic(path, text, line_ending, bom)
+        }
+    }
+
+    #[test]
+    fn a_save_writes_the_file_in_its_own_line_ending_and_bom() {
+        let path = scratch("save", b"\xEF\xBB\xBFone\r\ntwo\r\n");
+        let (registry, recorder) = registry();
+        registry.file_open(&path, &TestDisk).unwrap();
+        registry
+            .file_push(&path, 0, vec![update(json!([8, [0, "3😀"]]))])
+            .unwrap();
+        let saved = registry.file_save(&path, &TestDisk).unwrap();
+        assert_eq!(saved.version, 1);
+        assert_eq!(saved.error, None);
+        assert_eq!(
+            fs::read(&path).unwrap(),
+            "\u{FEFF}one\r\ntwo\r\n3😀".as_bytes()
+        );
+        assert_eq!(recorder.saved.lock().unwrap().clone(), vec![saved]);
+        assert_eq!(registry.file_due(Instant::now() + SAVE_DELAY * 2), None);
+        let again = registry.file_save(&path, &TestDisk).unwrap();
+        assert_eq!(again.version, 1, "a clean document is not written again");
+        assert_eq!(recorder.saved.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn typing_during_a_write_keeps_the_document_dirty() {
+        let path = scratch("typing", b"a");
+        let (registry, _) = registry();
+        registry.file_open(&path, &TestDisk).unwrap();
+        registry
+            .file_push(&path, 0, vec![update(json!([1, [0, "b"]]))])
+            .unwrap();
+        let saved = registry.file_save(&path, &TypingDisk(&registry)).unwrap();
+        assert_eq!(saved.version, 1);
+        assert_eq!(fs::read(&path).unwrap(), b"ab");
+        assert!(registry.file_due(Instant::now() + SAVE_DELAY * 2).is_some());
+        assert_eq!(registry.file_save(&path, &TestDisk).unwrap().version, 2);
+        assert_eq!(fs::read(&path).unwrap(), b"ab+");
+    }
+
+    #[test]
+    fn a_failed_write_is_reported_and_the_document_stays_dirty() {
+        let path = scratch("fail", b"x");
+        let (registry, recorder) = registry();
+        registry.file_open(&path, &TestDisk).unwrap();
+        registry
+            .file_push(&path, 0, vec![update(json!([1, [0, "y"]]))])
+            .unwrap();
+        let error = registry.file_save(&path, &FailingDisk).unwrap_err();
+        assert_eq!(error.message, "disk full");
+        let event = recorder.saved.lock().unwrap()[0].clone();
+        assert_eq!(
+            (event.version, event.error.as_deref()),
+            (0, Some("disk full"))
+        );
+        assert_eq!(
+            registry.file_open(&path, &TestDisk).unwrap().saved_version,
+            0
+        );
+        assert!(
+            registry.file_close(&path, &FailingDisk).is_err(),
+            "close keeps unsaved text"
+        );
+        assert_eq!(registry.file_flush_all(&FailingDisk).len(), 1);
+        assert!(registry.file_flush_all(&TestDisk).is_empty());
+        assert_eq!(fs::read(&path).unwrap(), b"xy");
+    }
+
+    #[test]
+    fn the_saver_wakes_when_a_save_comes_due() {
+        let path = scratch("wake", b"");
+        let registry = Arc::new(registry().0);
+        registry.file_open(&path, &TestDisk).unwrap();
+        let waiting = {
+            let registry = registry.clone();
+            std::thread::spawn(move || registry.file_next_due())
+        };
+        std::thread::sleep(Duration::from_millis(20));
+        let pushed_at = Instant::now();
+        registry
+            .file_push(&path, 0, vec![update(json!([[0, "z"]]))])
+            .unwrap();
+        assert_eq!(waiting.join().unwrap(), path);
+        assert!(pushed_at.elapsed() >= SAVE_DELAY);
     }
 
     #[test]
