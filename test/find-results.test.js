@@ -31,8 +31,7 @@ const NOTES = [
 
 test("Find All lists live matches and jumps to the selected result", async () => {
   const app = await bootApp({
-    storage: { sodilaud_notes: NOTES },
-    handlers: { load_workspace_preference: () => null }
+    storage: { sodilaud_notes: NOTES }
   });
   const { document, Event, KeyboardEvent } = app.dom.window;
   app.dom.window.marked = marked;

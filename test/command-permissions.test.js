@@ -51,11 +51,10 @@ test("popup commands are granted only to the clipboard window", async () => {
 });
 
 const NOTE_COMMANDS = [
-  "load_workspace_preference", "set_last_workspace", "save_file_native",
-  "select_db_file", "vacuum_workspace", "load_db_notes", "load_db_folders", "load_db_trash",
-  "save_note_db", "save_notes_db", "save_folders_db", "save_workspace_db",
-  "update_mcp_snapshot", "update_mcp_note", "get_mcp_connection_info", "start_mcp_server",
-  "set_mcp_permissions", "complete_mcp_write", "stop_mcp_server"
+  "save_file_native", "select_db_file",
+  "notes_boot", "notes_import_local", "notes_connect", "notes_disconnect", "notes_sync_structure",
+  "notes_trash", "notes_restore", "notes_empty_trash", "notes_vacuum", "doc_push", "doc_pull",
+  "get_mcp_connection_info", "start_mcp_server", "set_mcp_permissions", "stop_mcp_server"
 ];
 const grant = (command) => `allow-${command.replaceAll("_", "-")}`;
 
@@ -67,6 +66,13 @@ test("only the Quick Notes window can read, write or expose notes", async () => 
     const holders = caps.filter(cap => cap.permissions.includes(grant(command))).map(cap => cap.identifier);
     assert.deepEqual(holders, ["quicknotes"], `${command} must be granted to the Quick Notes window only`);
   }
+});
+
+test("note contents are sent to the Quick Notes window only", async () => {
+  const commands = await readFile("src-tauri/src/docs/commands.rs", "utf8");
+  assert.doesNotMatch(commands, /\.emit\(/, "a broadcast would reach every webview");
+  assert.match(commands, /emit_to\(\s*quicknotes::window::LABEL,\s*CHANGED_EVENT/);
+  assert.match(commands, /emit_to\(\s*quicknotes::window::LABEL,\s*DOC_EVENT/);
 });
 
 test("settings commands belong to the main window and panel commands to the panel", async () => {

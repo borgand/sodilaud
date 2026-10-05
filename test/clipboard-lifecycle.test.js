@@ -19,13 +19,17 @@ test("the quit listener tells Rust it is ready once registered", async () => {
 
 test("a failed flush reports failure, which cancels the quit", async () => {
   const app = await bootApp({ instance: 4 });
-  app.dom.window.Storage.prototype.setItem = () => {
-    throw new app.dom.window.DOMException("full", "QuotaExceededError");
-  };
+  app.registry.failOn("doc_push");
+  const view = app.editor();
+  view.dispatch({ changes: { from: 0, insert: "unsaved " }, userEvent: "input.type" });
   await app.emit("sodilaud-quit-requested");
   await settle();
   assert.deepEqual(done(app), [false]);
   assert.match(app.dom.window.document.getElementById("save-status").textContent, /quit cancelled/);
+  // The change is retried until Rust takes it.
+  app.registry.recover("doc_push");
+  await settle(2200);
+  assert.equal(app.registry.workspace().notes[0].content.startsWith("unsaved "), true);
 });
 
 test("a second quit request while one is in flight answers once", async () => {

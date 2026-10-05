@@ -23,7 +23,7 @@ test("the note context menu deletes its target and stays separate from folder an
   assert.equal(divider.style.display, "block");
   button.click();
   await app.settle();
-  assert.deepEqual(app.read("sodilaud_notes").map(note => note.id), ["one"]);
+  assert.deepEqual((await app.savedNotes()).map(note => note.id), ["one"]);
   assert.equal(document.getElementById("note-title").value, "One");
   assert.equal(document.getElementById("custom-context-menu").style.display, "none");
 
@@ -36,7 +36,7 @@ test("the note context menu deletes its target and stays separate from folder an
   open(item("one"));
   button.click();
   await app.settle();
-  const remaining = app.read("sodilaud_notes");
+  const remaining = (await app.savedNotes());
   assert.equal(remaining.length, 1, "deleting the last note retains the existing blank-note fallback");
   assert.notEqual(remaining[0].id, "one");
   assert.equal(remaining[0].content, "");

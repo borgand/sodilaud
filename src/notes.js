@@ -4,14 +4,12 @@ import {
   LOCAL_FOLDERS_KEY,
   LOCAL_NOTES_BACKUP_KEY,
   LOCAL_NOTES_KEY,
-  persistFoldersLocally,
-  persistNotesLocally,
   readStoredFolders,
   readStoredNotes
 } from "./storage.js";
-import { LOCAL_TRASH_KEY, readTrash, trashSummary, restoredNote, persistNotesAndTrashLocally, emptyTrashLocally } from "./trash.js";
+import { LOCAL_TRASH_KEY, readTrash } from "./trash.js";
 import { createTrashUi } from "./trash-ui.js";
-import { createMcpWriter, createNoteRevisionTracker, createFolderRevisionTracker } from "./mcp-writes.js";
+import { applyUpdatesToText, createNoteSync } from "./note-sync.js";
 import { renderMarkdown, resolveLinkAction, sanitizeMarkdownHtml } from "./markdown.js";
 import { getNotePreview } from "./note-preview.js";
 import { createThemes } from "./themes.js";
@@ -37,6 +35,7 @@ import {
   normalizePinnedNoteOrder,
   setNotePinned
 } from "./note-order.js";
+import { autoTitle, UNTITLED_TITLE } from "./note-title.js";
 import {
   UNFILED_SECTION_ID,
   isFolderNameAvailable,
@@ -184,8 +183,6 @@ const COLLAPSED_FOLDERS_KEY = "sodilaud_collapsed_folders";
 let notes = [];
 let folders = [];
 let trash = [];
-let trashLoadError = null;
-let trashNeedsSave = false;
 let activeNoteId = null;
 let secondaryNoteId = null;
 let activePane = "primary"; // "primary" or "secondary"
@@ -195,7 +192,9 @@ let noteComparison = emptyNoteComparison();
 let noteComparisonSource = null;
 let noteComparisonRefreshTimer = null;
 let isNoteComparisonPending = false;
-let activeDbPath = null;
+// The collection Rust has open. Notes, folders and trash mirror its last event.
+let collectionId = null;
+let workspaceInfo = { name: "Local notes", path: "", isDefault: true };
 let currentLayoutMode = "live";
 let primaryEditor = null;
 let secondaryEditor = null;
@@ -219,10 +218,9 @@ let isMatchCaseMode = false;
 let isExactMatchMode = false;
 let isRegexMode = false;
 let isReplaceOpen = false;
-const noteSaveDebounceTimers = new Map();
 let previewDebounceTimer = null;
-let dbSaveQueue = Promise.resolve();
-let localMirrorFailureNotified = false;
+let noteListRenderTimer = null;
+let titleSyncTimer = null;
 let notificationSequence = 0;
 let activeNotification = null;
 let previewHighlightsRendered = false;
@@ -232,14 +230,7 @@ const MCP_WRITE_TOOLS = ["create_note", "create_folder", "append_to_note", "rena
 const defaultMcpPermissions = () => Object.fromEntries([...MCP_READ_TOOLS.map(tool => [tool, true]), ...MCP_WRITE_TOOLS.map(tool => [tool, false])]);
 let mcpPermissions = defaultMcpPermissions();
 let isMcpPermissionSaving = false;
-const noteRevision = createNoteRevisionTracker(() => window.crypto.randomUUID());
-const currentNoteRevision = note => noteRevision(note, mcpCollectionId);
-const folderRevision = createFolderRevisionTracker(() => window.crypto.randomUUID());
-const currentFolderRevision = folder => folderRevision(folder, mcpCollectionId);
-let mcpWriteListener = null;
-let mcpCollectionId = window.crypto.randomUUID();
 let isWorkspaceSwitching = false;
-let isClosePending = false;
 
 const shareAppearance = (key) => broadcastPreference(window, key);
 const appearance = createAppearance({
@@ -261,217 +252,336 @@ const appearance = createAppearance({
 // The theme is chosen in the main window; this page only follows it.
 const themes = createThemes({ document, storage: localStorage, invoke });
 
-function enqueueWorkspaceOperation(operation) {
-  const result = dbSaveQueue.then(operation);
-  dbSaveQueue = result.catch(() => undefined);
+// ----------------------------------------------------
+// Rust-owned collection
+// ----------------------------------------------------
+// Rust owns the notes. This page renders its events and sends two kinds of
+// writes: text changes, through a collab client per editor (note-sync.js), and
+// the sidebar structure, as the order and metadata the page arranged.
+
+// What Rust holds once the writes already sent are applied, so each write
+// carries only what the page changed since.
+const knownNotes = new Map();
+const knownFolders = new Map();
+let structureQueue = Promise.resolve(true);
+let structureWritesInFlight = 0;
+let deferredWorkspaceState = null;
+let lastWorkspaceSeq = 0;
+let structureFailed = false;
+let textSyncFailed = false;
+
+const noteSync = createNoteSync({
+  invoke,
+  collectionId: () => collectionId,
+  ready: () => structureQueue,
+  label: "quicknotes",
+  onStatus: ({ failed }) => {
+    textSyncFailed = failed;
+    refreshSaveStatus();
+  },
+  onReload: (noteId, text, version) => {
+    const note = notes.find(candidate => candidate.id === noteId);
+    if (!note) return;
+    note.content = text;
+    note.syncedContent = text;
+    note.version = version;
+    forgetPaneStates(noteId);
+    if (activeNoteId === noteId) loadActiveNote();
+    if (isSplitNoteMode && secondaryNoteId === noteId) loadSecondaryNote();
+  }
+});
+
+// The save label for the current state. A notification that is showing gets it
+// as the label to restore when it goes away.
+function refreshSaveStatus() {
+  const apply = structureFailed || textSyncFailed ? setSaveFailedState
+    : noteSync.pending() || structureWritesInFlight > 0 ? triggerSavingState
+      : setSavedState;
+  if (!activeNotification) {
+    apply();
+    return;
+  }
+  const shown = { textContent: saveStatus.textContent, className: saveStatus.className, title: saveStatus.title };
+  apply();
+  activeNotification.restoreState = { textContent: saveStatus.textContent, className: saveStatus.className, title: saveStatus.title };
+  Object.assign(saveStatus, { textContent: shown.textContent, className: shown.className, title: shown.title });
+}
+
+const noteMeta = note => ({
+  title: note.title,
+  isTitleLocked: Boolean(note.isTitleLocked),
+  isPinned: Boolean(note.isPinned),
+  folderId: note.folderId ?? null
+});
+
+// The sidebar as this page arranged it, with each note's and folder's changes
+// relative to what Rust last reported. An unlocked title is Rust's to derive.
+function structurePayload() {
+  const payload = {
+    collectionId,
+    notes: notes.map(note => {
+      const known = knownNotes.get(note.id);
+      const meta = noteMeta(note);
+      if (!known) return { id: note.id, ...meta, content: note.syncedContent ?? "" };
+      const patch = { id: note.id };
+      if (meta.isTitleLocked !== known.isTitleLocked) patch.isTitleLocked = meta.isTitleLocked;
+      if (meta.isTitleLocked && meta.title !== known.title) patch.title = meta.title;
+      if (meta.isPinned !== known.isPinned) patch.isPinned = meta.isPinned;
+      if (meta.folderId !== known.folderId) patch.folderId = meta.folderId;
+      return patch;
+    }),
+    folders: folders.map(folder => (
+      knownFolders.get(folder.id) === folder.name ? { id: folder.id } : { id: folder.id, name: folder.name }
+    )),
+    deletedFolderIds: [...knownFolders.keys()].filter(id => !folders.some(folder => folder.id === id))
+  };
+  // Rust applies writes in order, so the next payload is relative to this one.
+  // The next Rust state that is applied resets both maps.
+  knownNotes.clear();
+  notes.forEach(note => knownNotes.set(note.id, noteMeta(note)));
+  knownFolders.clear();
+  folders.forEach(folder => knownFolders.set(folder.id, folder.name));
+  return payload;
+}
+
+// The payload is taken now, so a Rust event that arrives before it is sent
+// cannot erase what the user just did.
+function syncStructure() {
+  if (!collectionId) return Promise.resolve(false);
+  const payload = structurePayload();
+  structureWritesInFlight += 1;
+  triggerSavingState();
+  const result = structureQueue.then(async () => {
+    try {
+      deferWorkspaceState(await invoke("notes_sync_structure", { structure: payload }));
+      structureFailed = false;
+      return true;
+    } catch (error) {
+      console.error("Could not save the note list", error);
+      structureFailed = true;
+      // Rust may lack this write, so the next one sends every note in full.
+      knownNotes.clear();
+      showNotification(`Could not save the note list: ${error.message || error}`);
+      return false;
+    } finally {
+      structureWritesInFlight -= 1;
+      if (structureWritesInFlight === 0 && deferredWorkspaceState) {
+        const state = deferredWorkspaceState;
+        deferredWorkspaceState = null;
+        applyWorkspaceState(state);
+      }
+      refreshSaveStatus();
+    }
+  });
+  structureQueue = result;
   return result;
 }
 
-const mcpWriter = createMcpWriter({
-  state: () => ({
-    permissions: Object.fromEntries(Object.entries(mcpPermissions).map(([tool, allowed]) => [tool, isMcpEnabled && allowed])),
-    switching: isWorkspaceSwitching || isClosePending,
-    collectionId: mcpCollectionId, dbPath: activeDbPath, notes, folders, trash, editingFolderId
-  }),
-  uuid: () => window.crypto.randomUUID(),
-  revision: currentNoteRevision,
-  folderRevision: currentFolderRevision,
-  applyNoteDeletion,
-  applyFolderDeletion,
-  deletionSaved: () => { if (noteSaveDebounceTimers.size === 0) setSavedState(); },
-  applyNoteChange: (note, operation) => {
-    notes = notes.map(existing => existing.id === note.id ? note : existing);
-    triggerSavingState();
-    scheduleMcpNoteUpdate(note.id);
-    try {
-      for (const [id, editor] of [[activeNoteId, primaryEditor], [secondaryNoteId, secondaryEditor]]) {
-        if (id !== note.id || operation !== "append_to_note") continue;
-        editor.setText(note.content);
-      }
-      if (activeNoteId === note.id) {
-        if (operation === "rename_note") noteTitleInput.value = note.title;
-        updateMarkdownPreview();
-        updateWordCharCountForText(primaryEditor);
-      }
-      if (secondaryNoteId === note.id) updateSecondaryMarkdownPreview();
-      if (isCompareMode && (activeNoteId === note.id || secondaryNoteId === note.id)) {
-        applyComparisonDecorations();
-      }
-      populateSecondaryNoteSelect();
-      if (isFindResultsOpen && isFindAllNotesMode) renderFindResults();
-      if (isFindBarOpen) runFind({ preserveActive: true, selectActive: false });
-      if (!isCreatingFolder && editingFolderId === null) renderNoteList(searchInput.value);
-    } catch (error) {
-      console.error("Could not render MCP note change", error);
-    }
-  },
-  applyFolderChange: folder => {
-    folders = folders.map(existing => existing.id === folder.id ? folder : existing);
-    triggerSavingState();
-    scheduleMcpSnapshotUpdate();
-    try {
-      if (!isCreatingFolder && editingFolderId === null) renderNoteList(searchInput.value);
-      populateSecondaryNoteSelect();
-    } catch (error) {
-      console.error("Could not render MCP folder rename", error);
-    }
-  },
-  mutationSaveFailed: setSaveFailedState,
-  mutationSaved: (id, revision, operation) => {
-    const changingFolder = operation === "rename_folder";
-    const item = (changingFolder ? folders : notes).find(item => item.id === id);
-    if (item && (changingFolder ? currentFolderRevision(item) : currentNoteRevision(item)) === revision
-      && noteSaveDebounceTimers.size === 0) setSavedState();
-  },
-  enqueue: enqueueWorkspaceOperation,
-  persist: async (candidate, operation) => {
-    if (candidate.dbPath) {
-      await persistWorkspace(candidate);
+function scheduleTitleSync() {
+  clearTimeout(titleSyncTimer);
+  titleSyncTimer = setTimeout(() => {
+    titleSyncTimer = null;
+    syncStructure();
+  }, 400);
+}
+
+function flushTitleSync() {
+  if (titleSyncTimer === null) return;
+  clearTimeout(titleSyncTimer);
+  titleSyncTimer = null;
+  syncStructure();
+}
+
+function scheduleNoteListRender() {
+  clearTimeout(noteListRenderTimer);
+  noteListRenderTimer = setTimeout(() => {
+    noteListRenderTimer = null;
+    if (!isCreatingFolder && editingFolderId === null) renderNoteList(searchInput.value);
+  }, 400);
+}
+
+// Each pane keeps the editor state of every note it showed, so switching back
+// resumes the same collab client, with its unsent changes and undo history.
+// A new editor starts from the text Rust confirmed, never from unsent typing.
+const paneStates = { primary: new Map(), secondary: new Map() };
+const paneNoteIds = { primary: null, secondary: null };
+
+// Forgets what the panes hold for one note, or for every note, so the next
+// load starts again from Rust's text.
+function forgetPaneStates(noteId = null) {
+  for (const pane of Object.keys(paneStates)) {
+    if (noteId === null) {
+      paneStates[pane].clear();
+      paneNoteIds[pane] = null;
     } else {
-      const result = ["create_folder", "rename_folder", "delete_folder"].includes(operation) && !trashNeedsSave
-        ? persistFoldersLocally(localStorage, candidate.folders)
-        : persistNotesAndTrashLocally(localStorage, candidate.notes, candidate.trash);
-      if (!result.ok) throw new Error("Could not save MCP write to local storage");
-      if (trashNeedsSave) {
-        const folderResult = persistFoldersLocally(localStorage, candidate.folders);
-        if (!folderResult.ok) throw new Error("Could not save folders to local storage");
-      }
-      trashNeedsSave = false;
+      paneStates[pane].delete(noteId);
+      if (paneNoteIds[pane] === noteId) paneNoteIds[pane] = null;
     }
-  },
-  publish: ({ note, folder }) => {
-    if (note) {
-      // A user may remove its destination folder while persistence is in flight.
-      note.folderId = validFolderId(note.folderId, folders);
-      notes = insertNoteBelowPinned(notes, note);
+  }
+}
+
+function showNoteInPane(pane, editor, note) {
+  const previous = paneNoteIds[pane];
+  if (previous === note.id) return;
+  if (previous !== null && notes.some(candidate => candidate.id === previous)) {
+    paneStates[pane].set(previous, editor.getState());
+  }
+  paneNoteIds[pane] = note.id;
+  const cached = paneStates[pane].get(note.id);
+  paneStates[pane].delete(note.id);
+  if (cached) editor.restoreState(cached);
+  else editor.loadText(note.syncedContent ?? note.content, { extensions: noteSync.extension(note.id, note.version ?? 0) });
+}
+
+const openNoteText = noteId => {
+  if (activeNoteId === noteId) return primaryEditor.getText();
+  if (isSplitNoteMode && secondaryNoteId === noteId) return secondaryEditor.getText();
+  return null;
+};
+
+function deferWorkspaceState(state) {
+  if (state && (!deferredWorkspaceState || state.seq > deferredWorkspaceState.seq)) deferredWorkspaceState = state;
+}
+
+// Replaces the page's collection with Rust's. Open editors keep their own text:
+// they are collab clients and catch up through doc updates. While this page's
+// own structure writes are on their way, the newest state waits for them, so
+// the sidebar never jumps back to an arrangement the user already changed.
+function applyWorkspaceState(state, { initial = false } = {}) {
+  if (!state || !Array.isArray(state.notes)) return;
+  if (!initial && state.seq <= lastWorkspaceSeq) return;
+  if (!initial && structureWritesInFlight > 0 && state.collectionId === collectionId) {
+    deferWorkspaceState(state);
+    return;
+  }
+  lastWorkspaceSeq = state.seq;
+  const switched = state.collectionId !== collectionId;
+  collectionId = state.collectionId;
+  workspaceInfo = { name: state.name, path: state.path, isDefault: state.isDefault };
+  if (switched) forgetPaneStates();
+  const present = new Set(state.notes.map(note => note.id));
+  for (const pane of Object.keys(paneStates)) {
+    for (const noteId of paneStates[pane].keys()) if (!present.has(noteId)) paneStates[pane].delete(noteId);
+  }
+  notes = state.notes.map(note => ({
+    ...note,
+    syncedContent: note.content,
+    content: switched ? note.content : (openNoteText(note.id) ?? note.content)
+  }));
+  folders = state.folders.map(folder => ({ id: folder.id, name: folder.name }));
+  trash = Array.isArray(state.trash) ? state.trash : [];
+  knownNotes.clear();
+  notes.forEach(note => knownNotes.set(note.id, noteMeta(note)));
+  knownFolders.clear();
+  folders.forEach(folder => knownFolders.set(folder.id, folder.name));
+  updateDbUiState();
+  refreshTrashUi();
+  if (initial) return;
+
+  if (switched || !notes.some(note => note.id === activeNoteId)) {
+    activeNoteId = notes[0]?.id ?? null;
+    loadActiveNote();
+  } else {
+    const active = notes.find(note => note.id === activeNoteId);
+    if (active && document.activeElement !== noteTitleInput) noteTitleInput.value = active.title;
+  }
+  if (switched) syncSecondaryNoteUi(true);
+  else syncSecondaryNoteUi(isSplitNoteMode && !notes.some(note => note.id === secondaryNoteId));
+  if (!isCreatingFolder && editingFolderId === null) renderNoteList(searchInput.value);
+  populateSecondaryNoteSelect();
+  if (isFindResultsOpen && isFindAllNotesMode) renderFindResults();
+}
+
+// Text another client changed: this page's editors, another pane, or an agent.
+async function applyDocUpdates(event) {
+  if (!event || event.collectionId !== collectionId) return;
+  noteSync.receive(event);
+  const note = notes.find(candidate => candidate.id === event.noteId);
+  if (!note) return;
+  note.title = event.title;
+  note.updatedAt = event.updatedAt;
+  if (note.version === event.from) {
+    note.syncedContent = applyUpdatesToText(note.syncedContent, event.updates);
+    note.version = event.version;
+  } else if ((note.version ?? 0) < event.version) {
+    await catchUpNote(note);
+  }
+  note.content = openNoteText(note.id) ?? note.syncedContent;
+  if (!note.isTitleLocked) knownNotes.set(note.id, noteMeta(note));
+  refreshOpenNoteViews(note.id);
+}
+
+async function catchUpNote(note) {
+  try {
+    const since = note.version ?? 0;
+    const result = await invoke("doc_pull", { collectionId, noteId: note.id, since });
+    if (result?.reload) {
+      note.syncedContent = result.reload.text;
+      note.version = result.reload.version;
+    } else if (Array.isArray(result?.updates) && note.version === since) {
+      note.syncedContent = applyUpdatesToText(note.syncedContent, result.updates);
+      note.version = since + result.updates.length;
     }
-    if (folder) folders = [...folders, folder];
-    try {
-      // Let an in-progress sidebar rename/create finish without replacing its
-      // input. That action's normal render will reveal the new items.
-      if (!isCreatingFolder && editingFolderId === null) renderNoteList(searchInput.value);
-      populateSecondaryNoteSelect();
-    } catch (error) {
-      // Persistence succeeded; a rendering failure must not make retries create
-      // another item. Keep the saved result and live state authoritative.
-      console.error("Could not render MCP creation", error);
+  } catch (error) {
+    console.error("Could not catch up a note", error);
+  }
+}
+
+function refreshOpenNoteViews(noteId) {
+  try {
+    const note = notes.find(candidate => candidate.id === noteId);
+    if (activeNoteId === noteId) {
+      if (note && document.activeElement !== noteTitleInput) noteTitleInput.value = note.title;
+      updateMarkdownPreview();
+      updateWordCharCountForText(primaryEditor);
     }
-  },
-  refresh: () => syncMcpSnapshot()
-});
-async function persistWorkspace(candidate) {
-  await invoke("save_workspace_db", {
-    dbPath: candidate.dbPath, notes: candidate.notes.map(note => ({ ...note })),
-    folders: candidate.folders.map(folder => ({ ...folder })), trash: structuredClone(candidate.trash)
+    if (isSplitNoteMode && secondaryNoteId === noteId) {
+      if (note && document.activeElement !== secondaryNoteTitle) secondaryNoteTitle.value = note.title;
+      updateSecondaryMarkdownPreview();
+    }
+    // A pending refresh reads the editors when it fires, and the echo of this
+    // page's own push leaves the texts as last compared: neither needs a new one.
+    if (
+      isCompareMode &&
+      (activeNoteId === noteId || secondaryNoteId === noteId) &&
+      !isNoteComparisonPending &&
+      !noteComparisonMatches(primaryEditor.getText(), secondaryEditor.getText())
+    ) {
+      scheduleNoteComparisonRefresh();
+    }
+    if (isFindResultsOpen && isFindAllNotesMode) renderFindResults();
+    if (isFindBarOpen && activeNoteId === noteId) runFind({ preserveActive: true, selectActive: false });
+    populateSecondaryNoteSelect();
+    scheduleNoteListRender();
+  } catch (error) {
+    console.error("Could not render a note change", error);
+  }
+}
+
+async function registerWorkspaceListeners() {
+  const listen = window.__TAURI__?.event?.listen;
+  if (typeof listen !== "function") return;
+  await listen("notes-workspace-changed", ({ payload }) => {
+    if (collectionId !== null) applyWorkspaceState(payload);
   });
-  trashNeedsSave = false;
+  await listen("notes-doc-updates", ({ payload }) => {
+    applyDocUpdates(payload).catch(error => console.error("Could not apply a note change", error));
+  });
 }
 
 const trashUi = createTrashUi({
-  state: () => ({ entries: trash, collectionId: mcpCollectionId, error: trashLoadError }),
-  restore: (id, collectionId) => enqueueWorkspaceOperation(async () => {
-    checkTrashCollection(collectionId);
-    const entry = trash.find(entry => entry.id === id);
-    if (!entry) throw new Error("This note is no longer in the trash");
-    const note = restoredNote(entry, notes, folders);
-    const nextTrash = trash.filter(entry => entry.id !== id);
-    await persistTrashState(insertNoteBelowPinned(notes, note), nextTrash);
-    // Preserve edits made to other notes while persistence was in flight.
-    note.folderId = validFolderId(note.folderId, folders);
-    notes = insertNoteBelowPinned(notes, note);
-    trash = nextTrash;
-    if (noteSaveDebounceTimers.size === 0) setSavedState();
-    refreshTrashUi();
-    renderNoteList(searchInput.value);
-    populateSecondaryNoteSelect();
-    scheduleMcpSnapshotUpdate();
-  }),
-  empty: (ids, collectionId) => enqueueWorkspaceOperation(async () => {
-    checkTrashCollection(collectionId);
-    const selected = new Set(ids);
-    const nextTrash = trash.filter(entry => !selected.has(entry.id));
-    if (activeDbPath) await persistTrashState(notes, nextTrash);
-    else {
-      const result = emptyTrashLocally(localStorage, notes, nextTrash);
-      if (!result.ok) { setSaveFailedState(); throw result.error; }
-      trashNeedsSave = false;
-    }
-    trash = nextTrash;
-    if (noteSaveDebounceTimers.size === 0) setSavedState();
-    refreshTrashUi();
-    scheduleMcpSnapshotUpdate();
-  })
+  state: () => ({ entries: trash, collectionId, error: null }),
+  restore: async (id, expectedCollection) => {
+    await invoke("notes_restore", { collectionId: expectedCollection, trashId: id });
+  },
+  empty: async (ids, expectedCollection) => {
+    await invoke("notes_empty_trash", { collectionId: expectedCollection, ids });
+  }
 });
-
-function checkTrashCollection(collectionId) {
-  if (trashLoadError) throw new Error(trashLoadError);
-  if (collectionId !== mcpCollectionId || isWorkspaceSwitching || isClosePending) {
-    throw new Error("Collection changed or is switching; reopen Trash before continuing");
-  }
-}
-
-async function persistTrashState(nextNotes, nextTrash) {
-  try {
-    if (activeDbPath) await persistWorkspace({ dbPath: activeDbPath, notes: nextNotes, folders, trash: nextTrash });
-    else {
-      const result = persistNotesAndTrashLocally(localStorage, nextNotes, nextTrash);
-      if (!result.ok) throw result.error;
-    }
-    trashNeedsSave = false;
-  } catch (error) {
-    setSaveFailedState();
-    throw error;
-  }
-}
 
 function refreshTrashUi() { trashUi.refresh(); }
 
-function applyNoteDeletion(note) {
-  if (trashLoadError) throw new Error(trashLoadError);
-  const entry = { id: window.crypto.randomUUID(), note: structuredClone(note), deletedAt: Date.now(),
-    folderName: folders.find(folder => folder.id === note.folderId)?.name ?? null };
-  trash = [...trash, entry];
-  trashNeedsSave = true;
-  notes = notes.filter(existing => existing.id !== note.id);
-  clearTimeout(noteSaveDebounceTimers.get(note.id));
-  noteSaveDebounceTimers.delete(note.id);
-  if (notes.length === 0) {
-    notes = [{ id: `note_${window.crypto.randomUUID()}`, title: "Untitled Scratchpad", content: "",
-      updatedAt: Date.now(), isTitleLocked: false, isPinned: false, folderId: null }];
-  }
-  if (activeNoteId === note.id) activeNoteId = notes[0].id;
-  triggerSavingState();
-  try {
-    refreshTrashUi();
-    renderNoteList(searchInput.value);
-    loadActiveNote();
-    syncSecondaryNoteUi(true);
-  } catch (error) {
-    console.error("Could not render note deletion", error);
-  }
-  scheduleMcpSnapshotUpdate();
-  return trashSummary(entry);
-}
-
-function applyFolderDeletion(folder) {
-  if (editingFolderId === folder.id) throw new Error("Folder is being edited; try again when the edit finishes");
-  if (notes.some(note => note.folderId === folder.id)) throw new Error("Folder is not empty; move its notes before deleting it");
-  folders = folders.filter(existing => existing.id !== folder.id);
-  collapsedFolderIds.delete(folder.id);
-  triggerSavingState();
-  try {
-    persistCollapsedFolders();
-    renderNoteList(searchInput.value);
-    populateSecondaryNoteSelect();
-  } catch (error) {
-    console.error("Could not render folder deletion", error);
-  }
-  scheduleMcpSnapshotUpdate();
-}
-
 let mcpConnectionInfo = null;
-let mcpSnapshotTimer = null;
-const mcpNoteSnapshotTimers = new Map();
 
 const WORD_COUNT_DEBOUNCE_MS = 150;
 let wordCountTimer = null;
@@ -508,24 +618,53 @@ function createAppEditor(host, { ariaLabel, pane }) {
   return editor;
 }
 
-// Reports the remembered workspace alongside whether it could be determined at
-// all. "Read it, there is no workspace" and "could not read it" look identical
-// from the path alone, and only the first is safe to act on: a preference that
-// failed to read may still name a workspace that opens on a later launch.
-async function loadRememberedWorkspacePath() {
-  const legacyPath = localStorage.getItem("sodilaud_active_db");
-  if (!window.__TAURI__) return { known: true, path: legacyPath };
-
+// Copies the collection earlier versions kept in local storage, for the one-time
+// import into the default workspace. Local storage itself is left untouched,
+// so going back to an older release still finds every note.
+function readLocalCollection() {
+  let localNotes = [];
   try {
-    const savedPath = await invoke("load_workspace_preference", { legacyPath });
-    localStorage.removeItem("sodilaud_active_db");
-    return { known: true, path: savedPath };
-  } catch (err) {
-    console.error("Failed to load native workspace preference", err);
-    // Unknown even when a legacy path survives: the native preference takes
-    // precedence over it and may name a different workspace.
-    return { known: false, path: legacyPath };
+    localNotes = readStoredNotes(localStorage.getItem(LOCAL_NOTES_KEY)) ?? [];
+  } catch (error) {
+    console.error("Failed to read local notes", error);
   }
+  // Notes set aside by an early build, when local storage was shared between
+  // the local-only collection and the active workspace.
+  try {
+    const stashed = readStoredNotes(localStorage.getItem(LOCAL_NOTES_BACKUP_KEY));
+    if (stashed) {
+      const byId = new Map(stashed.map(note => [note.id, note]));
+      localNotes.forEach(note => {
+        const held = byId.get(note.id);
+        if (!held || (note.updatedAt || 0) >= (held.updatedAt || 0)) byId.set(note.id, note);
+      });
+      localNotes = [...byId.values()];
+    }
+  } catch (error) {
+    console.error("Failed to read previously set-aside notes", error);
+  }
+  const localFolders = normalizeFolders(readStoredFolders(localStorage.getItem(LOCAL_FOLDERS_KEY)));
+  let localTrash = [];
+  try {
+    localTrash = readTrash(localStorage.getItem(LOCAL_TRASH_KEY));
+  } catch (error) {
+    console.error("Local trash could not be read; it stays in local storage", error);
+  }
+  const validNotes = localNotes.filter(note => note && typeof note.id === "string" && note.id
+    && typeof note.content === "string" && typeof note.title === "string");
+  return {
+    notes: normalizePinnedNoteOrder(normalizeNoteFolderAssignments(validNotes, localFolders)).map(note => ({
+      id: note.id,
+      title: note.title,
+      content: note.content,
+      updatedAt: Number.isFinite(note.updatedAt) ? note.updatedAt : Date.now(),
+      isTitleLocked: Boolean(note.isTitleLocked),
+      isPinned: Boolean(note.isPinned),
+      folderId: note.folderId ?? null
+    })),
+    folders: localFolders,
+    trash: localTrash
+  };
 }
 
 // Initialize app
@@ -540,6 +679,7 @@ async function init() {
   attachEventListeners();
   await registerQuitHandler();
   await registerQuickNotesHandlers();
+  await registerWorkspaceListeners();
   await onPreferenceChange(window, followPreferenceChange);
 
   // 2. Load the saved theme (Default Dark on first launch) and layout mode
@@ -547,77 +687,21 @@ async function init() {
   appearance.load();
   const savedLayoutMode = localStorage.getItem("sodilaud_layout_mode");
   setLayoutMode(normalizeLayoutMode(savedLayoutMode), { persist: savedLayoutMode !== null });
-
-  // 3. Always load the local-only collection first as guaranteed baseline
-  loadNotesFromLocalStorage();
-  loadFoldersFromLocalStorage();
-  loadTrashFromLocalStorage();
-  notes = normalizeNoteFolderAssignments(notes, folders);
   loadCollapsedFolders();
-  adoptLegacyStashedNotes();
 
-  // 4. Check if a native workspace preference is configured. Existing
-  // localStorage preferences are migrated once for origin-independent startup.
-  const rememberedWorkspace = await loadRememberedWorkspacePath();
-  if (rememberedWorkspace.path && window.__TAURI__) {
-    activeDbPath = rememberedWorkspace.path;
-    try {
-      // Load serially because both commands ensure/migrate the SQLite schema.
-      // Two first-open migrations against the same older file must not race.
-      const dbNotes = await invoke("load_db_notes", { dbPath: activeDbPath });
-      if (!Array.isArray(dbNotes)) {
-        throw new Error("Workspace returned an unexpected notes response");
-      }
-      const dbFoldersResult = await invoke("load_db_folders", { dbPath: activeDbPath });
-      if (!Array.isArray(dbFoldersResult)) {
-        throw new Error("Workspace returned an unexpected folders response");
-      }
-      const dbFolders = normalizeFolders(dbFoldersResult);
-      const dbTrash = await loadWorkspaceTrash(activeDbPath);
-      // Seeding deletes and rewrites the workspace's rows, so an unreadable
-      // response must not be mistaken for an empty workspace.
-      if (dbNotes.length > 0) {
-        folders = dbFolders;
-        notes = normalizePinnedNoteOrder(normalizeNoteFolderAssignments(dbNotes, folders));
-      } else if (dbFolders.length > 0 || dbTrash.length > 0) {
-        notes = [];
-        folders = dbFolders;
-      } else {
-        // Seed a completely empty workspace with the active local collection.
-        // Include the welcome note in the awaited transaction so a failed first
-        // write falls back to local mode instead of exposing an unsaved workspace.
-        const seedNotes = notes.length > 0
-          ? notes
-          : [createNoteRecord(WELCOME_NOTE_TITLE, WELCOME_NOTE_CONTENT, null)];
-        await invoke("save_workspace_db", {
-          dbPath: activeDbPath,
-          notes: seedNotes,
-          folders
-        });
-        notes = seedNotes;
-      }
-      trash = dbTrash;
-      trashLoadError = null;
-      trashNeedsSave = false;
-      refreshTrashUi();
-      updateDbUiState(true);
-    } catch (err) {
-      console.error("Failed to load workspace from SQLite DB on boot", err);
-      activeDbPath = null;
-      // `notes` still holds the local-only collection: it is only replaced once
-      // the workspace has answered. Editing it here cannot be undone by the
-      // workspace opening on a later launch.
-      updateDbUiState(false);
-      showNotification("Workspace unavailable; using local notes");
-    }
-  } else {
-    updateDbUiState(false);
-    if (!rememberedWorkspace.known) {
-      showNotification("Workspace settings unreadable; using local notes");
-    }
+  // 3. Rust opened the remembered workspace, or the default one, at launch. A
+  // workspace path kept in local storage by an old build is handed over once.
+  const boot = await invoke("notes_boot", { legacyPath: localStorage.getItem("sodilaud_active_db") });
+  if (!boot?.state) throw new Error("Sodilaud returned no notes collection");
+  localStorage.removeItem("sodilaud_active_db");
+  let state = boot.state;
+  if (boot.needsLocalImport) {
+    state = await invoke("notes_import_local", { local: readLocalCollection() });
   }
+  applyWorkspaceState(state, { initial: true });
+  if (boot.fallback) showNotification(boot.fallback);
 
-  // 5. Create default note if none exist
+  // 4. Create default note if none exist
   if (notes.length === 0) {
     createNote(WELCOME_NOTE_TITLE, WELCOME_NOTE_CONTENT);
   } else {
@@ -626,7 +710,7 @@ async function init() {
     activeNoteId = notes.some(note => note.id === remembered) ? remembered : notes[0].id;
   }
 
-  // 6. Render UI
+  // 5. Render UI
   renderNoteList();
   loadActiveNote();
 }
@@ -635,14 +719,19 @@ async function init() {
 // Note Management Logic
 // ----------------------------------------------------
 function createNoteRecord(title, content, folderId) {
+  // Rust stores text with \n line breaks, as the editor does.
+  const text = String(content ?? "").replace(/\r\n?/g, "\n");
+  const isTitleLocked = title !== UNTITLED_TITLE && title !== WELCOME_NOTE_TITLE;
   return {
-    id: "note_" + Date.now() + "_" + Math.random().toString(36).substr(2, 9),
-    title,
-    content,
+    id: `note_${window.crypto.randomUUID()}`,
+    title: isTitleLocked ? title : (text ? autoTitle(text) : title),
+    content: text,
     updatedAt: Date.now(),
-    isTitleLocked: title !== "Untitled Scratchpad" && title !== WELCOME_NOTE_TITLE,
+    isTitleLocked,
     isPinned: false,
-    folderId
+    folderId,
+    syncedContent: text,
+    version: 0
   };
 }
 
@@ -659,7 +748,7 @@ function createNote(title = "Untitled Scratchpad", content = "", folderId = unde
   if (collapsedFolderIds.delete(destinationSectionId)) persistCollapsedFolders();
   searchInput.value = "";
   
-  saveNotesToStorage({ syncWorkspace: true });
+  syncStructure();
   renderNoteList();
   loadActiveNote();
   syncSecondaryNoteUi(true);
@@ -679,18 +768,14 @@ function createNote(title = "Untitled Scratchpad", content = "", folderId = unde
 
 function deleteNote(id, event) {
   if (event) event.stopPropagation();
-  const collectionId = mcpCollectionId;
-  return enqueueWorkspaceOperation(async () => {
-    checkTrashCollection(collectionId);
-    const note = notes.find(note => note.id === id);
-    if (!note) return;
-    applyNoteDeletion(note);
-    await persistTrashState(notes, trash);
-    if (noteSaveDebounceTimers.size === 0) setSavedState();
-  }).catch(error => {
-    setSaveFailedState();
-    showNotification(`Could not save deletion; your note remains recoverable: ${error.message || error}`);
-  });
+  const expectedCollection = collectionId;
+  // Unsent typing goes into the trash with the note.
+  return Promise.all([noteSync.flush(), structureQueue])
+    .then(() => invoke("notes_trash", { collectionId: expectedCollection, noteId: id }))
+    .catch(error => {
+      setSaveFailedState();
+      showNotification(`Could not delete the note: ${error.message || error}`);
+    });
 }
 
 function loadActiveNote() {
@@ -705,7 +790,7 @@ function loadActiveNote() {
   cancelScheduledNoteComparison();
 
   noteTitleInput.value = activeNote.title;
-  primaryEditor.loadText(activeNote.content);
+  showNoteInPane("primary", primaryEditor, activeNote);
 
   updateWordCharCountForText(primaryEditor);
   updateMarkdownPreview();
@@ -953,7 +1038,7 @@ function createNoteListItem(note) {
               }
               notes.splice(targetIndex, 0, draggedNote);
 
-              saveNotesToStorage({ syncWorkspace: true });
+              syncStructure();
               renderNoteList(searchInput.value);
               populateSecondaryNoteSelect();
               showNotification("Notes reordered");
@@ -1042,7 +1127,7 @@ function finishFolderEdit(rawName, folderId) {
     renderNoteList(searchInput.value);
     return;
   }
-  if (!isFolderNameAvailable([...folders, ...mcpWriter.reservedFolders()], name, folderId)) {
+  if (!isFolderNameAvailable(folders, name, folderId)) {
     showNotification(isReservedFolderName(name)
       ? "That folder name is reserved by the sidebar"
       : "A folder with that name already exists");
@@ -1062,7 +1147,7 @@ function finishFolderEdit(rawName, folderId) {
   }
   editingFolderId = null;
   isCreatingFolder = false;
-  saveNotesToStorage({ syncWorkspace: true });
+  syncStructure();
   renderNoteList(searchInput.value);
   populateSecondaryNoteSelect();
 }
@@ -1088,7 +1173,7 @@ function deleteFolder(folderId) {
   ({ folders, notes } = removeFolder(folders, notes, folderId));
   collapsedFolderIds.delete(folderId);
   persistCollapsedFolders();
-  saveNotesToStorage({ syncWorkspace: true });
+  syncStructure();
   renderNoteList(searchInput.value);
   populateSecondaryNoteSelect();
   showNotification(movedCount === 0
@@ -1113,7 +1198,7 @@ function moveNoteToFolder(noteId, folderId) {
     notes = insertNoteBelowPinned(remaining, updatedNote);
   }
   if (collapsedFolderIds.delete(destinationId || UNFILED_SECTION_ID)) persistCollapsedFolders();
-  saveNotesToStorage({ syncWorkspace: true });
+  syncStructure();
   renderNoteList(searchInput.value);
   populateSecondaryNoteSelect();
   const folderName = folders.find((folder) => folder.id === destinationId)?.name || "the top level";
@@ -1186,7 +1271,7 @@ function attachFolderDrag(header, folder) {
       const adjustedTarget = updated.findIndex((candidate) => candidate.id === targetHeader.dataset.sectionId);
       updated.splice(adjustedTarget + (fromIndex < targetIndex ? 1 : 0), 0, dragged);
       folders = updated;
-      saveNotesToStorage({ syncWorkspace: true });
+      syncStructure();
       renderNoteList(searchInput.value);
       populateSecondaryNoteSelect();
       showNotification("Folders reordered");
@@ -1284,101 +1369,17 @@ function renderNoteList(filter = "") {
   topLevelNotes.forEach((note) => noteList.appendChild(createNoteListItem(note)));
 }
 
-// A workspace owns its own storage. Local storage holds the local-only
-// collection and nothing else, so a workspace session never writes over notes
-// it does not contain.
-function saveNotesToStorage({ noteId = activeNoteId, syncWorkspace = false } = {}) {
-  if (syncWorkspace) {
-    scheduleMcpSnapshotUpdate();
-  } else {
-    scheduleMcpNoteUpdate(noteId);
-  }
-
-  if (activeDbPath) {
-    const dbPath = activeDbPath;
-    const workspaceSave = enqueueWorkspaceOperation(async () => {
-      if (activeDbPath !== dbPath) return true;
-      // Capture at execution time: a preceding MCP creation may have committed
-      // since this save was queued. Stale full snapshots could erase it.
-      if (syncWorkspace || trashNeedsSave) {
-        await persistWorkspace({ dbPath, notes, folders, trash });
-      } else {
-        const sortOrder = notes.findIndex(note => note.id === noteId);
-        if (sortOrder === -1) return true;
-        await invoke("save_note_db", { dbPath, note: { ...notes[sortOrder] }, sortOrder });
-      }
-      return true;
-    }).catch(err => {
-      console.error("Failed to save workspace to SQLite DB", err);
-      setSaveFailedState();
-      return false;
-    });
-
-    return workspaceSave;
-  }
-
-  const noteResult = persistNotesAndTrashLocally(localStorage, notes, trash);
-  const folderResult = persistFoldersLocally(localStorage, folders);
-  const localResult = noteResult.ok ? folderResult : noteResult;
-
-  if (localResult.ok) {
-    trashNeedsSave = false;
-    localMirrorFailureNotified = false;
-  } else {
-    console.error("Failed to save local workspace data", localResult.error);
-    if (!localMirrorFailureNotified) {
-      showNotification("Local save failed; free some disk space or connect a workspace");
-      localMirrorFailureNotified = true;
-    }
-  }
-
-  return Promise.resolve(localResult.ok);
-}
-
-function scheduleNoteSave(noteId, afterSave) {
-  clearTimeout(noteSaveDebounceTimers.get(noteId));
-  const timer = setTimeout(() => {
-    noteSaveDebounceTimers.delete(noteId);
-    const saveResult = saveNotesToStorage({ noteId });
-    if (afterSave) afterSave();
-    saveResult.then((saved) => {
-      if (noteSaveDebounceTimers.size > 0) return;
-      if (saved) {
-        setSavedState();
-      } else {
-        setSaveFailedState();
-      }
-    });
-  }, 400);
-  noteSaveDebounceTimers.set(noteId, timer);
-}
-
 function setSaveFailedState() {
   saveStatus.textContent = "Save failed";
   saveStatus.title = "Sodilaud could not persist the latest changes";
   saveStatus.classList.add("unsaved");
 }
 
-function clearPendingSaveTimers() {
-  noteSaveDebounceTimers.forEach(timer => clearTimeout(timer));
-  noteSaveDebounceTimers.clear();
-}
-
+// Sends every unsent change. Rust has already written everything it accepted.
 async function flushPendingSaves() {
-  clearPendingSaveTimers();
-  return saveNotesToStorage({ syncWorkspace: true });
-}
-
-function persistLocalMirrorBeforePageExit() {
-  // A workspace session has nothing to flush here, and writing would replace
-  // the local-only collection with the workspace's notes.
-  if (activeDbPath) return;
-
-  const result = persistNotesAndTrashLocally(localStorage, notes, trash);
-  const folderResult = persistFoldersLocally(localStorage, folders);
-  if (!result.ok || !folderResult.ok) {
-    console.error("Failed to flush local workspace data during page exit", result.error || folderResult.error);
-  }
+  flushTitleSync();
+  const [text, structure] = await Promise.all([noteSync.flush(), structureQueue]);
+  return text && structure !== false && !structureFailed;
 }
 
 // The panel is never closed, only hidden, so its page keeps running; a quit is
@@ -1392,10 +1393,8 @@ async function registerQuitHandler() {
     await listen("sodilaud-quit-requested", async () => {
       if (quitting) return;
       quitting = true;
-      isClosePending = true;
       let saved = false;
       try {
-        await dbSaveQueue;
         saved = await flushPendingSaves();
         if (!saved) {
           setSaveFailedState();
@@ -1405,19 +1404,15 @@ async function registerQuitHandler() {
         console.error("Failed to save before quitting", error);
         showNotification("Could not save the latest changes; quit cancelled");
       } finally {
-        if (!saved) isClosePending = false;
         quitting = false;
       }
       try {
         await invoke("quit_window_done", { ok: saved });
       } catch (error) {
-        isClosePending = false;
         console.error("Failed to quit Sodilaud", error);
         showNotification("Could not quit Sodilaud");
       }
     });
-    // Another window could not save, so the app keeps running: accept writes again.
-    await listen("sodilaud-quit-cancelled", () => { isClosePending = false; });
     // Until this runs, Rust quits without asking this window to save first.
     await invoke("quit_handler_ready");
   } catch (error) {
@@ -1434,33 +1429,23 @@ function handleEditorInput(text) {
 
   activeNote.content = text;
   activeNote.updatedAt = Date.now();
-  scheduleMcpNoteUpdate(activeNote.id);
   scheduleNoteComparisonRefresh();
   if (isFindBarOpen) {
     runFind({ preserveActive: true, selectActive: false });
   }
 
-  // Auto-rename the title from the first line until the user edits it manually.
+  // Rust derives the title too; showing it now keeps the header in step.
   if (!activeNote.isTitleLocked) {
-    const lines = text.trim().split("\n");
-    let firstLine = lines[0] || "";
-    // Clean markdown headings out of title
-    firstLine = firstLine.replace(/^#+\s+/, "").trim();
-    
-    const newTitle = firstLine ? firstLine.substring(0, 30) : "Untitled Scratchpad";
+    const newTitle = autoTitle(text);
     if (activeNote.title !== newTitle) {
       activeNote.title = newTitle;
       noteTitleInput.value = newTitle;
     }
   }
 
-  // Visual auto-save feedback
+  // The collab client sends the change; this only shows it is on its way.
   triggerSavingState();
-
-  // Save notes locally
-  scheduleNoteSave(activeNote.id, () => {
-    renderNoteList(searchInput.value);
-  });
+  scheduleNoteListRender();
 
   // Live markdown compilation
   clearTimeout(previewDebounceTimer);
@@ -1473,20 +1458,17 @@ function handleTitleInput() {
   const activeNote = notes.find(n => n.id === activeNoteId);
   if (!activeNote) return;
 
-  activeNote.title = noteTitleInput.value.trim() || "Untitled Scratchpad";
+  activeNote.title = noteTitleInput.value.trim() || UNTITLED_TITLE;
   activeNote.isTitleLocked = true; // User edited manually, lock auto-renaming
   activeNote.updatedAt = Date.now();
-  scheduleMcpNoteUpdate(activeNote.id);
 
   if (isFindResultsOpen && isFindAllNotesMode) {
     renderFindResults();
   }
 
   triggerSavingState();
-  
-  scheduleNoteSave(activeNote.id, () => {
-    renderNoteList(searchInput.value);
-  });
+  scheduleNoteListRender();
+  scheduleTitleSync();
 }
 
 function triggerSavingState() {
@@ -1496,13 +1478,12 @@ function triggerSavingState() {
 }
 
 function setSavedState() {
-  if (activeDbPath) {
-    const fileName = activeDbPath.split(/[/\\]/).pop();
-    saveStatus.textContent = `Saved (${fileName})`;
-    saveStatus.title = `Workspace: ${activeDbPath}`;
+  if (!workspaceInfo.isDefault) {
+    saveStatus.textContent = `Saved (${workspaceInfo.name})`;
+    saveStatus.title = `Workspace: ${workspaceInfo.path}`;
   } else {
     saveStatus.textContent = "Saved";
-    saveStatus.title = "Saved to local webview storage";
+    saveStatus.title = "Saved to Sodilaud's own workspace";
   }
   saveStatus.classList.remove("unsaved");
 }
@@ -1636,65 +1617,6 @@ function toggleActionsDropdown(show) {
   actionsBtn.setAttribute("aria-expanded", String(actionsDropdown.classList.contains("show")));
 }
 
-function currentMcpCollectionName() {
-  if (!activeDbPath) return "Local notes";
-  return activeDbPath.split(/[/\\]/).pop() || "Sodilaud workspace";
-}
-
-function mcpSnapshotArguments() {
-  return {
-    collectionName: currentMcpCollectionName(),
-    collectionId: mcpCollectionId,
-    noteRevisions: Object.fromEntries(notes.map(note => [note.id, currentNoteRevision(note)])),
-    folderRevisions: Object.fromEntries(folders.map(folder => [folder.id, currentFolderRevision(folder)])),
-    trash: trash.map(trashSummary),
-    notes: notes.map(note => ({ ...note })),
-    folders: folders.map(folder => ({ ...folder }))
-  };
-}
-
-async function syncMcpSnapshot() {
-  if (!isMcpEnabled || !window.__TAURI__) return;
-  await invoke("update_mcp_snapshot", mcpSnapshotArguments());
-}
-
-async function syncMcpNote(noteId) {
-  if (!isMcpEnabled || !window.__TAURI__) return;
-  const note = notes.find(candidate => candidate.id === noteId);
-  if (!note) return;
-  await invoke("update_mcp_note", { note: { ...note }, revision: currentNoteRevision(note), collectionId: mcpCollectionId });
-}
-
-function scheduleMcpSnapshotUpdate() {
-  if (!isMcpEnabled || !window.__TAURI__) return;
-  cancelScheduledMcpSnapshotUpdates();
-  mcpSnapshotTimer = setTimeout(() => {
-    mcpSnapshotTimer = null;
-    syncMcpSnapshot().catch(error => {
-      console.error("Failed to update the MCP note snapshot", error);
-    });
-  }, 50);
-}
-
-function scheduleMcpNoteUpdate(noteId) {
-  if (!isMcpEnabled || !window.__TAURI__ || !noteId) return;
-  clearTimeout(mcpNoteSnapshotTimers.get(noteId));
-  const timer = setTimeout(() => {
-    mcpNoteSnapshotTimers.delete(noteId);
-    syncMcpNote(noteId).catch(error => {
-      console.error("Failed to update a note in the MCP snapshot", error);
-    });
-  }, 50);
-  mcpNoteSnapshotTimers.set(noteId, timer);
-}
-
-function cancelScheduledMcpSnapshotUpdates() {
-  clearTimeout(mcpSnapshotTimer);
-  mcpSnapshotTimer = null;
-  mcpNoteSnapshotTimers.forEach(timer => clearTimeout(timer));
-  mcpNoteSnapshotTimers.clear();
-}
-
 function updateMcpUiState() {
   mcpStatus.hidden = !isMcpEnabled;
   const readCount = MCP_READ_TOOLS.filter(tool => mcpPermissions[tool]).length;
@@ -1727,7 +1649,6 @@ async function changeMcpPermissions(next) {
   updateMcpUiState();
   mcpPermissionStatus.textContent = "Saving permissions…";
   try {
-    if (MCP_WRITE_TOOLS.some(tool => next[tool])) await ensureMcpWriteListener();
     await invoke("set_mcp_permissions", { tools: Object.keys(next).filter(tool => next[tool]) });
     mcpPermissions = next;
     mcpPermissionStatus.textContent = "Permissions saved";
@@ -1739,23 +1660,6 @@ async function changeMcpPermissions(next) {
     agentAccessToggleBtn.disabled = false;
     updateMcpUiState();
   }
-}
-
-async function ensureMcpWriteListener() {
-  if (mcpWriteListener) return;
-  mcpWriteListener = await window.__TAURI__.event.listen("mcp-write-request", async ({ payload }) => {
-    let result;
-    try {
-      result = await mcpWriter.request(payload.operation, payload.arguments);
-    } catch (error) {
-      result = { ok: false, error: String(error.message || error) };
-    }
-    try {
-      await invoke("complete_mcp_write", { ticket: payload.ticket, result });
-    } catch (error) {
-      console.error("Could not deliver MCP write result; client can retry its requestId", error);
-    }
-  });
 }
 
 async function toggleMcpAccess() {
@@ -1772,9 +1676,7 @@ async function toggleMcpAccess() {
     if (isMcpEnabled) {
       if (isMcpConfigModalOpen) closeMcpConfigModal();
       mcpPermissions = Object.fromEntries(Object.keys(mcpPermissions).map(tool => [tool, false]));
-      await dbSaveQueue;
       await invoke("stop_mcp_server");
-      cancelScheduledMcpSnapshotUpdates();
       isMcpEnabled = false;
       mcpConnectionInfo = null;
       updateMcpUiState();
@@ -1782,9 +1684,8 @@ async function toggleMcpAccess() {
       return;
     }
 
-    // Seed the native server before it begins accepting connections. The
-    // editor remains the authority, so this includes changes not yet saved.
-    await invoke("update_mcp_snapshot", mcpSnapshotArguments());
+    // Agents read what Rust holds, so send what is still unsent first.
+    await flushPendingSaves();
     const connection = await invoke("start_mcp_server");
     if (!connection?.command || !Array.isArray(connection?.args) || !connection.args.length) {
       throw new Error("Sodilaud returned incomplete MCP connection details");
@@ -1792,11 +1693,6 @@ async function toggleMcpAccess() {
     mcpConnectionInfo = connection;
     mcpPermissions = defaultMcpPermissions();
     isMcpEnabled = true;
-    try {
-      await syncMcpSnapshot();
-    } catch (error) {
-      console.error("Failed to refresh the MCP note snapshot after startup", error);
-    }
     updateMcpUiState();
     showNotification("Agent access enabled — reads only until you allow write functions in MCP Configuration");
   } catch (error) {
@@ -2118,7 +2014,6 @@ function attachEventListeners() {
   document.addEventListener("contextmenu", showContextMenu);
   document.addEventListener("click", hideContextMenu);
   window.addEventListener("blur", hideContextMenu);
-  window.addEventListener("pagehide", persistLocalMirrorBeforePageExit);
 
   ctxCutBtn.addEventListener("click", handleContextCut);
   ctxCopyBtn.addEventListener("click", handleContextCopy);
@@ -2208,7 +2103,7 @@ function attachEventListeners() {
     hideContextMenu();
     if (!folderId) return;
     folders = moveFolder(folders, folderId, -1);
-    saveNotesToStorage({ syncWorkspace: true });
+    syncStructure();
     renderNoteList(searchInput.value);
     populateSecondaryNoteSelect();
     showNotification("Folder moved up");
@@ -2218,7 +2113,7 @@ function attachEventListeners() {
     hideContextMenu();
     if (!folderId) return;
     folders = moveFolder(folders, folderId, 1);
-    saveNotesToStorage({ syncWorkspace: true });
+    syncStructure();
     renderNoteList(searchInput.value);
     populateSecondaryNoteSelect();
     showNotification("Folder moved down");
@@ -2398,42 +2293,6 @@ function openExternalHref(href) {
 }
 
 
-// Database helpers
-function loadNotesFromLocalStorage() {
-  const savedNotes = localStorage.getItem(LOCAL_NOTES_KEY);
-  if (savedNotes) {
-    try {
-      notes = normalizePinnedNoteOrder(JSON.parse(savedNotes));
-    } catch (e) {
-      console.error("Failed to parse saved notes, resetting", e);
-      notes = [];
-    }
-  }
-}
-
-function loadFoldersFromLocalStorage() {
-  folders = normalizeFolders(readStoredFolders(localStorage.getItem(LOCAL_FOLDERS_KEY)));
-}
-
-function loadTrashFromLocalStorage() {
-  try {
-    trash = readTrash(localStorage.getItem(LOCAL_TRASH_KEY));
-    trashLoadError = null;
-  } catch (error) {
-    trash = [];
-    trashLoadError = String(error.message || error);
-    showNotification("Trash could not be read; recovery data has been preserved");
-  }
-  trashNeedsSave = false;
-  refreshTrashUi();
-}
-
-async function loadWorkspaceTrash(dbPath) {
-  const result = await invoke("load_db_trash", { dbPath });
-  if (!Array.isArray(result)) throw new Error("Workspace returned an unexpected trash response");
-  return readTrash(JSON.stringify(result));
-}
-
 function loadCollapsedFolders() {
   try {
     const saved = JSON.parse(localStorage.getItem(COLLAPSED_FOLDERS_KEY) || "[]");
@@ -2445,104 +2304,46 @@ function loadCollapsedFolders() {
   }
 }
 
-// Notes set aside by an earlier build of this branch, when local storage was
-// shared between the local-only collection and the active workspace. Folded
-// back in once so nothing is stranded; can be dropped after a release carries
-// the current storage layout.
-function adoptLegacyStashedNotes() {
-  let stashed = null;
-  try {
-    stashed = readStoredNotes(localStorage.getItem(LOCAL_NOTES_BACKUP_KEY));
-  } catch (error) {
-    console.error("Failed to read previously set-aside notes", error);
-    return false;
-  }
-  if (!stashed) return false;
-
-  const byId = new Map(stashed.map(note => [note.id, note]));
-  notes.forEach(note => {
-    const held = byId.get(note.id);
-    if (!held || (note.updatedAt || 0) >= (held.updatedAt || 0)) byId.set(note.id, note);
-  });
-  notes = normalizePinnedNoteOrder([...byId.values()]);
-
-  const merged = persistNotesLocally(localStorage, notes);
-  if (!merged.ok) {
-    console.error("Failed to fold previously set-aside notes back in", merged.error);
-    return false;
-  }
-
-  try {
-    localStorage.removeItem(LOCAL_NOTES_BACKUP_KEY);
-  } catch (error) {
-    console.error("Failed to clear previously set-aside notes", error);
-  }
-  return true;
-}
-
-function updateDbUiState(isConnected) {
-  if (isConnected && activeDbPath) {
-    dbConnectBtn.style.display = "none";
-    dbDisconnectBtn.style.display = "block";
-    
-    const fileName = activeDbPath.split(/[/\\]/).pop();
-    workspaceMenuValue.textContent = fileName;
-    workspaceMenuValue.title = activeDbPath;
-    saveStatus.textContent = `Saved (${fileName})`;
-    saveStatus.title = `Workspace: ${activeDbPath}`;
-  } else {
-    dbConnectBtn.style.display = "block";
-    dbDisconnectBtn.style.display = "none";
-    workspaceMenuValue.textContent = "Local notes";
-    workspaceMenuValue.title = "Notes stored in local webview storage";
-    
-    saveStatus.textContent = "Saved";
-    saveStatus.title = "Saved to local webview storage";
-  }
-}
-
-async function switchMcpCollection(operation) {
-  if (isWorkspaceSwitching) return;
-  isWorkspaceSwitching = true;
-  trashUi.close();
-  try {
-    await dbSaveQueue;
-    await operation();
-  } finally {
-    mcpCollectionId = window.crypto.randomUUID();
-    cancelScheduledMcpSnapshotUpdates();
-    try {
-      await syncMcpSnapshot();
-    } catch (error) {
-      console.error("Failed to update the MCP note snapshot after switching collections", error);
-    } finally {
-      isWorkspaceSwitching = false;
-    }
-  }
+function updateDbUiState() {
+  const connected = !workspaceInfo.isDefault;
+  dbConnectBtn.style.display = connected ? "none" : "block";
+  dbDisconnectBtn.style.display = connected ? "block" : "none";
+  workspaceMenuValue.textContent = connected ? workspaceInfo.name : "Local notes";
+  workspaceMenuValue.title = connected ? workspaceInfo.path : "Notes kept in Sodilaud's own workspace";
+  refreshSaveStatus();
 }
 
 // Compaction only scrubs free pages left from before secure_delete; the
 // workspace stays usable without it, so a failure is logged, not surfaced.
-async function reclaimWorkspaceSpace(dbPath) {
+async function reclaimWorkspaceSpace() {
   try {
-    await invoke("vacuum_workspace", { dbPath });
+    await invoke("notes_vacuum");
   } catch (err) {
     console.error("Failed to reclaim workspace space", err);
   }
 }
 
-function connectDatabase() { return switchMcpCollection(connectDatabaseImpl); }
-function disconnectDatabase() { return switchMcpCollection(disconnectDatabaseImpl); }
+async function switchWorkspace(operation) {
+  if (isWorkspaceSwitching) return;
+  isWorkspaceSwitching = true;
+  trashUi.close();
+  try {
+    await operation();
+  } finally {
+    isWorkspaceSwitching = false;
+  }
+}
+
+function connectDatabase() { return switchWorkspace(connectDatabaseImpl); }
+function disconnectDatabase() { return switchWorkspace(disconnectDatabaseImpl); }
 
 async function connectDatabaseImpl() {
   if (!window.__TAURI__) {
     showNotification("Workspaces are only available in the desktop app");
     return;
   }
-
-  const localSaved = await flushPendingSaves();
-  if (!localSaved) {
-    showNotification("Could not save local notes; workspace not opened");
+  if (!await flushPendingSaves()) {
+    showNotification("Could not save your notes; workspace not opened");
     return;
   }
 
@@ -2555,127 +2356,34 @@ async function connectDatabaseImpl() {
   }
   if (!path) return;
 
-  const localNotes = notes.length > 0 ? notes.map((note) => ({ ...note })) : null;
-  const localFolders = folders.map((folder) => ({ ...folder }));
-
-  // Load into a local until the switch is known to be safe, so a failure here
-  // leaves the active collection untouched.
-  let workspaceNotes;
-  let workspaceFolders;
-  let workspaceTrash;
+  // Rust copies the open collection into a new, empty workspace.
   try {
-    workspaceNotes = await invoke("load_db_notes", { dbPath: path });
-    if (!Array.isArray(workspaceNotes)) {
-      throw new Error("Workspace returned an unexpected notes response");
-    }
-    workspaceFolders = await invoke("load_db_folders", { dbPath: path });
-    if (!Array.isArray(workspaceFolders)) {
-      throw new Error("Workspace returned an unexpected folders response");
-    }
-    workspaceFolders = normalizeFolders(workspaceFolders);
-    workspaceTrash = await loadWorkspaceTrash(path);
+    applyWorkspaceState(await invoke("notes_connect", { dbPath: path }));
   } catch (err) {
-    console.error("Failed to read SQLite database", err);
-    showNotification("Could not open workspace; using local notes");
+    console.error("Failed to open workspace", err);
+    showNotification("Could not open workspace; using your current notes");
     return;
   }
-
-  await reclaimWorkspaceSpace(path);
-
-  // Seeding deletes and rewrites the workspace's rows, so an unreadable
-  // response must not be mistaken for an empty workspace.
-  activeDbPath = path;
-
-  // The local-only collection stays where it is. Nothing needs setting aside,
-  // because a workspace session no longer writes to local storage at all.
-  if (workspaceNotes.length > 0) {
-    folders = workspaceFolders;
-    notes = normalizePinnedNoteOrder(normalizeNoteFolderAssignments(workspaceNotes, folders));
-  } else if (workspaceFolders.length > 0 || workspaceTrash.length > 0) {
-    notes = [];
-    folders = workspaceFolders;
-  } else if (localNotes) {
-    // Seed an empty workspace with the notes already in the app.
-    folders = localFolders;
-    notes = normalizePinnedNoteOrder(normalizeNoteFolderAssignments(localNotes, folders));
-    try {
-      await invoke("save_workspace_db", { dbPath: path, notes, folders });
-    } catch (err) {
-      console.error("Failed to seed SQLite workspace", err);
-      activeDbPath = null;
-      showNotification("Could not initialize workspace; using local notes");
-      return;
-    }
-  }
-
-  trash = workspaceTrash;
-  trashLoadError = null;
-  trashNeedsSave = false;
-  refreshTrashUi();
-
-  let preferenceSaved = true;
-  try {
-    await invoke("set_last_workspace", { dbPath: path });
-    localStorage.removeItem("sodilaud_active_db");
-  } catch (err) {
-    preferenceSaved = false;
-    console.error("Failed to remember workspace", err);
-  }
-
-  updateDbUiState(true);
-  if (notes.length === 0) {
-    createNote();
-  } else {
-    activeNoteId = notes[0].id;
-    renderNoteList();
-    loadActiveNote();
-  }
-  syncSecondaryNoteUi(true);
-  scheduleMcpSnapshotUpdate();
-
-  showNotification(preferenceSaved
-    ? "Workspace connected!"
-    : "Workspace connected, but could not be remembered");
+  await reclaimWorkspaceSpace();
+  if (notes.length === 0) createNote();
+  showNotification("Workspace connected!");
 }
 
 async function disconnectDatabaseImpl() {
-  const workspaceSaved = await flushPendingSaves();
-  if (!workspaceSaved) {
+  if (!await flushPendingSaves()) {
     showNotification("Could not save workspace; disconnect cancelled");
     return;
   }
-
-  if (activeDbPath) await reclaimWorkspaceSpace(activeDbPath);
-  activeDbPath = null;
-  localStorage.removeItem("sodilaud_active_db");
-
-  // The local-only collection was never written over while the workspace was
-  // connected, so it is simply still there.
-  loadNotesFromLocalStorage();
-  loadFoldersFromLocalStorage();
-  loadTrashFromLocalStorage();
-  notes = normalizeNoteFolderAssignments(notes, folders);
-
-  if (notes.length === 0) {
-    createNote();
-  } else {
-    activeNoteId = notes[0].id;
-    renderNoteList();
-    loadActiveNote();
-  }
-  syncSecondaryNoteUi(true);
-  scheduleMcpSnapshotUpdate();
-  
-  updateDbUiState(false);
+  await reclaimWorkspaceSpace();
   try {
-    if (window.__TAURI__) {
-      await invoke("set_last_workspace", { dbPath: null });
-    }
-    showNotification("Workspace disconnected; using local notes");
+    applyWorkspaceState(await invoke("notes_disconnect"));
   } catch (err) {
-    console.error("Failed to forget workspace", err);
-    showNotification("Disconnected, but the workspace preference could not be cleared");
+    console.error("Failed to disconnect the workspace", err);
+    showNotification("Could not switch back to local notes");
+    return;
   }
+  if (notes.length === 0) createNote();
+  showNotification("Workspace disconnected; using local notes");
 }
 
 // Find & Replace Widget functions
@@ -3711,7 +3419,7 @@ function loadSecondaryNote() {
   cancelScheduledNoteComparison();
 
   secondaryNoteTitle.value = note.title;
-  secondaryEditor.loadText(note.content);
+  showNoteInPane("secondary", secondaryEditor, note);
 
   applyComparisonDecorations();
   updateSecondaryMarkdownPreview();
@@ -3726,27 +3434,19 @@ function handleSecondaryEditorInput(text) {
 
   note.content = text;
   note.updatedAt = Date.now();
-  scheduleMcpNoteUpdate(note.id);
   scheduleNoteComparisonRefresh();
 
-  // Auto-rename if not locked
   if (!note.isTitleLocked) {
-    const firstLine = note.content.trim().split("\n")[0];
-    if (firstLine && firstLine.length > 0) {
-      const cleanTitle = firstLine.replace(/^#+\s*/, "").trim().substring(0, 40);
-      if (cleanTitle) {
-        note.title = cleanTitle;
-        secondaryNoteTitle.value = cleanTitle;
-        populateSecondaryNoteSelect();
-      }
+    const title = autoTitle(text);
+    if (note.title !== title) {
+      note.title = title;
+      secondaryNoteTitle.value = title;
+      populateSecondaryNoteSelect();
     }
   }
 
   triggerSavingState();
-
-  scheduleNoteSave(note.id, () => {
-    renderNoteList(searchInput.value);
-  });
+  scheduleNoteListRender();
 
   clearTimeout(previewDebounceTimer);
   previewDebounceTimer = setTimeout(() => {
@@ -3758,17 +3458,14 @@ function handleSecondaryTitleInput() {
   const note = notes.find(n => n.id === secondaryNoteId);
   if (!note) return;
 
-  note.title = secondaryNoteTitle.value.trim() || "Untitled Scratchpad";
+  note.title = secondaryNoteTitle.value.trim() || UNTITLED_TITLE;
   note.isTitleLocked = true;
   note.updatedAt = Date.now();
-  scheduleMcpNoteUpdate(note.id);
 
   triggerSavingState();
-
-  scheduleNoteSave(note.id, () => {
-    renderNoteList(searchInput.value);
-    populateSecondaryNoteSelect();
-  });
+  scheduleNoteListRender();
+  populateSecondaryNoteSelect();
+  scheduleTitleSync();
 }
 
 function updateSecondaryMarkdownPreview() {
@@ -3832,7 +3529,7 @@ function moveNoteUp(noteId) {
   if (getNoteMoveTargetIndex(notes, index, -1) === -1) return;
   notes = moveNoteInGroup(notes, targetId, -1);
   
-  saveNotesToStorage({ syncWorkspace: true });
+  syncStructure();
   renderNoteList(searchInput.value);
   populateSecondaryNoteSelect();
   showNotification("Note moved up");
@@ -3844,7 +3541,7 @@ function moveNoteDown(noteId) {
   if (getNoteMoveTargetIndex(notes, index, 1) === -1) return;
   notes = moveNoteInGroup(notes, targetId, 1);
   
-  saveNotesToStorage({ syncWorkspace: true });
+  syncStructure();
   renderNoteList(searchInput.value);
   populateSecondaryNoteSelect();
   showNotification("Note moved down");
@@ -3861,7 +3558,7 @@ function toggleNotePinned(noteId) {
     if (collapsedFolderIds.delete(destinationSectionId)) persistCollapsedFolders();
   }
 
-  saveNotesToStorage({ syncWorkspace: true });
+  syncStructure();
   renderNoteList(searchInput.value);
   populateSecondaryNoteSelect();
   showNotification(willPin ? "Note pinned to top" : "Note unpinned");

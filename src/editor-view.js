@@ -183,7 +183,7 @@ function selectionDirection(range) {
  * @param {"live"|"source"} [options.mode="live"]
  * @param {boolean} [options.syntaxHighlighting=true]
  * @param {boolean} [options.lineNumbers=false]
- * @param {(text: string) => void} [options.onChange] user edits only, never setText/loadText
+ * @param {(text: string) => void} [options.onChange] user edits only, never setText/loadText or a remote update
  * @param {() => void} [options.onSelectionChange] selection or doc changed, from any source
  * @param {() => void} [options.onFocus]
  * @param {(href: string) => void} [options.onOpenLink]
@@ -214,7 +214,7 @@ export function createMarkdownEditor(options) {
   const updateListener = EditorView.updateListener.of(update => {
     if (
       update.docChanged &&
-      !update.transactions.some(tr => tr.annotation(externalChange))
+      !update.transactions.some(tr => tr.annotation(externalChange) || tr.annotation(Transaction.remote))
     ) {
       onChange?.(update.state.doc.toString());
     }
@@ -272,8 +272,9 @@ export function createMarkdownEditor(options) {
     onSelectionChange?.();
   }
 
-  function loadText(text) {
-    view.setState(EditorState.create({ doc: String(text ?? ""), extensions: currentExtensions() }));
+  // `extensions` belong to this document only, such as its collab client.
+  function loadText(text, { extensions = [] } = {}) {
+    view.setState(EditorState.create({ doc: String(text ?? ""), extensions: [currentExtensions(), extensions] }));
     view.scrollDOM.scrollTop = 0;
     onSelectionChange?.();
   }

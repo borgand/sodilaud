@@ -34,9 +34,6 @@ test("MCP Configuration controls each function, group selection, failures, and f
   assert.equal(checkbox("create_folder").checked, false);
   assert.equal(document.getElementById("mcp-select-all-write").indeterminate, true);
   assert.deepEqual(nativeSelection(), [...reads, "create_note"]);
-  const collectionId = app.invocations.findLast(i => i.command === "update_mcp_snapshot").args.collectionId;
-  await app.emit("mcp-write-request", { ticket: "denied-folder", operation: "create_folder", arguments: { collectionId, requestId: "denied-folder", name: "Unavailable" } });
-  assert.equal(app.invocations.findLast(i => i.command === "complete_mcp_write").args.result.ok, false);
 
   await check("mcp-select-all-write");
   assert.deepEqual(nativeSelection(), [...reads, ...writes]);

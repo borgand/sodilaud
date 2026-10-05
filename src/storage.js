@@ -1,30 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+// Where the notes collection lived before 0.11 moved it into Rust. Read once,
+// for the import into the default workspace; never written.
 export const LOCAL_NOTES_KEY = "sodilaud_notes";
 export const LOCAL_FOLDERS_KEY = "sodilaud_folders";
 
 // Used by earlier builds of this branch to set notes aside while local storage
-// was shared between the local-only collection and the active workspace. Read
-// once at start-up so nothing is stranded; never written to.
+// was shared between the local-only collection and the active workspace.
 export const LOCAL_NOTES_BACKUP_KEY = "sodilaud_local_notes";
-
-export function persistNotesLocally(storage, notes) {
-  try {
-    storage.setItem(LOCAL_NOTES_KEY, JSON.stringify(notes));
-    return { ok: true, error: null };
-  } catch (error) {
-    return { ok: false, error };
-  }
-}
-
-export function persistFoldersLocally(storage, folders) {
-  try {
-    storage.setItem(LOCAL_FOLDERS_KEY, JSON.stringify(folders));
-    return { ok: true, error: null };
-  } catch (error) {
-    return { ok: false, error };
-  }
-}
 
 // Parses a stored note collection, returning null for anything that is missing,
 // unreadable, or empty so callers can treat "nothing worth keeping" uniformly.

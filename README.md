@@ -31,7 +31,7 @@ New in v0.10: press `⌘⇧N` (`Ctrl+Shift+N` on Windows and Linux) in any app t
 - **Stays in view.** The panel floats above other windows and stays open when you click another app, so a running list is always visible. Hide it with the hotkey, `Cmd/Ctrl+W`, or its **×** button.
 - **Stays out of the way.** On macOS it opens over full-screen apps without bringing Sodilaud to the front or changing your `⌘Tab` order.
 - **Picks up where you left off.** It reopens at its last size and position, on the note you had open, with the sidebar collapsed until you need it.
-- **Separate from your files.** Notes are stored in local storage or a portable workspace file you choose, never mixed with the files you edit in the main window.
+- **Separate from your files.** Notes are stored in Sodilaud's own workspace or a portable workspace file you choose, never mixed with the files you edit in the main window.
 
 The main Sodilaud window opens on a start page that explains both halves of the app and links the Quick Notes Welcome note. Change the hotkey in **Sodilaud menu → Quick Notes**. See [Quick Notes](docs/quick-notes.md) for the details.
 
@@ -88,11 +88,11 @@ Clipboard history is off by default. Turn it on in **Sodilaud menu → Clipboard
 
 Sodilaud keeps its state under the app identifier `io.github.borgand.sodilaud`. Development builds (`npm run tauri dev`) use `io.github.borgand.sodilaud.dev` and appear as "Sodilaud Dev", so they never touch the data of an installed release. Workspace files and preferences are kept owner-only (`0600`), and deleted note bodies are overwritten in workspace files.
 
-Quick Notes owns the notes collection. By default, notes, folders, and trash stay in the desktop webview's local storage. The Quick Notes panel's size, position, and hotkey, and which windows were open at quit, are kept in `quicknotes.json` in the app's config directory. Sodilaud also supports optional portable workspace files for a durable collection of notes, folders, trash, pinned state, and sidebar order. Workspace files use SQLite internally and may have a `.db` or `.sqlite` extension. Notes without a folder remain at the top level of the sidebar; deleting a folder from the sidebar returns its notes there rather than deleting them. Agent folder deletion requires an empty folder.
+Sodilaud keeps the notes collection in the app, not in a window, so every window and agent edits the same copy. By default, notes, folders, and trash are stored in `default.sqlite` in the app data directory. Versions before 0.11 kept them in the desktop webview's local storage; the first launch of 0.11 copies them into `default.sqlite` once and leaves local storage as it was. The Quick Notes panel's size, position, and hotkey, and which windows were open at quit, are kept in `quicknotes.json` in the app's config directory. Sodilaud also supports optional portable workspace files for a durable collection of notes, folders, trash, pinned state, and sidebar order. Workspace files use SQLite internally and may have a `.db` or `.sqlite` extension. Notes without a folder remain at the top level of the sidebar; deleting a folder from the sidebar returns its notes there rather than deleting them. Agent folder deletion requires an empty folder.
 
-Local notes and workspace notes are two separate collections, each with its own trash. While a workspace is connected, changes are written to that workspace and the local collection is left exactly as it was, so disconnecting returns the notes and trash you had before. Connecting an empty workspace seeds it with the active notes and folders already available in the app; local trash stays local. A workspace with existing notes, folders, or trash opens its own collection.
+Local notes and workspace notes are two separate collections, each in its own file with its own trash. While a workspace is connected, changes are written to that workspace and the local collection is left exactly as it was, so disconnecting returns the notes and trash you had before. Connecting an empty workspace seeds it with the active notes and folders already available in the app; local trash stays local. A workspace with existing notes, folders, or trash opens its own collection.
 
-Hiding Quick Notes never interrupts saving: the panel keeps running while it is hidden. Pending changes are flushed before Sodilaud quits; if that save fails, Sodilaud cancels the quit and shows Quick Notes with the error. If a workspace cannot be opened at start-up, Sodilaud reports it and falls back to your local notes, leaving the workspace file untouched.
+Hiding Quick Notes never interrupts saving. Every change is written to the database as soon as it reaches the app, about 150 ms after typing stops. Changes still on their way are sent before Sodilaud quits; if that save fails, Sodilaud cancels the quit and shows Quick Notes with the error. If a workspace cannot be opened at start-up, Sodilaud reports it and falls back to your local notes, leaving the workspace file untouched.
 
 Sodilaud has no analytics, advertising, accounts, or sync service. Markdown is parsed on-device, rendered HTML is sanitized, and remote images never load, so viewing a note does not contact an image host. Rendered links open in your default browser rather than inside the app, after a confirmation dialog; following one is an explicit network action and may contact that destination.
 
@@ -127,7 +127,7 @@ Each time access starts, all five read permissions are on and all eight write pe
 | Read | List folders, list notes, search notes, read note content, list trash metadata |
 | Write | Create note, create folder, append to note, rename note, move note, rename folder, delete note to trash, delete empty folder |
 
-Writes to existing items check the current revision before changing anything. Request IDs make retries safe after a timeout or failed save. Agents cannot replace an entire note, read trashed note bodies, restore notes, or empty trash. Access applies to all connected local clients and to the collection currently open in Sodilaud, including unsaved edits.
+Writes to existing items check the current revision before changing anything. Request IDs make retries safe after a timeout or failed save. An agent's changes show up in an open editor without moving your cursor or losing what you are typing. Agents cannot replace an entire note, read trashed note bodies, restore notes, or empty trash. Access applies to all connected local clients and to the collection currently open in Sodilaud, including what you typed moments ago.
 
 See the [MCP reference](docs/mcp.md) for client setup, tool arguments, limits, retry behavior, and the privacy boundary.
 
@@ -274,8 +274,8 @@ Production distribution will also require platform signing and, on macOS, notari
 | Syntax highlighting | Bundled Highlight.js for explicitly labeled fenced code blocks |
 | Note comparison | Bundled jsdiff with line and word-level source comparison |
 | External links | `tauri-plugin-opener`, scoped to `http`, `https`, and `mailto` |
-| Local persistence | Desktop webview local storage |
-| Workspace persistence | Bundled SQLite through `rusqlite` |
+| Note persistence | A Rust notes registry over bundled SQLite (`rusqlite`), for the default and portable workspaces |
+| Editor sync | `@codemirror/collab` clients of the Rust registry |
 | Agent integration | Toggleable stdio MCP access in the desktop binary through the official Rust MCP SDK |
 | Native preferences | JSON in the platform app configuration directory |
 | Themes | CSS custom properties with JSON and TOML/key-value import |

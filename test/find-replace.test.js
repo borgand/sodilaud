@@ -17,8 +17,7 @@ test("Replace and Replace All preserve offsets and undo in one step", async () =
         updatedAt: 1,
         isTitleLocked: true
       }]
-    },
-    handlers: { load_workspace_preference: () => null }
+    }
   });
   const { document, Event, KeyboardEvent } = app.dom.window;
   const selectedText = () => {
@@ -63,7 +62,7 @@ test("Replace and Replace All preserve offsets and undo in one step", async () =
 
   await app.settle(600);
   assert.equal(
-    app.read("sodilaud_notes")[0].content,
+    (await app.savedNotes())[0].content,
     "İstanbul trip. reserve a hotel, then reserve a flight."
   );
 
@@ -83,8 +82,7 @@ test("each Replace is its own undo step, even right after typing or another Repl
         updatedAt: 1,
         isTitleLocked: true
       }]
-    },
-    handlers: { load_workspace_preference: () => null }
+    }
   });
   const { document, Event, KeyboardEvent } = app.dom.window;
   const view = app.editor();

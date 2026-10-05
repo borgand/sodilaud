@@ -37,7 +37,7 @@ test("notes can be pinned and unpinned from the sidebar", async () => {
 
   assert.deepEqual(app.sidebarTitles(), ["Two", "Three", "One"]);
   assert.deepEqual(
-    app.read("sodilaud_notes").map(({ id, isPinned }) => [id, isPinned === true]),
+    (await app.savedNotes()).map(({ id, isPinned }) => [id, isPinned === true]),
     [["two", true], ["three", false], ["one", false]]
   );
 });

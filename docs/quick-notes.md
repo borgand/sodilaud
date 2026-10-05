@@ -48,18 +48,20 @@ exporting the current note, importing a text file, sidebar preview lines, and ag
 
 ## Storage
 
-Notes, folders and trash are stored as before: in the webview's local storage, or in a portable
-workspace file you open from the panel's menu. Upgrading keeps them exactly as they were, and
-the first launch after upgrading shows a one-time note on the start page saying where your
-notes went.
+Notes, folders and trash belong to the app, not to the panel: Rust keeps them in
+`default.sqlite` in the app data directory, or in a portable workspace file you open from the
+panel's menu. Each editor sends its changes to the app about 150 ms after typing stops, and
+the app writes them to the database at once. Up to 0.10, notes lived in the webview's local
+storage; the first launch of 0.11 copies them into `default.sqlite` once and leaves local
+storage as it was, so an older release still finds them.
 
 The panel's size and position, its hotkey, and which windows were open when you quit are kept
 in `quicknotes.json` in the app's config directory, readable only by you. Deleting the file
 resets them.
 
-The panel keeps running while it is hidden, so autosave and agent requests work without it on
-screen. Quitting asks both windows to save first. If Quick Notes cannot save, the quit is
-cancelled and the panel is shown with the error.
+Agent requests are handled by the app, so they work while the panel is hidden or still loading.
+Quitting asks both windows to send what they have not sent yet. If Quick Notes cannot save, the
+quit is cancelled and the panel is shown with the error.
 
 ## Agents
 

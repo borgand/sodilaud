@@ -4,17 +4,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { bootApp, settle } from "./helpers/app-harness.js";
 
-test("MCP status follows confirmed access and workspace changes preserve the live collection", async () => {
+test("MCP status follows confirmed access and survives workspace switches", async () => {
   let startFails = true;
   let stopFails = true;
   let finishStarting;
-  let finishWorkspaceSnapshot;
   const app = await bootApp({
-    storage: {
-      sodilaud_notes: [{
-        id: "local", title: "Local note", content: "Local body",
-        updatedAt: 1, isTitleLocked: true
-      }]
+    registry: {
+      seed: { imported: true, notes: [{ id: "local", title: "Local note", content: "Local body", updatedAt: 1, isTitleLocked: true }] },
+      files: { "/tmp/mcp-workspace.db": { notes: [{ id: "workspace", title: "Workspace note", content: "Workspace body", updatedAt: 2, isTitleLocked: true }] } }
     },
     handlers: {
       start_mcp_server: () => {
@@ -24,16 +21,7 @@ test("MCP status follows confirmed access and workspace changes preserve the liv
       stop_mcp_server: () => {
         if (stopFails) throw new Error("Could not stop server");
       },
-      update_mcp_snapshot: ({ collectionName }) => {
-        if (collectionName === "mcp-workspace.db") {
-          return new Promise(resolve => { finishWorkspaceSnapshot = resolve; });
-        }
-      },
-      select_db_file: () => "/tmp/mcp-workspace.db",
-      load_db_notes: () => [{
-        id: "workspace", title: "Workspace note", content: "Workspace body",
-        updatedAt: 2, isTitleLocked: true
-      }]
+      select_db_file: () => "/tmp/mcp-workspace.db"
     }
   });
   const status = document.getElementById("mcp-status");
@@ -63,30 +51,17 @@ test("MCP status follows confirmed access and workspace changes preserve the liv
   assert.equal(status.hidden, false, "failed shutdown must retain the listening status");
   assert.equal(toggle.disabled, false);
 
+  // Rust serves whichever workspace is open; the page only switches it.
   app.click("db-connect-btn");
-  await settle();
-  assert.equal(typeof finishWorkspaceSnapshot, "function");
-  app.click("db-disconnect-btn");
-  await settle();
-  assert.equal(
-    app.invocations.some(({ command, args }) => command === "set_last_workspace" && args.dbPath === null),
-    false,
-    "the switch remains closed until the new MCP snapshot is live"
-  );
-  finishWorkspaceSnapshot();
-  await settle();
-  let snapshot = app.invocations.findLast(({ command }) => command === "update_mcp_snapshot").args;
-  assert.equal(snapshot.collectionName, "mcp-workspace.db");
-  assert.deepEqual(snapshot.notes.map(note => note.id), ["workspace"]);
+  await settle(100);
+  assert.deepEqual(app.sidebarTitles(), ["Workspace note"]);
   assert.equal(status.hidden, false);
   await settle(2100);
   assert.equal(saveStatus.textContent, "Saved (mcp-workspace.db)");
 
   app.click("db-disconnect-btn");
   await settle(100);
-  snapshot = app.invocations.findLast(({ command }) => command === "update_mcp_snapshot").args;
-  assert.equal(snapshot.collectionName, "Local notes");
-  assert.deepEqual(snapshot.notes.map(note => note.id), ["local"]);
+  assert.deepEqual(app.sidebarTitles(), ["Local note"]);
   assert.equal(status.hidden, false);
   await settle(2100);
   assert.equal(saveStatus.textContent, "Saved");
