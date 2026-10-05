@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // Editing Markdown and text files in the main window: one editor that shows the
-// active file, the open files list, the start page's Recent list, autosave, and
-// what to do when a file changes on disk. Rust owns the files; every path here
-// came from Rust.
+// active file, the open files list, the start page's Recent list, and what to
+// do when a file changes on disk. Rust owns the files: the editor is a collab
+// client of each file's document, and Rust autosaves and merges outside edits.
+// Every path here came from Rust.
 
 import { createMarkdownEditor } from "./editor-view.js";
 import { markdownEditingCommands, runFormatAction } from "./editor-commands.js";
@@ -12,9 +13,9 @@ import { createFormatToolbar } from "./format-toolbar.js";
 import { renderMarkdown, resolveLinkAction } from "./markdown.js";
 import { highlightPreviewCode } from "./syntax-highlighting.js";
 import { normalizeLayoutMode } from "./view-preferences.js";
-import { canAutosave, createFilesModel, isDirty, needsPrompt } from "./files.js";
+import { createDocSync } from "./doc-sync.js";
+import { createFilesModel, isDirty, needsPrompt } from "./files.js";
 
-export const AUTOSAVE_DELAY = 400;
 const LAYOUT_KEY = "sodilaud_layout_mode";
 
 const editorModeFor = (mode) => (mode === "source" ? "source" : "live");
@@ -50,9 +51,6 @@ export function createFileEditor({
   };
 
   const model = createFilesModel();
-  const timers = new Map();
-  const saving = new Map();
-  const saveErrors = new Map();
   let layoutMode = normalizeLayoutMode(storage.getItem(LAYOUT_KEY));
   let showingStartPage = true;
   let sidebarHidden = false;
@@ -70,6 +68,35 @@ export function createFileEditor({
     onChange: handleEditorChange
   });
 
+  const sync = createDocSync({
+    push: ({ path }, version, updates) => invoke("file_doc_push", { path, version, updates }),
+    pull: ({ path }, since) => invoke("file_doc_pull", { path, since }),
+    same: (doc, event) => doc.path === event.path,
+    // The file was closed, or Save As replaced it: nothing is left to send to.
+    isGone: (error) => error?.code === "NotOpen",
+    onStatus: () => {
+      renderTitle();
+      renderSidebar();
+    },
+    onReload: ({ path }, text, version) => {
+      const buffer = model.byPath(path);
+      if (!buffer) return;
+      model.reload(buffer.id, text, version);
+      if (shownId === buffer.id) loadBuffer(buffer);
+      render();
+    },
+    label: "main"
+  });
+
+  const unsent = (buffer) => buffer.path !== null && sync.pending((doc) => doc.path === buffer.path);
+  const dirty = (buffer) => isDirty(buffer, unsent(buffer));
+  const errorMessage = (error) => error?.message ?? String(error);
+
+  function loadBuffer(buffer) {
+    const extensions = buffer.path === null ? [] : sync.extension({ path: buffer.path }, buffer.version);
+    editor.loadText(buffer.text, { extensions });
+  }
+
   const formatToolbar = createFormatToolbar({
     document,
     applyFormat: (actionId) => {
@@ -85,16 +112,15 @@ export function createFileEditor({
   // Rendering
   // ----------------------------------------------------
   function statusText(buffer) {
-    if (saveErrors.has(buffer.id)) return "Not saved";
-    if (buffer.path === null) return isDirty(buffer) ? "Not saved yet" : "New file";
-    if (saving.has(buffer.id) || timers.has(buffer.id)) return "Saving…";
-    if (isDirty(buffer)) return "Unsaved";
-    return "Saved";
+    if (buffer.error) return "Not saved";
+    if (buffer.path === null) return dirty(buffer) ? "Not saved yet" : "New file";
+    if (!dirty(buffer)) return "Saved";
+    return buffer.external === null ? "Saving…" : "Unsaved";
   }
 
   function renderTitle() {
     const buffer = showingStartPage ? null : model.active();
-    title.textContent = buffer ? `${buffer.name}${isDirty(buffer) ? " •" : ""}` : "Sodilaud";
+    title.textContent = buffer ? `${buffer.name}${dirty(buffer) ? " •" : ""}` : "Sodilaud";
     title.title = buffer?.path ?? "";
     document.title = buffer ? `${buffer.name} - Sodilaud` : "Sodilaud";
     status.textContent = buffer ? `${statusText(buffer)}${buffer.path ? ` · ${buffer.path}` : ""}` : "";
@@ -113,7 +139,7 @@ export function createFileEditor({
       const open = document.createElement("button");
       open.type = "button";
       open.className = "open-file-name";
-      open.textContent = `${buffer.name}${isDirty(buffer) ? " •" : ""}`;
+      open.textContent = `${buffer.name}${dirty(buffer) ? " •" : ""}`;
       open.title = buffer.path ?? "Not saved yet";
       open.setAttribute("aria-current", String(buffer === active));
       open.addEventListener("click", () => activate(buffer.id));
@@ -150,11 +176,11 @@ export function createFileEditor({
 
   function renderBanner() {
     const buffer = showingStartPage ? null : model.active();
-    const error = buffer && saveErrors.get(buffer.id);
+    const error = buffer?.error;
     let content = null;
     if (buffer?.external === "conflict") {
       content = [`${buffer.name} changed on disk while you were editing it.`, "Reload", () => reloadFromDisk(buffer.id), "Keep mine", () => keepMine(buffer.id)];
-    } else if (buffer?.external === "missing") {
+    } else if (buffer?.external === "removed") {
       content = [`${buffer.name} is no longer on disk.`, "Save As…", () => saveAs(buffer.id), "Close", () => closeFile(buffer.id, { force: true })];
     } else if (error) {
       content = [`Could not save ${buffer.name}: ${error}`, "Try again", () => saveNow(buffer.id), "Save As…", () => saveAs(buffer.id)];
@@ -198,7 +224,7 @@ export function createFileEditor({
       const previous = model.get(shownId);
       if (previous) previous.editorState = editor.getState();
       if (buffer.editorState) editor.restoreState(buffer.editorState);
-      else editor.loadText(buffer.text);
+      else loadBuffer(buffer);
       shownId = buffer.id;
       renderPreview();
     }
@@ -216,57 +242,33 @@ export function createFileEditor({
     const buffer = model.get(shownId);
     if (!buffer) return;
     model.edit(buffer.id, text);
-    scheduleSave(buffer.id);
     renderTitle();
     renderSidebar();
   }
 
-  function scheduleSave(id) {
-    clearTimeout(timers.get(id));
-    timers.delete(id);
-    const buffer = model.get(id);
-    if (!buffer || !canAutosave(buffer)) return;
-    timers.set(id, setTimeout(() => {
-      timers.delete(id);
-      saveNow(id);
-    }, AUTOSAVE_DELAY));
-  }
-
-  // Writes the buffer as it is now. One write per file at a time; a change
-  // made during a write is saved right after it.
+  // Sends everything typed, then has Rust write the file now. A file that
+  // changed on disk or is gone waits for the owner's choice instead.
   async function saveNow(id) {
     const buffer = model.get(id);
     if (!buffer || buffer.path === null || buffer.external !== null) return true;
-    if (saving.has(id)) {
-      await saving.get(id);
-      return saveNow(id);
+    const path = buffer.path;
+    const sent = await sync.flush();
+    let ok = sent;
+    try {
+      model.saved(path, await invoke("file_doc_save", { path }));
+    } catch (error) {
+      model.saved(path, { version: buffer.savedVersion, error: errorMessage(error) });
+      ok = false;
     }
-    if (!isDirty(buffer) && !saveErrors.has(id)) return true;
-    const text = buffer.text;
-    const write = (async () => {
-      try {
-        const hash = await invoke("file_write", { path: buffer.path, text, lineEnding: buffer.lineEnding, bom: buffer.bom });
-        model.markSaved(id, { hash }, text);
-        saveErrors.delete(id);
-        return true;
-      } catch (error) {
-        saveErrors.set(id, error?.message ?? String(error));
-        return false;
-      }
-    })();
-    saving.set(id, write);
-    renderTitle();
-    const ok = await write;
-    saving.delete(id);
     render();
-    if (ok && isDirty(buffer)) scheduleSave(id);
     return ok;
   }
 
   async function saveAs(id = model.active()?.id) {
     const buffer = model.get(id);
     if (!buffer) return false;
-    const text = buffer.id === shownId ? editor.getText() : buffer.text;
+    const shown = buffer.id === shownId;
+    const text = shown ? editor.getText() : buffer.editorState?.doc.toString() ?? buffer.text;
     let saved;
     try {
       saved = await invoke("file_save_as_dialog", {
@@ -276,15 +278,33 @@ export function createFileEditor({
         bom: buffer.bom
       });
     } catch (error) {
-      saveErrors.set(id, error?.message ?? String(error));
+      buffer.error = errorMessage(error);
       render();
       return false;
     }
     if (!saved) return false;
+    // Rust dropped any document open at the chosen path before writing it.
     const existing = model.byPath(saved.path);
     if (existing && existing.id !== id) model.close(existing.id, { force: true });
-    model.markSaved(id, saved, text);
-    saveErrors.delete(id);
+    const previousPath = buffer.path;
+    if (previousPath !== null && previousPath !== saved.path) {
+      await sync.flush();
+      await invoke("file_doc_close", { path: previousPath }).catch((error) => console.error("Could not close the old file", error));
+    }
+    let opened;
+    try {
+      opened = await invoke("file_doc_open", { path: saved.path });
+    } catch (error) {
+      buffer.error = errorMessage(error);
+      render();
+      return false;
+    }
+    model.adopt(id, opened);
+    if (shown) {
+      const selection = editor.getSelection();
+      loadBuffer(buffer);
+      editor.setSelection(selection.start, selection.end, { scroll: false });
+    }
     await syncOpenList();
     await refreshRecent();
     render();
@@ -295,8 +315,6 @@ export function createFileEditor({
   function save(id = model.active()?.id) {
     const buffer = model.get(id);
     if (!buffer) return Promise.resolve(false);
-    clearTimeout(timers.get(id));
-    timers.delete(id);
     return buffer.path === null ? saveAs(id) : saveNow(id);
   }
 
@@ -341,7 +359,8 @@ export function createFileEditor({
 
   async function openDialog() {
     try {
-      return await opened(await invoke("file_open_dialog"));
+      const path = await invoke("file_open_dialog");
+      return path ? await openPath(path) : null;
     } catch (error) {
       notify(error?.message ?? "Could not open the file");
       return null;
@@ -355,7 +374,7 @@ export function createFileEditor({
       return existing;
     }
     try {
-      return await opened(await invoke("file_read", { path }));
+      return await opened(await invoke("file_doc_open", { path }));
     } catch (error) {
       notify(error?.message ?? "Could not open the file");
       return null;
@@ -403,9 +422,17 @@ export function createFileEditor({
       if (!(await resolveUnsavedNew(buffer))) return false;
       if (buffer.path !== null && !(await save(id))) return false;
     }
-    clearTimeout(timers.get(id));
-    timers.delete(id);
-    saveErrors.delete(id);
+    if (buffer.path !== null) {
+      try {
+        await invoke("file_doc_close", { path: buffer.path });
+      } catch (error) {
+        if (!force) {
+          buffer.error = errorMessage(error);
+          render();
+          return false;
+        }
+      }
+    }
     model.close(id, { force: true });
     if (shownId === id) shownId = null;
     if (!model.active()) showingStartPage = true;
@@ -424,33 +451,53 @@ export function createFileEditor({
   // ----------------------------------------------------
   // Changes on disk
   // ----------------------------------------------------
+  // Reload sends what was typed first, so the file on disk replaces all of it.
   async function reloadFromDisk(id) {
     const buffer = model.get(id);
     if (!buffer?.path) return;
+    await sync.flush();
     try {
-      const file = await invoke("file_read", { path: buffer.path });
-      model.reload(id, file);
-      if (shownId === id) {
-        editor.loadText(file.text);
-        renderPreview();
-      }
+      await invoke("file_doc_resolve", { path: buffer.path, keep: "disk" });
     } catch (error) {
       notify(error?.message ?? "Could not reload the file");
     }
     render();
   }
 
-  function keepMine(id) {
-    model.keepMine(id);
+  async function keepMine(id) {
+    const buffer = model.get(id);
+    if (!buffer?.path) return;
+    await sync.flush();
+    try {
+      await invoke("file_doc_resolve", { path: buffer.path, keep: "mine" });
+    } catch (error) {
+      buffer.error = errorMessage(error);
+    }
     render();
-    saveNow(id);
   }
 
-  async function handleExternalChange(change) {
-    const { buffer, action } = model.externalChange(change?.path, change?.kind);
-    if (!buffer) return;
-    if (action === "reload") await reloadFromDisk(buffer.id);
-    else render();
+  // ----------------------------------------------------
+  // Registry events
+  // ----------------------------------------------------
+  function receiveUpdates(event) {
+    if (!event?.path) return;
+    sync.receive(event);
+    const buffer = model.docUpdated(event.path, event.version);
+    if (buffer && buffer.id === shownId) renderPreview();
+    renderTitle();
+    renderSidebar();
+  }
+
+  function handleSaved(event) {
+    if (!event?.path) return;
+    model.saved(event.path, event);
+    render();
+  }
+
+  function handleExternal(event) {
+    if (!event?.path) return;
+    model.external(event.path, event.kind);
+    render();
   }
 
   // ----------------------------------------------------
@@ -487,17 +534,12 @@ export function createFileEditor({
     for (const buffer of model.list()) {
       if (!(await resolveUnsavedNew(buffer))) return false;
     }
-    let ok = true;
+    let ok = await sync.flush();
     for (const buffer of model.list()) {
-      clearTimeout(timers.get(buffer.id));
-      timers.delete(buffer.id);
-      if (buffer.path !== null && (isDirty(buffer) || saveErrors.has(buffer.id))) {
-        if (buffer.external !== null) continue;
-        ok = (await saveNow(buffer.id)) && ok;
-      }
+      if (buffer.path !== null && buffer.external === null) ok = (await saveNow(buffer.id)) && ok;
     }
     if (!ok) {
-      const failed = model.list().find((buffer) => saveErrors.has(buffer.id));
+      const failed = model.list().find((buffer) => buffer.error);
       if (failed) show(failed);
       notify("Could not save every file; quit cancelled");
     }
@@ -529,7 +571,7 @@ export function createFileEditor({
     renderRecent();
     for (const path of Array.isArray(lists?.open) ? lists.open : []) {
       try {
-        model.openFile(await invoke("file_read", { path }));
+        model.openFile(await invoke("file_doc_open", { path }));
       } catch (error) {
         console.error(`Could not reopen ${path}`, error);
       }
@@ -588,7 +630,9 @@ export function createFileEditor({
     restore,
     render,
     takePending,
-    handleExternalChange,
+    receiveUpdates,
+    handleSaved,
+    handleExternal,
     handleShortcut,
     toggleSidebar,
     setLayoutMode,

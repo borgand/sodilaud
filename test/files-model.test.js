@@ -3,32 +3,34 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { canAutosave, createFilesModel, isDirty, needsPrompt } from "../src/files.js";
+import { createFilesModel, isDirty, needsPrompt } from "../src/files.js";
 
 let counter = 0;
 const model = () => createFilesModel({ newId: () => `id-${(counter += 1)}` });
-const file = (path, text = "hello\n") => ({
-  path, name: path.split("/").pop(), text, lineEnding: "lf", bom: false, hash: "h"
+const opened = (path, text = "hello\n", fields = {}) => ({
+  path, name: path.split("/").pop(), text, version: 0, savedVersion: 0, lineEnding: "lf", bom: false, external: null, ...fields
 });
 
-test("opening, editing and saving tracks unsaved changes", () => {
+test("a file is dirty while changes are unsent or not yet on disk", () => {
   const files = model();
-  const buffer = files.openFile(file("/a/notes.md"));
+  const buffer = files.openFile(opened("/a/notes.md", "hello\n", { version: 3, savedVersion: 3 }));
   assert.equal(files.active().id, buffer.id);
   assert.equal(isDirty(buffer), false);
-  files.edit(buffer.id, "hello world\n");
-  assert.equal(isDirty(buffer), true);
-  assert.equal(canAutosave(buffer), true);
-  files.markSaved(buffer.id, { path: buffer.path, name: buffer.name, hash: "h2" }, "hello world\n");
+  assert.equal(isDirty(buffer, true), true, "typing not yet sent");
+  files.docUpdated("/a/notes.md", 4);
+  assert.equal(isDirty(buffer), true, "sent, not yet saved");
+  files.saved("/a/notes.md", { version: 4, error: null });
   assert.equal(isDirty(buffer), false);
-  assert.equal(canAutosave(buffer), false);
+  files.saved("/a/notes.md", { version: 3, error: "disk full" });
+  assert.equal(buffer.savedVersion, 4, "a late event never moves the saved version back");
+  assert.equal(buffer.error, "disk full");
 });
 
 test("opening a file that is already open switches to it", () => {
   const files = model();
-  const first = files.openFile(file("/a/one.md"));
-  files.openFile(file("/a/two.md"));
-  const again = files.openFile(file("/a/one.md", "stale"));
+  const first = files.openFile(opened("/a/one.md"));
+  files.openFile(opened("/a/two.md"));
+  const again = files.openFile(opened("/a/one.md", "stale"));
   assert.equal(again.id, first.id);
   assert.equal(files.list().length, 2);
   assert.equal(files.active().id, first.id);
@@ -40,7 +42,7 @@ test("an untitled buffer with text needs a prompt to close; an empty one does no
   const typed = files.newUntitled();
   assert.deepEqual([empty.name, typed.name], ["Untitled.md", "Untitled 2.md"]);
   files.edit(typed.id, "draft");
-  assert.equal(canAutosave(typed), false, "no path yet");
+  assert.equal(isDirty(typed), true);
   assert.equal(needsPrompt(typed), true);
   assert.equal(files.close(typed.id), "needs-prompt");
   assert.equal(files.list().length, 2);
@@ -51,9 +53,9 @@ test("an untitled buffer with text needs a prompt to close; an empty one does no
 
 test("closing the active file activates a neighbor", () => {
   const files = model();
-  const one = files.openFile(file("/a/1.md"));
-  const two = files.openFile(file("/a/2.md"));
-  const three = files.openFile(file("/a/3.md"));
+  const one = files.openFile(opened("/a/1.md"));
+  const two = files.openFile(opened("/a/2.md"));
+  const three = files.openFile(opened("/a/3.md"));
   files.activate(two.id);
   files.close(two.id);
   assert.equal(files.active().id, three.id);
@@ -61,29 +63,34 @@ test("closing the active file activates a neighbor", () => {
   assert.equal(files.active().id, one.id);
 });
 
-test("an outside change reloads a clean file and conflicts with an edited one", () => {
+test("outside changes set and clear the file's disk state", () => {
   const files = model();
-  const clean = files.openFile(file("/a/clean.md"));
-  const edited = files.openFile(file("/a/edited.md"));
-  files.edit(edited.id, "mine");
-  assert.equal(files.externalChange("/a/clean.md", "modified").action, "reload");
-  files.reload(clean.id, file("/a/clean.md", "theirs"));
-  assert.equal(clean.text, "theirs");
-  assert.equal(isDirty(clean), false);
-
-  const { action } = files.externalChange("/a/edited.md", "modified");
-  assert.equal(action, "conflict");
-  assert.equal(canAutosave(edited), false, "autosave waits for the user's choice");
-  files.keepMine(edited.id);
-  assert.equal(canAutosave(edited), true, "keeping mine saves over theirs");
-  assert.equal(edited.text, "mine");
+  const buffer = files.openFile(opened("/a/f.md"));
+  assert.equal(files.external("/a/f.md", "conflict"), buffer);
+  assert.equal(buffer.external, "conflict");
+  files.external("/a/f.md", "applied");
+  assert.equal(buffer.external, null);
+  files.external("/a/f.md", "removed");
+  assert.equal(buffer.external, "removed");
+  files.external("/a/f.md", "merged");
+  assert.equal(buffer.external, null);
+  assert.equal(files.external("/elsewhere.md", "conflict"), null);
 });
 
-test("a removed file is marked missing and not autosaved", () => {
+test("Save As adopts the new file and a reload replaces the text", () => {
   const files = model();
-  const buffer = files.openFile(file("/a/gone.md"));
-  files.edit(buffer.id, "more");
-  assert.equal(files.externalChange("/a/gone.md", "removed").action, "missing");
-  assert.equal(canAutosave(buffer), false);
-  assert.equal(files.externalChange("/elsewhere.md", "modified").action, "ignore");
+  const buffer = files.newUntitled();
+  files.edit(buffer.id, "draft");
+  buffer.editorState = {};
+  buffer.error = "denied";
+  files.adopt(buffer.id, opened("/a/new.md", "draft", { version: 0 }));
+  assert.equal(buffer.path, "/a/new.md");
+  assert.equal(buffer.name, "new.md");
+  assert.equal(buffer.editorState, null);
+  assert.equal(buffer.error, null);
+  assert.deepEqual(files.paths(), ["/a/new.md"]);
+  files.reload(buffer.id, "fresh", 9);
+  assert.equal(buffer.text, "fresh");
+  assert.equal(buffer.version, 9);
+  assert.equal(buffer.latest, 9);
 });

@@ -32,7 +32,8 @@ export function bootMainWindow(options = {}) {
 // `registry` seeds the fake Rust notes registry: `{ seed, files, open, fallback }`
 // (see fake-registry.js). Unless `seed.imported` is set, the page imports what
 // `storage` holds under the old local-storage keys, as a first launch of 0.11 does.
-async function bootPage({ page, script, label, storage = {}, handlers = {}, registry: registryOptions = {}, instance = 1, windowApi = {}, globals = {}, platform, beforeBoot } = {}) {
+// `disk` seeds the fake file registry (fake-file-docs.js): file text by path.
+async function bootPage({ page, script, label, storage = {}, handlers = {}, registry: registryOptions = {}, disk = {}, instance = 1, windowApi = {}, globals = {}, platform, beforeBoot } = {}) {
   const html = await readFile(new URL(`../../src/${page}`, import.meta.url), "utf8");
   const dom = new JSDOM(html, { url: "http://localhost/", pretendToBeVisual: true });
 
@@ -42,13 +43,14 @@ async function bootPage({ page, script, label, storage = {}, handlers = {}, regi
 
   const eventListeners = new Map();
   let registry;
+  let fileDocs;
 
   const invocations = [];
   async function invoke(command, args) {
     invocations.push({ command, args });
     const handler = handlers[command];
     if (typeof handler === "function") return handler(args);
-    const fake = registry.commands[command];
+    const fake = registry.commands[command] ?? fileDocs.commands[command];
     if (fake) return structuredClone(fake(structuredClone(args ?? {})) ?? null);
     return null;
   }
@@ -100,11 +102,11 @@ async function bootPage({ page, script, label, storage = {}, handlers = {}, regi
   // instead of the `platform` asked for.
   const { EditorView } = await import("../../src/vendor/codemirror.js");
   const { createFakeRegistry } = await import("./fake-registry.js");
+  const { createFakeFileDocs } = await import("./fake-file-docs.js");
   // Tauri delivers events asynchronously, after the command that caused them.
-  registry = createFakeRegistry({
-    ...registryOptions,
-    emit: (name, payload) => setTimeout(() => eventListeners.get(name)?.({ payload: structuredClone(payload) }), 0)
-  });
+  const deliver = (name, payload) => setTimeout(() => eventListeners.get(name)?.({ payload: structuredClone(payload) }), 0);
+  registry = createFakeRegistry({ ...registryOptions, emit: deliver });
+  fileDocs = createFakeFileDocs({ disk, emit: deliver });
   await import(`${new URL(`../../src/${script}`, import.meta.url).href}?boot=${instance}`);
   await settle();
 
@@ -118,6 +120,7 @@ async function bootPage({ page, script, label, storage = {}, handlers = {}, regi
     emitted,
     invocations,
     registry,
+    fileDocs,
     // What Rust has saved, once pending writes and events have settled.
     savedNotes: async () => {
       await settle();

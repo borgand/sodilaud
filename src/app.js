@@ -456,7 +456,9 @@ async function registerNativeHandlers() {
     await registerQuitHandler(listen);
     await listen("sodilaud-open-about", openAboutModal);
     await listen("sodilaud-open-section", ({ payload }) => openSection(payload));
-    await listen("file-changed", ({ payload }) => fileEditor.handleExternalChange(payload));
+    await listen("file-doc-updates", ({ payload }) => fileEditor.receiveUpdates(payload));
+    await listen("file-doc-saved", ({ payload }) => fileEditor.handleSaved(payload));
+    await listen("file-doc-external", ({ payload }) => fileEditor.handleExternal(payload));
     await listen("file-open-request", () => fileEditor.takePending());
   } catch (error) {
     console.error("Failed to register the main window's native handlers", error);
