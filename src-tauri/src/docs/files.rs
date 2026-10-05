@@ -291,16 +291,23 @@ impl Registry {
         }
     }
 
+    /// Runs `action` on an open file's text and comments. Updates it commits
+    /// are broadcast and autosaved; changed comments are shown and stored.
     pub(crate) fn with_file_doc<T>(
         &self,
         path: &Path,
-        action: impl FnOnce(&mut FileDoc) -> Result<T, String>,
+        action: impl FnOnce(&mut Collab) -> Result<T, String>,
     ) -> Result<T, String> {
         let mut docs = self.file_docs();
         let doc = docs
             .get_mut(path)
             .ok_or_else(|| FileError::not_open(path).message)?;
-        let result = action(doc);
+        let before = doc.collab.version();
+        let result = action(&mut doc.collab);
+        if doc.collab.version() > before {
+            let updates = doc.collab.since(before).unwrap_or_default();
+            self.emit_file_update(path, doc, before, updates);
+        }
         self.file_comments_changed(path, doc);
         result
     }
@@ -663,7 +670,7 @@ impl Registry {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::docs::registry::tests::Recorder;
     use serde_json::json;
@@ -958,18 +965,18 @@ mod tests {
         registry.set_comment_dir(directory.clone());
         let doc_id = id(&registry, &path);
         registry
-            .with_file_doc(&path, |doc| {
+            .with_file_doc(&path, |collab| {
                 let comment = Comment::new(
                     Author::Owner,
                     State::Held,
-                    doc.collab.text(),
+                    collab.text(),
                     (0, 5),
                     "b".into(),
                     None,
                     1,
                 );
-                doc.collab.comments.push(comment);
-                doc.collab.comments_changed();
+                collab.comments.push(comment);
+                collab.comments_changed();
                 Ok(())
             })
             .unwrap();
@@ -992,7 +999,7 @@ mod tests {
         let reopened = registry.file_open(&path, &TestDisk).unwrap();
         assert_eq!(reopened.text, "> hello world");
         let comments = registry
-            .with_file_doc(&path, |doc| Ok(doc.collab.comments.clone()))
+            .with_file_doc(&path, |collab| Ok(collab.comments.clone()))
             .unwrap();
         assert_eq!(comments[0].anchored_text, "hello");
     }

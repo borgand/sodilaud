@@ -491,6 +491,7 @@ pub(crate) struct Registry {
     workspace: Mutex<Option<Workspace>>,
     /// Files open in the main window, independent of the open workspace.
     pub(crate) files: FileDocs,
+    pub(crate) coedit: super::coedit::Coedit,
     sink: RwLock<Option<Arc<dyn Sink>>>,
     seq: AtomicU64,
 }
@@ -500,6 +501,7 @@ impl Default for Registry {
         Self {
             workspace: Mutex::new(None),
             files: FileDocs::default(),
+            coedit: super::coedit::Coedit::default(),
             sink: RwLock::new(None),
             seq: AtomicU64::new(0),
         }
