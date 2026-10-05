@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Condvar, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use super::collab::{Collab, Pulled, Pushed, Update};
 use super::registry::Registry;
@@ -18,6 +18,8 @@ use crate::files::io::{self, LineEnding};
 use crate::files::{FileError, FileErrorCode};
 
 pub(crate) const SAVE_DELAY: Duration = Duration::from_millis(400);
+/// The client ID of changes that came from the file on disk.
+pub(crate) const DISK_CLIENT: &str = "disk";
 
 /// Reads and writes files; the app's version tells the watcher about every
 /// read and write, so they are not reported back as outside edits.
@@ -39,6 +41,19 @@ pub(crate) trait Disk {
 pub(crate) enum External {
     Conflict,
     Removed,
+}
+
+/// The owner's answer to a conflict: take the file on disk, or save theirs over it.
+#[derive(Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum Resolve {
+    Disk,
+    Mine,
+}
+
+/// A line-based 3-way merge, or `None` when both sides changed the same lines.
+pub(crate) fn merge(base: &str, mine: &str, theirs: &str) -> Option<String> {
+    diffy::merge(base, mine, theirs).ok()
 }
 
 struct SaveState {
@@ -310,6 +325,135 @@ impl Registry {
     /// by Save As from another document.
     pub(crate) fn file_discard(&self, path: &Path) {
         self.file_docs().remove(path);
+    }
+
+    fn emit_external(&self, path: &Path, kind: ExternalKind) {
+        if let Some(sink) = self.sink() {
+            sink.file_external(&FileExternal {
+                path: path.to_string_lossy().into_owned(),
+                kind,
+            });
+        }
+    }
+
+    /// Makes `text`, which `bytes` on disk hold, the document's text: disk
+    /// and document agree again.
+    fn take_disk(&self, path: &Path, doc: &mut FileDoc, bytes: &[u8], text: String) {
+        if let Some((from, updates)) = doc.collab.replace(DISK_CLIENT, &text) {
+            self.emit_file_doc(path, from, updates, doc.collab.version());
+        }
+        doc.synced = text;
+        doc.disk_hash = io::hash(bytes);
+        doc.external = None;
+        doc.save = SaveState {
+            saved_version: doc.collab.version(),
+            due: None,
+            error: None,
+        };
+        self.emit_saved(&doc.saved(path));
+        self.emit_external(path, ExternalKind::Applied);
+    }
+
+    /// The watcher saw `path` change on disk. Sodilaud's own writes are
+    /// recognized by their hash. A file without unsaved changes takes the new
+    /// text; otherwise the change is merged with them, or, when both changed
+    /// the same lines, the owner's text is kept and they are asked.
+    pub(crate) fn file_changed_on_disk(&self, path: &Path, removed: bool, disk: &dyn Disk) {
+        let _writing = lock(&self.files.writing);
+        if removed {
+            if let Some(doc) = self.file_docs().get_mut(path) {
+                doc.external = Some(External::Removed);
+                self.emit_external(path, ExternalKind::Removed);
+            }
+            return;
+        }
+        let Ok(bytes) = disk.read(path) else {
+            return;
+        };
+        let mut docs = self.file_docs();
+        let Some(doc) = docs.get_mut(path) else {
+            return;
+        };
+        if io::hash(&bytes) == doc.disk_hash {
+            if doc.external == Some(External::Removed) {
+                doc.external = None;
+                if doc.collab.version() > doc.save.saved_version {
+                    doc.save.due = Some(Instant::now() + SAVE_DELAY);
+                    self.files.wake.notify_all();
+                }
+                self.emit_external(path, ExternalKind::Applied);
+            }
+            return;
+        }
+        let Ok((theirs, line_ending, bom)) = io::decode_normalized(&bytes) else {
+            doc.external = Some(External::Conflict);
+            self.emit_external(path, ExternalKind::Conflict);
+            return;
+        };
+        doc.line_ending = line_ending;
+        doc.bom = bom;
+        let mine = doc.collab.text().to_string();
+        let merged = if mine == doc.synced {
+            Some(theirs.clone())
+        } else {
+            merge(&doc.synced, &mine, &theirs)
+        };
+        match merged {
+            Some(merged) if merged == theirs => self.take_disk(path, doc, &bytes, theirs),
+            Some(merged) => {
+                if let Some((from, updates)) = doc.collab.replace(DISK_CLIENT, &merged) {
+                    self.emit_file_doc(path, from, updates, doc.collab.version());
+                }
+                doc.synced = theirs;
+                doc.disk_hash = io::hash(&bytes);
+                doc.external = None;
+                doc.save.due = Some(Instant::now() + SAVE_DELAY);
+                self.files.wake.notify_all();
+                self.emit_external(path, ExternalKind::Merged);
+            }
+            None => {
+                doc.synced = theirs;
+                doc.disk_hash = io::hash(&bytes);
+                doc.external = Some(External::Conflict);
+                self.emit_external(path, ExternalKind::Conflict);
+            }
+        }
+    }
+
+    /// Ends a conflict: Reload takes the file on disk, Keep mine saves the
+    /// document over it.
+    pub(crate) fn file_resolve(
+        &self,
+        path: &Path,
+        keep: Resolve,
+        disk: &dyn Disk,
+    ) -> Result<(), FileError> {
+        match keep {
+            Resolve::Disk => {
+                let _writing = lock(&self.files.writing);
+                let bytes = disk.read(path)?;
+                let (text, line_ending, bom) = io::decode_normalized(&bytes)?;
+                let mut docs = self.file_docs();
+                let doc = docs
+                    .get_mut(path)
+                    .ok_or_else(|| FileError::not_open(path))?;
+                doc.line_ending = line_ending;
+                doc.bom = bom;
+                self.take_disk(path, doc, &bytes, text);
+                Ok(())
+            }
+            Resolve::Mine => {
+                {
+                    let mut docs = self.file_docs();
+                    let doc = docs
+                        .get_mut(path)
+                        .ok_or_else(|| FileError::not_open(path))?;
+                    doc.external = None;
+                    self.emit_external(path, ExternalKind::Applied);
+                }
+                self.file_save(path, disk).map(|_| ())
+            }
+        }
     }
 
     /// Writes every pending save, as a quit does. Returns the failures.
@@ -592,6 +736,143 @@ mod tests {
             .unwrap();
         assert_eq!(waiting.join().unwrap(), path);
         assert!(pushed_at.elapsed() >= SAVE_DELAY);
+    }
+
+    fn text(registry: &Registry, path: &Path) -> String {
+        registry.file_open(path, &TestDisk).unwrap().text
+    }
+
+    fn kinds(recorder: &Recorder) -> Vec<ExternalKind> {
+        recorder
+            .external
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|event| event.kind)
+            .collect()
+    }
+
+    #[test]
+    fn an_outside_edit_to_a_clean_file_is_applied_as_a_minimal_update() {
+        let path = scratch("clean", b"one\ntwo\n");
+        let (registry, recorder) = registry();
+        registry.file_open(&path, &TestDisk).unwrap();
+        fs::write(&path, b"one\ntwo\nthree\n").unwrap();
+        registry.file_changed_on_disk(&path, false, &TestDisk);
+        assert_eq!(text(&registry, &path), "one\ntwo\nthree\n");
+        let events = recorder.file_docs.lock().unwrap().clone();
+        assert_eq!(events[0].updates[0].client_id, DISK_CLIENT);
+        assert_eq!(events[0].updates[0].changes, json!([8, [0, "three", ""]]));
+        assert_eq!(recorder.saved.lock().unwrap()[0].version, 1, "disk matches");
+        assert_eq!(kinds(&recorder), vec![ExternalKind::Applied]);
+        assert_eq!(registry.file_due(Instant::now() + SAVE_DELAY * 2), None);
+    }
+
+    #[test]
+    fn our_own_save_is_not_an_outside_edit() {
+        let path = scratch("own", b"a");
+        let (registry, recorder) = registry();
+        registry.file_open(&path, &TestDisk).unwrap();
+        registry
+            .file_push(&path, 0, vec![update(json!([1, [0, "b"]]))])
+            .unwrap();
+        registry.file_save(&path, &TestDisk).unwrap();
+        registry.file_changed_on_disk(&path, false, &TestDisk);
+        assert_eq!(recorder.file_docs.lock().unwrap().len(), 1);
+        assert!(recorder.external.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn an_outside_edit_away_from_unsaved_typing_is_merged_and_saved() {
+        let path = scratch("merge", b"one\ntwo\nthree\n");
+        let (registry, recorder) = registry();
+        registry.file_open(&path, &TestDisk).unwrap();
+        registry
+            .file_push(&path, 0, vec![update(json!([[3, "ONE"], 11]))])
+            .unwrap();
+        fs::write(&path, b"one\ntwo\nTHREE\n").unwrap();
+        registry.file_changed_on_disk(&path, false, &TestDisk);
+        assert_eq!(text(&registry, &path), "ONE\ntwo\nTHREE\n");
+        assert_eq!(kinds(&recorder), vec![ExternalKind::Merged]);
+        assert_eq!(
+            recorder.file_docs.lock().unwrap()[1].updates[0].changes,
+            json!([8, [5, "THREE"], 1])
+        );
+        let path_due = registry.file_due(Instant::now() + SAVE_DELAY * 2);
+        assert_eq!(path_due.as_deref(), Some(path.as_path()));
+        registry.file_save(&path, &TestDisk).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"ONE\ntwo\nTHREE\n");
+    }
+
+    #[test]
+    fn a_crlf_file_with_astral_text_merges_and_saves_byte_for_byte() {
+        let path = scratch("crlf", "a😀\r\nb\r\nc\r\n".as_bytes());
+        let (registry, _) = registry();
+        registry.file_open(&path, &TestDisk).unwrap();
+        registry
+            .file_push(&path, 0, vec![update(json!([3, [0, "𝄞"], 5]))])
+            .unwrap();
+        fs::write(&path, "a😀\r\nb\r\nc ž\r\n".as_bytes()).unwrap();
+        registry.file_changed_on_disk(&path, false, &TestDisk);
+        registry.file_save(&path, &TestDisk).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), "a😀𝄞\r\nb\r\nc ž\r\n".as_bytes());
+    }
+
+    #[test]
+    fn overlapping_edits_keep_mine_until_the_owner_chooses() {
+        let path = scratch("conflict", b"one\ntwo\n");
+        let (registry, recorder) = registry();
+        registry.file_open(&path, &TestDisk).unwrap();
+        registry
+            .file_push(&path, 0, vec![update(json!([4, [3, "mine"], 1]))])
+            .unwrap();
+        fs::write(&path, b"one\ntheirs\n").unwrap();
+        registry.file_changed_on_disk(&path, false, &TestDisk);
+        assert_eq!(text(&registry, &path), "one\nmine\n");
+        assert_eq!(kinds(&recorder), vec![ExternalKind::Conflict]);
+        let opened = registry.file_open(&path, &TestDisk).unwrap();
+        assert_eq!(opened.external, Some(External::Conflict));
+        assert_eq!(registry.file_due(Instant::now() + SAVE_DELAY * 2), None);
+        registry.file_save(&path, &TestDisk).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"one\ntheirs\n", "not autosaved");
+
+        registry
+            .file_resolve(&path, Resolve::Mine, &TestDisk)
+            .unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"one\nmine\n");
+        assert_eq!(registry.file_open(&path, &TestDisk).unwrap().external, None);
+
+        fs::write(&path, b"one\nlater\n").unwrap();
+        registry
+            .file_push(&path, 1, vec![update(json!([4, [4, "again"], 1]))])
+            .unwrap();
+        registry.file_changed_on_disk(&path, false, &TestDisk);
+        registry
+            .file_resolve(&path, Resolve::Disk, &TestDisk)
+            .unwrap();
+        let opened = registry.file_open(&path, &TestDisk).unwrap();
+        assert_eq!(opened.text, "one\nlater\n");
+        assert_eq!(opened.saved_version, opened.version);
+        assert_eq!(opened.external, None);
+    }
+
+    #[test]
+    fn a_removed_file_is_not_saved_until_it_comes_back() {
+        let path = scratch("removed", b"here");
+        let (registry, recorder) = registry();
+        registry.file_open(&path, &TestDisk).unwrap();
+        fs::remove_file(&path).unwrap();
+        registry.file_changed_on_disk(&path, true, &TestDisk);
+        registry
+            .file_push(&path, 0, vec![update(json!([4, [0, "!"]]))])
+            .unwrap();
+        registry.file_save(&path, &TestDisk).unwrap();
+        assert!(!path.exists());
+        assert_eq!(kinds(&recorder), vec![ExternalKind::Removed]);
+        fs::write(&path, b"here").unwrap();
+        registry.file_changed_on_disk(&path, false, &TestDisk);
+        assert_eq!(text(&registry, &path), "here!");
+        assert_eq!(registry.file_open(&path, &TestDisk).unwrap().external, None);
     }
 
     #[test]
