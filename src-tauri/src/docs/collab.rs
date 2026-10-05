@@ -83,6 +83,21 @@ impl Collab {
         from
     }
 
+    /// Replaces the whole text as one update from `client_id`, changing only
+    /// what differs. Returns the version it applies to and the update, or
+    /// `None` when the text is already `text`.
+    pub(crate) fn replace(&mut self, client_id: &str, text: &str) -> Option<(u64, Vec<Update>)> {
+        if self.text == text {
+            return None;
+        }
+        let updates = vec![Update {
+            client_id: client_id.to_string(),
+            changes: changes::diff(&self.text, text),
+        }];
+        let from = self.commit(text.to_string(), updates.clone());
+        Some((from, updates))
+    }
+
     pub(crate) fn pull(&self, since: u64) -> Result<Pulled, String> {
         if since > self.version {
             return Err("The client is ahead of the registry; reload the document".into());
@@ -128,6 +143,16 @@ mod tests {
         assert_eq!(collab.pull(1).unwrap(), Pulled::Updates(vec![]));
         assert!(collab.pull(2).is_err());
         assert!(collab.apply(&[update("c", json!([9]))]).is_err());
+    }
+
+    #[test]
+    fn replacing_the_text_sends_a_minimal_update() {
+        let mut collab = Collab::new("one\ntwo\n".into());
+        assert_eq!(collab.replace("disk", "one\ntwo\n"), None);
+        let (from, updates) = collab.replace("disk", "one\n2\n").unwrap();
+        assert_eq!(from, 0);
+        assert_eq!(updates, vec![update("disk", json!([4, [3, "2"], 1]))]);
+        assert_eq!((collab.text(), collab.version()), ("one\n2\n", 1));
     }
 
     #[test]

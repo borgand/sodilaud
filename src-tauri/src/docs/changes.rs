@@ -8,8 +8,14 @@
 //! MCP offsets count characters. This module is the only place that converts.
 
 use std::borrow::Cow;
+use std::time::Duration;
 
 use serde_json::Value;
+use similar::{DiffTag, TextDiff, TextDiffConfig};
+
+/// How long a diff may search for the smallest change before it settles for a
+/// larger, still correct one.
+const DIFF_TIMEOUT: Duration = Duration::from_millis(100);
 
 /// CM6 splits a document on `\r\n`, `\r` and `\n` and keeps only `\n`, so text
 /// entering the registry does the same or offsets would disagree.
@@ -97,6 +103,103 @@ pub(crate) fn append(document: &str, addition: &str) -> Value {
     Value::Array(parts)
 }
 
+/// Builds a change set from kept, deleted and inserted runs, merging
+/// neighbouring runs of the same kind.
+#[derive(Default)]
+struct Builder {
+    parts: Vec<Value>,
+    kept: usize,
+    deleted: usize,
+    inserted: String,
+    changing: bool,
+}
+
+impl Builder {
+    fn keep(&mut self, text: &str) {
+        self.end_change();
+        self.kept += utf16_len(text);
+    }
+
+    fn delete(&mut self, text: &str) {
+        self.end_keep();
+        self.changing = true;
+        self.deleted += utf16_len(text);
+    }
+
+    fn insert(&mut self, text: &str) {
+        self.end_keep();
+        self.changing = true;
+        self.inserted.push_str(text);
+    }
+
+    fn end_keep(&mut self) {
+        if self.kept > 0 {
+            self.parts.push(Value::from(self.kept));
+            self.kept = 0;
+        }
+    }
+
+    fn end_change(&mut self) {
+        if !self.changing {
+            return;
+        }
+        let mut part = vec![Value::from(self.deleted)];
+        if !self.inserted.is_empty() {
+            part.extend(lines(&self.inserted));
+        }
+        self.parts.push(Value::Array(part));
+        self.deleted = 0;
+        self.inserted.clear();
+        self.changing = false;
+    }
+
+    fn finish(mut self) -> Value {
+        self.end_change();
+        self.end_keep();
+        Value::Array(self.parts)
+    }
+
+    /// Feeds a diff in. A replaced run of lines is diffed again by
+    /// character, so an edit inside a line keeps the rest of it.
+    fn feed(&mut self, diff: &TextDiff<'_, '_, str>, by_line: bool) {
+        let old = |index: usize| diff.old_slice(index).unwrap_or_default();
+        let new = |index: usize| diff.new_slice(index).unwrap_or_default();
+        for op in diff.ops() {
+            let (tag, old_range, new_range) = op.as_tag_tuple();
+            match tag {
+                DiffTag::Equal => old_range.for_each(|i| self.keep(old(i))),
+                DiffTag::Delete => old_range.for_each(|i| self.delete(old(i))),
+                DiffTag::Insert => new_range.for_each(|i| self.insert(new(i))),
+                DiffTag::Replace if by_line => {
+                    let before: String = old_range.map(old).collect();
+                    let after: String = new_range.map(new).collect();
+                    let inner = config().diff_chars(before.as_str(), after.as_str());
+                    self.feed(&inner, false);
+                }
+                DiffTag::Replace => {
+                    old_range.for_each(|i| self.delete(old(i)));
+                    new_range.for_each(|i| self.insert(new(i)));
+                }
+            }
+        }
+    }
+}
+
+fn config() -> TextDiffConfig {
+    let mut config = TextDiff::configure();
+    config.timeout(DIFF_TIMEOUT);
+    config
+}
+
+/// A change set that turns `old` into `new` while keeping every unchanged
+/// line and character, so cursors and undo history in an open editor survive
+/// a whole-text replacement.
+pub(crate) fn diff(old: &str, new: &str) -> Value {
+    let mut builder = Builder::default();
+    builder.feed(&config().diff_lines(old, new), true);
+    builder.finish()
+}
+
 /// Replaces the whole of `document` with `replacement`.
 #[cfg(test)]
 pub(crate) fn replace_all(document: &str, replacement: &str) -> Value {
@@ -158,6 +261,19 @@ mod tests {
     }
 
     #[test]
+    fn a_diff_keeps_unchanged_lines_as_kept_parts() {
+        let old = "first line\nmiddle\nlast line\n";
+        let new = "first line\nmiddle edited\nlast line\n";
+        let set = diff(old, new);
+        assert_eq!(set, json!([17, [0, " edited"], 11]));
+        assert_eq!(apply(old, &set).unwrap(), new);
+        assert_eq!(diff("", ""), json!([]));
+        assert_eq!(diff("same", "same"), json!([4]));
+        assert_eq!(apply("", &diff("", "a\nb")).unwrap(), "a\nb");
+        assert_eq!(apply("a\nb", &diff("a\nb", "")).unwrap(), "");
+    }
+
+    #[test]
     fn normalizes_every_line_break_to_a_newline() {
         assert_eq!(normalize_newlines("a\r\nb\rc\nd"), "a\nb\nc\nd");
         assert!(matches!(normalize_newlines("plain\n"), Cow::Borrowed(_)));
@@ -172,6 +288,32 @@ mod tests {
                 .wrapping_mul(6364136223846793005)
                 .wrapping_add(1442695040888963407);
             ((self.0 >> 33) as usize) % bound.max(1)
+        }
+    }
+
+    #[test]
+    fn random_diffs_rebuild_the_new_text() {
+        let alphabet = ['a', 'õ', '😀', '\n', 'ž', ' ', '𝄞'];
+        let mut random = Lcg(11);
+        for _ in 0..2000 {
+            let old: String = (0..random.next(30))
+                .map(|_| alphabet[random.next(alphabet.len())])
+                .collect();
+            let mut new: Vec<char> = old.chars().collect();
+            for _ in 0..random.next(4) {
+                let at = random.next(new.len() + 1);
+                if random.next(2) == 0 && at < new.len() {
+                    new.remove(at);
+                } else {
+                    new.insert(at, alphabet[random.next(alphabet.len())]);
+                }
+            }
+            let new: String = new.into_iter().collect();
+            assert_eq!(
+                apply(&old, &diff(&old, &new)).unwrap(),
+                new,
+                "{old:?} -> {new:?}"
+            );
         }
     }
 
