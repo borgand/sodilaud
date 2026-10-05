@@ -1,7 +1,7 @@
 # Agent co-editing with comments - design
 
 Date: 2026-10-05
-Status: awaiting written-spec review
+Status: implemented 2026-10-05 on `feat/agent-coedit`
 Branch: `feat/agent-coedit` (stacked on `feat/files-registry`)
 Roadmap: item 5 in [`ROADMAP.md`](../../../ROADMAP.md). Needs
 [`2026-10-05-files-in-registry-design.md`](2026-10-05-files-in-registry-design.md) and uses
@@ -115,3 +115,50 @@ src/
 - **Writing into `~/.claude`**: only on explicit install, with a preview and a backup; the
   settings merge never removes other hooks.
 - **Hook speed**: one small file read per Edit/Write call; measured under 20 ms.
+
+## Changes made during implementation
+
+1. **Owner wins against every newer change.** `apply_edit` reports `edited_by_owner` for any
+   update since `baseVersion` that touched the edit's range: the owner's typing, a merged
+   outside edit, or the agent's own earlier `apply_edit`. Only text that nobody changed since the
+   agent read it is replaced. Text inserted exactly at either end of the range is not a touch.
+2. **Ranges follow the editor's mapping exactly.** `docs/changes.rs` ports CodeMirror's
+   `mapPos`, so Rust and the page place every range the same way (start maps forward, end
+   backward). A comment whose text is edited inside keeps its range and takes the new text as
+   `anchoredText`; an exact rewrite of its text carries it to the replacement. Re-anchoring runs
+   only when a range collapses and when a document is opened.
+3. **Orphan is a flag, not a state.** A comment keeps its state and gets `orphaned: true`, shown
+   as `orphaned` until it is resolved, so it can be placed again on a later open. Orphans are not
+   handed to agents.
+4. **Send review is per document**, for the document the panel shows; the mode is global and is
+   remembered in `mcp.json` as `holdForReview`.
+5. **More owner actions.** The owner can resolve a `sent` comment as well as dismiss an agent
+   comment, and can delete a resolved or orphaned comment (Clear resolved does it in bulk).
+   Deleting a comment deletes its replies.
+6. **Tool details.** `read_document` takes `limit` up to 200,000 characters and also returns
+   `doc` and `totalLength`; its `comments` leave out held and resolved ones. `list_documents`
+   also lists notes an agent read, without comments. `get_pending_comments` computes the context
+   lines when the comment is taken, so they match the text the agent will read.
+7. **`open_document` marks the file co-edited at once**, before the main window has opened it, so
+   the hook protects it from the first call.
+8. **Hook data.** `coedit.json` is `{ "files": [...] }` in the app data folder
+   (`<data dir>/<identifier>`, which the hook finds without Tauri). It is emptied at launch and at
+   quit; after a crash it is stale until the next launch.
+9. **Integration.** The plan also reports whether an older install is present, so the button reads
+   Install or Update. `serde_json`'s `preserve_order` feature is on, so `settings.json` keeps its key
+   order. Claude Code must name the server `sodilaud`, since the command, skill and hook refer to
+   `mcp__sodilaud__` tools.
+10. **Context menu in Quick Notes only.** The main window has no editor context menu; there the
+    toolbar button and the shortcut add comments.
+11. **Replies are written in the panel**, under the agent's comment, rather than in the editor's
+    composer.
+12. **Agent highlight.** `doc-sync.js` applies remote updates one client's run at a time and calls
+    `onRemote`, so only updates from client `agent` are highlighted. The vendored CodeMirror build
+    now exports `gutter`.
+13. **Page commands.** `comments_get`, `comment_add` (one `comment` argument), `comment_edit`,
+    `comment_delete`, `comment_resolve`, `comment_resend`, `comments_send_review`,
+    `comments_clear_resolved`, `coedit_get_state`, `coedit_set_hold` for both windows (each only for
+    its own document kind), events `comments-changed` and `coedit-state`, and
+    `coedit_integration_plan/install/remove` for Quick Notes.
+14. **Merge integration fix.** The merge of project A into B left `files::agent_document` calling
+    the removed `io::read`; it now reads with `io::read_bytes` and `io::decode_normalized`.
