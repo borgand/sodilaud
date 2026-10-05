@@ -100,6 +100,23 @@ impl Comment {
     }
 }
 
+/// A document's comments as they are now, for the window that shows it.
+/// Positions are UTF-16 units of the text at `version`.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CommentsEvent {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) collection_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) note_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) doc_id: Option<String>,
+    pub(crate) version: u64,
+    pub(crate) comments: Vec<Comment>,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub(crate) struct Heading {
     pub(crate) level: usize,

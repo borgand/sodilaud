@@ -20,6 +20,7 @@ use super::collab::Collab;
 #[cfg(test)]
 use super::collab::HISTORY;
 pub(crate) use super::collab::{Pulled, Pushed, Update};
+use super::comments::CommentsEvent;
 use super::files::{FileDocUpdates, FileDocs, FileExternal, FileSaved};
 use crate::store::workspace::{self as store, Folder, Note, TrashEntry};
 
@@ -102,6 +103,9 @@ pub(crate) struct DocUpdates {
     pub(crate) title: String,
     pub(crate) updated_at: i64,
     pub(crate) rev: u64,
+    /// The note's comments, when the update moved or changed them.
+    #[serde(skip)]
+    pub(crate) comments: Option<CommentsEvent>,
 }
 
 /// Where registry changes go: every webview in the app, or a test recorder.
@@ -111,6 +115,8 @@ pub(crate) trait Sink: Send + Sync {
     fn file_doc(&self, _updates: &FileDocUpdates) {}
     fn file_saved(&self, _saved: &FileSaved) {}
     fn file_external(&self, _external: &FileExternal) {}
+    fn comments(&self, _comments: &CommentsEvent) {}
+    fn coedit_state(&self, _state: &super::coedit::CoeditState) {}
 }
 
 #[derive(Debug, Deserialize)]
@@ -299,6 +305,12 @@ impl Workspace {
             .collect();
         clear_missing_folders(&mut notes, &folders);
         pinned_first(&mut notes);
+        let mut comments = store::load_comments(&conn, None)?;
+        for entry in &mut notes {
+            if let Some(found) = comments.remove(&entry.note.id) {
+                entry.collab.load_comments(found);
+            }
+        }
         Ok(Self {
             id: uuid::Uuid::new_v4().to_string(),
             path: path.to_path_buf(),
@@ -418,7 +430,12 @@ impl Workspace {
         let entry = &mut self.notes[index];
         entry.note = note;
         entry.rev = rev;
+        let comments_before = entry.collab.comments_rev;
         let from = entry.collab.commit(text, updates.clone());
+        let comments = (entry.collab.comments_rev != comments_before)
+            .then(|| self.comments_changed(note_id))
+            .flatten();
+        let entry = &self.notes[index];
         Ok(DocUpdates {
             collection_id: self.id.clone(),
             note_id: note_id.to_string(),
@@ -428,7 +445,45 @@ impl Workspace {
             title: entry.note.title.clone(),
             updated_at: entry.note.updated_at,
             rev,
+            comments,
         })
+    }
+
+    pub(crate) fn entry_mut(&mut self, note_id: &str) -> Result<&mut Entry, String> {
+        let index = self.position(note_id)?;
+        Ok(&mut self.notes[index])
+    }
+
+    pub(crate) fn comments_event(&self, note_id: &str) -> Option<CommentsEvent> {
+        let entry = self.notes.iter().find(|e| e.note.id == note_id)?;
+        Some(CommentsEvent {
+            collection_id: Some(self.id.clone()),
+            note_id: Some(note_id.to_string()),
+            path: None,
+            doc_id: None,
+            version: entry.collab.version(),
+            comments: entry.collab.comments.clone(),
+        })
+    }
+
+    /// Saves a note's comments after they changed and returns the event that
+    /// shows them. Comments are not worth refusing an edit over, so a failed
+    /// write is only logged; the next change writes them again.
+    pub(crate) fn comments_changed(&mut self, note_id: &str) -> Option<CommentsEvent> {
+        let event = self.comments_event(note_id)?;
+        if let Err(error) = store::save_note_comments(&mut self.conn, note_id, &event.comments) {
+            eprintln!("Could not save comments: {error}");
+        }
+        Some(event)
+    }
+
+    fn reload_comments(&mut self, note_id: &str) {
+        let found = store::load_comments(&self.conn, Some(note_id))
+            .ok()
+            .and_then(|mut found| found.remove(note_id));
+        if let (Some(found), Ok(entry)) = (found, self.entry_mut(note_id)) {
+            entry.collab.load_comments(found);
+        }
     }
 }
 
@@ -650,9 +705,7 @@ impl Registry {
         }
         let event = workspace.apply_updates(note_id, updates)?;
         let version = event.version;
-        if let Some(sink) = self.sink() {
-            sink.doc(&event);
-        }
+        self.emit_doc(&event);
         Ok(Pushed {
             accepted: true,
             version,
@@ -663,6 +716,9 @@ impl Registry {
     pub(crate) fn emit_doc(&self, event: &DocUpdates) {
         if let Some(sink) = self.sink() {
             sink.doc(event);
+            if let Some(comments) = &event.comments {
+                sink.comments(comments);
+            }
         }
     }
 
@@ -726,6 +782,7 @@ impl Registry {
             let rev = draft.rev();
             insert_below_pinned(&mut draft.notes, new_entry(note, rev));
             workspace.commit(draft)?;
+            workspace.reload_comments(&id);
             Ok(id)
         })
     }
@@ -734,8 +791,19 @@ impl Registry {
         self.mutate(collection_id, |workspace| {
             let selected: HashSet<String> = ids.into_iter().collect();
             let mut draft = workspace.draft();
+            let removed: Vec<String> = draft
+                .trash
+                .iter()
+                .filter(|entry| selected.contains(&entry.id))
+                .map(|entry| entry.note.id.clone())
+                .filter(|id| !draft.notes.iter().any(|e| &e.note.id == id))
+                .collect();
             draft.trash.retain(|entry| !selected.contains(&entry.id));
-            workspace.commit(draft)
+            workspace.commit(draft)?;
+            if let Err(error) = store::delete_note_comments(&workspace.conn, &removed) {
+                eprintln!("Could not delete comments: {error}");
+            }
+            Ok(())
         })
     }
 
@@ -921,6 +989,8 @@ pub(crate) mod tests {
         pub(crate) file_docs: Mutex<Vec<FileDocUpdates>>,
         pub(crate) saved: Mutex<Vec<FileSaved>>,
         pub(crate) external: Mutex<Vec<FileExternal>>,
+        pub(crate) comments: Mutex<Vec<CommentsEvent>>,
+        pub(crate) coedit: Mutex<Vec<super::super::coedit::CoeditState>>,
     }
 
     impl Sink for Recorder {
@@ -939,6 +1009,49 @@ pub(crate) mod tests {
         fn file_external(&self, external: &FileExternal) {
             self.external.lock().unwrap().push(external.clone());
         }
+        fn comments(&self, comments: &CommentsEvent) {
+            self.comments.lock().unwrap().push(comments.clone());
+        }
+        fn coedit_state(&self, state: &super::super::coedit::CoeditState) {
+            self.coedit.lock().unwrap().push(state.clone());
+        }
+    }
+
+    #[test]
+    fn note_comments_follow_pushes_are_saved_and_come_back_after_reopening() {
+        use crate::docs::comments::{Author, Comment, State as CommentState};
+        let (registry, recorder, path, id) = registry_with(&[note("a", "hello world", 1)]);
+        registry
+            .with(|workspace| {
+                let entry = workspace.entry_mut("a")?;
+                let comment = Comment::new(
+                    Author::Owner,
+                    CommentState::Queued,
+                    entry.collab.text(),
+                    (6, 11),
+                    "why".into(),
+                    None,
+                    1,
+                );
+                entry.collab.comments.push(comment);
+                entry.collab.comments_changed();
+                workspace.comments_changed("a");
+                Ok(())
+            })
+            .unwrap();
+        registry
+            .push(&id, "a", 0, vec![update("page", json!([[0, ">> "], 11]))])
+            .unwrap();
+        let events = recorder.comments.lock().unwrap().clone();
+        let last = events.last().unwrap();
+        assert_eq!((last.version, last.note_id.as_deref()), (1, Some("a")));
+        assert_eq!((last.comments[0].from, last.comments[0].to), (9, 14));
+        registry.open(&path, false).unwrap();
+        let reopened = registry
+            .with(|workspace| Ok(workspace.entry_mut("a")?.collab.comments.clone()))
+            .unwrap();
+        assert_eq!(reopened[0].anchored_text, "world");
+        assert_eq!((reopened[0].from, reopened[0].to), (9, 14));
     }
 
     pub(crate) fn registry_with(notes: &[Note]) -> (Registry, Arc<Recorder>, PathBuf, String) {

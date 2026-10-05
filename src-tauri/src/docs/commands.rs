@@ -10,6 +10,8 @@ use std::sync::{Arc, Mutex, PoisonError};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
+use super::coedit::CoeditState;
+use super::comments::CommentsEvent;
 use super::files::{FileDocUpdates, FileExternal, FileSaved};
 use super::registry::{
     DocUpdates, LocalCollection, Pulled, Pushed, Registry, Sink, State, Structure, Update,
@@ -23,6 +25,8 @@ pub(crate) const DOC_EVENT: &str = "notes-doc-updates";
 pub(crate) const FILE_DOC_EVENT: &str = "file-doc-updates";
 pub(crate) const FILE_SAVED_EVENT: &str = "file-doc-saved";
 pub(crate) const FILE_EXTERNAL_EVENT: &str = "file-doc-external";
+pub(crate) const COMMENTS_EVENT: &str = "comments-changed";
+pub(crate) const COEDIT_EVENT: &str = "coedit-state";
 
 pub(crate) type SharedRegistry = Arc<Registry>;
 
@@ -55,6 +59,19 @@ impl Sink for AppSink {
             FILE_EXTERNAL_EVENT,
             external,
         );
+    }
+    fn comments(&self, comments: &CommentsEvent) {
+        let window = if comments.note_id.is_some() {
+            quicknotes::window::LABEL
+        } else {
+            quicknotes::window::MAIN_LABEL
+        };
+        let _ = self.0.emit_to(window, COMMENTS_EVENT, comments);
+    }
+    fn coedit_state(&self, state: &CoeditState) {
+        for window in [quicknotes::window::LABEL, quicknotes::window::MAIN_LABEL] {
+            let _ = self.0.emit_to(window, COEDIT_EVENT, state);
+        }
     }
 }
 
