@@ -14,6 +14,7 @@ mod clipboard;
 mod docs;
 mod files;
 mod mcp;
+mod mcp_config;
 mod platform;
 mod quicknotes;
 mod quit;
