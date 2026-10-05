@@ -336,7 +336,10 @@ mod tests {
             "The quick brown fox.\nJumps over the lazy dog."
         );
         assert_eq!(
-            locate("same line\nother\nsame line\n", "same lime"),
+            locate(
+                "the same long line here\nother\nthe same long line here\n",
+                "the same long lime here"
+            ),
             Err(Reason::Ambiguous)
         );
         // 😀 is two UTF-16 units.
