@@ -112,7 +112,7 @@ const READ_TOOLS: [&str; 5] = [
     "get_note",
     "list_trash",
 ];
-const WRITE_TOOLS: [&str; 9] = [
+const WRITE_TOOLS: [&str; 10] = [
     "create_note",
     "create_folder",
     "append_to_note",
@@ -122,6 +122,7 @@ const WRITE_TOOLS: [&str; 9] = [
     "delete_note",
     "delete_folder",
     "push_quick_note",
+    "open_document",
 ];
 
 fn permission_set(tools: Vec<String>) -> Result<HashSet<String>, String> {
@@ -880,6 +881,13 @@ struct PushQuickNoteArgs {
     show: Option<bool>,
 }
 
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct OpenDocumentArgs {
+    /// Absolute path to an existing .md, .markdown or .txt file (UTF-8, at most 10 MB).
+    path: String,
+}
+
 #[derive(Debug, Serialize, serde::Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct CreateFolderArgs {
@@ -1467,6 +1475,37 @@ impl SodilaudServer {
         successful_result(result)
     }
 
+    /// Open a Markdown or text file in Sodilaud's main window so the user can read it there, or switch to it if it is already open. Takes an absolute path to an existing .md, .markdown or .txt file. Returns the path, name and size, not the content. Safe to repeat.
+    #[tool(annotations(
+        title = "Open document",
+        read_only_hint = false,
+        destructive_hint = false,
+        idempotent_hint = true,
+        open_world_hint = false
+    ))]
+    async fn open_document(
+        &self,
+        Parameters(args): Parameters<OpenDocumentArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        if !self.is_allowed("open_document")? {
+            return Ok(tool_error(
+                "Permission for open_document is disabled. Enable it in MCP Configuration.".into(),
+            ));
+        }
+        if let Err(error) = crate::files::agent_document(&args.path) {
+            return Ok(tool_error(error.message));
+        }
+        let Some(app) = &self.app else {
+            return Ok(tool_error(
+                "Opening documents needs the running Sodilaud app".into(),
+            ));
+        };
+        match crate::files::open_for_agent(app, &args.path) {
+            Ok(opened) => successful_result(opened),
+            Err(error) => Ok(tool_error(error.message)),
+        }
+    }
+
     /// Create a folder. Requires explicit write access. Retry using the same requestId.
     #[tool(annotations(
         title = "Create folder",
@@ -1741,7 +1780,7 @@ impl ServerHandler for SodilaudServer {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new("sodilaud-mcp", env!("CARGO_PKG_VERSION")))
             .with_instructions(
-                "Access to the notes collection currently open in Sodilaud, as the editor shows it. Each function requires its permission enabled in MCP Configuration. All read functions start enabled; all write functions start disabled. delete_note moves a note to persistent trash and requires expectedRevision from get_note. delete_folder requires expectedRevision from list_folders and rejects nonempty folders. list_trash lists recovery metadata; only the user can restore or empty trash through the UI. rename_note and move_note require expectedRevision from get_note. rename_folder requires expectedRevision from list_folders. All edits preserve content except append_to_note, which requires the expectedRevision from get_note, appends exact text, and never adds separators; line breaks are stored as \\n. A revision conflict requires rereading; after a failure or timeout, retry identical arguments with the same requestId, which never applies a write twice. Get collectionId from a read result and supply a unique requestId for each write; reuse identical arguments on retries. Retry keys last for this collection session; a switch or app restart invalidates collectionId. Results are paginated; follow nextOffset until it is null. get_note offsets count Unicode characters, not bytes.",
+                "Access to the notes collection currently open in Sodilaud, as the editor shows it. Each function requires its permission enabled in MCP Configuration. Read functions start enabled and write functions disabled until the user selects them; choices are remembered across restarts. push_quick_note puts a note into the user's Quick Notes (the From agents folder) and needs no collectionId. open_document opens an absolute .md, .markdown or .txt path in the main window and returns no content. delete_note moves a note to persistent trash and requires expectedRevision from get_note. delete_folder requires expectedRevision from list_folders and rejects nonempty folders. list_trash lists recovery metadata; only the user can restore or empty trash through the UI. rename_note and move_note require expectedRevision from get_note. rename_folder requires expectedRevision from list_folders. All edits preserve content except append_to_note, which requires the expectedRevision from get_note, appends exact text, and never adds separators; line breaks are stored as \\n. A revision conflict requires rereading; after a failure or timeout, retry identical arguments with the same requestId, which never applies a write twice. Get collectionId from a read result and supply a unique requestId for each write; reuse identical arguments on retries. Retry keys last for this collection session; a switch or app restart invalidates collectionId. Results are paginated; follow nextOffset until it is null. get_note offsets count Unicode characters, not bytes.",
             )
     }
 
@@ -2105,6 +2144,31 @@ mod tests {
             again.structured_content.unwrap(),
             result,
             "show does not change the request"
+        );
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[tokio::test]
+    async fn open_document_is_gated_and_checks_the_path_first() {
+        let (server, permissions, path) = server();
+        let open = |path: &str| {
+            server.open_document(Parameters(
+                serde_json::from_value(serde_json::json!({ "path": path })).unwrap(),
+            ))
+        };
+        let message = |result: CallToolResult| {
+            assert_eq!(result.is_error, Some(true));
+            serde_json::to_value(&result.content).unwrap()[0]["text"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        };
+        assert!(message(open("/tmp/x.md").await.unwrap()).contains("disabled"));
+        permissions.write().unwrap().insert("open_document".into());
+        assert!(message(open("notes/x.md").await.unwrap()).contains("full path"));
+        let missing = std::env::temp_dir().join(format!("sodilaud-missing-{}.md", Uuid::new_v4()));
+        assert!(
+            message(open(missing.to_str().unwrap()).await.unwrap()).contains("no longer on disk")
         );
         std::fs::remove_file(path).unwrap();
     }

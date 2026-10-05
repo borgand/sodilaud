@@ -28,6 +28,7 @@ pub enum FileErrorCode {
     NotUtf8,
     TooLarge,
     WrongWindow,
+    Unsupported,
     Io,
 }
 
@@ -72,6 +73,26 @@ impl FileError {
             FileErrorCode::TooLarge,
             format!(
                 "{} is larger than 10 MB, which Sodilaud does not open.",
+                io::file_name(path)
+            ),
+        )
+    }
+
+    pub fn not_absolute(path: &Path) -> Self {
+        Self::new(
+            FileErrorCode::Unsupported,
+            format!(
+                "{} is not a full path. Give the full path to the file.",
+                path.display()
+            ),
+        )
+    }
+
+    pub fn not_text(path: &Path) -> Self {
+        Self::new(
+            FileErrorCode::Unsupported,
+            format!(
+                "{} is not a Markdown or text file. Sodilaud opens .md, .markdown and .txt files.",
                 io::file_name(path)
             ),
         )
@@ -213,6 +234,10 @@ pub fn open_from_system(app: &AppHandle, paths: Vec<PathBuf>) {
         .filter_map(|path| files.grant(path).ok())
         .map(|path| path.to_string_lossy().to_string())
         .collect();
+    present_pending(app, &files, granted);
+}
+
+fn present_pending(app: &AppHandle, files: &Files, granted: Vec<String>) {
     if granted.is_empty() {
         return;
     }
@@ -225,6 +250,69 @@ pub fn open_from_system(app: &AppHandle, paths: Vec<PathBuf>) {
     );
 }
 
+fn is_text_file(path: &Path) -> bool {
+    matches!(
+        path.extension()
+            .and_then(|ext| ext.to_str())
+            .map(str::to_ascii_lowercase)
+            .as_deref(),
+        Some("md" | "markdown" | "txt")
+    )
+}
+
+/// Checks a file an agent asks the main window to open, with the file editor's
+/// rules: a full path to an existing UTF-8 text file within the size limit, whose
+/// real name (after symbolic links) has a text extension. Returns that real path
+/// and its size in bytes.
+pub fn agent_document(path: &str) -> Result<(PathBuf, u64), FileError> {
+    let requested = Path::new(path);
+    if !requested.is_absolute() {
+        return Err(FileError::not_absolute(requested));
+    }
+    let resolved = requested
+        .canonicalize()
+        .map_err(|error| FileError::io(requested, &error))?;
+    if resolved.is_file() && !is_text_file(&resolved) {
+        return Err(FileError::not_text(requested));
+    }
+    io::read(&resolved)?;
+    let bytes = std::fs::metadata(&resolved)
+        .map_err(|error| FileError::io(&resolved, &error))?
+        .len();
+    Ok((resolved, bytes))
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenedDocument {
+    pub path: String,
+    pub name: String,
+    pub bytes: u64,
+}
+
+/// Opens a file an agent named, the way Finder's "Open With" does: grants that
+/// one file, then shows it in the main window. Opening an open file switches to it.
+pub fn open_for_agent(app: &AppHandle, path: &str) -> Result<OpenedDocument, FileError> {
+    let (resolved, bytes) = agent_document(path)?;
+    let files = app
+        .try_state::<Files>()
+        .ok_or_else(|| FileError::not_granted(&resolved))?;
+    let granted = files.grant(&resolved)?;
+    let opened = OpenedDocument {
+        path: granted.to_string_lossy().to_string(),
+        name: io::file_name(&granted),
+        bytes,
+    };
+    let handle = app.clone();
+    let pending = opened.path.clone();
+    let _ = app.run_on_main_thread(move || {
+        if let Some(files) = handle.try_state::<Files>() {
+            present_pending(&handle, &files, vec![pending]);
+        }
+    });
+    Ok(opened)
+}
+
 /// The files named on a command line, skipping flags and the program itself.
 /// macOS hands files over as events instead.
 #[cfg_attr(target_os = "macos", allow(dead_code))]
@@ -233,22 +321,65 @@ pub fn paths_from_args<I: IntoIterator<Item = String>>(args: I) -> Vec<PathBuf> 
         .skip(1)
         .filter(|arg| !arg.starts_with('-'))
         .map(PathBuf::from)
-        .filter(|path| {
-            matches!(
-                path.extension()
-                    .and_then(|ext| ext.to_str())
-                    .map(str::to_ascii_lowercase)
-                    .as_deref(),
-                Some("md" | "markdown" | "txt")
-            )
-        })
+        .filter(|path| is_text_file(path))
         .collect()
 }
 
 #[cfg(test)]
 mod tests {
-    use super::paths_from_args;
+    use super::{agent_document, paths_from_args, FileErrorCode};
+    use std::fs;
     use std::path::PathBuf;
+
+    fn scratch(name: &str) -> PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!("sodilaud-agent-{name}-{nanos}"));
+        fs::create_dir_all(&directory).unwrap();
+        directory
+    }
+
+    fn code(path: &std::path::Path) -> FileErrorCode {
+        agent_document(path.to_str().unwrap()).unwrap_err().code
+    }
+
+    #[test]
+    fn an_agent_opens_an_existing_absolute_text_file() {
+        let directory = scratch("open");
+        let note = directory.join("Plan.MD");
+        fs::write(&note, "# Plan\n").unwrap();
+        let (path, bytes) = agent_document(note.to_str().unwrap()).unwrap();
+        assert_eq!(path, note.canonicalize().unwrap());
+        assert_eq!(bytes, 7);
+        let text = directory.join("todo.txt");
+        fs::write(&text, "").unwrap();
+        assert!(agent_document(text.to_str().unwrap()).is_ok());
+    }
+
+    #[test]
+    fn an_agent_cannot_open_relative_missing_or_other_files() {
+        let directory = scratch("refuse");
+        let relative = agent_document("Plan.md").unwrap_err();
+        assert_eq!(relative.code, FileErrorCode::Unsupported);
+        assert!(relative.message.contains("full path"));
+        assert_eq!(code(&directory.join("missing.md")), FileErrorCode::NotFound);
+        let json = directory.join("data.json");
+        fs::write(&json, "{}").unwrap();
+        assert_eq!(code(&json), FileErrorCode::Unsupported);
+        fs::create_dir(directory.join("folder.md")).unwrap();
+        assert_eq!(code(&directory.join("folder.md")), FileErrorCode::NotFound);
+        let latin = directory.join("latin.md");
+        fs::write(&latin, b"caf\xE9").unwrap();
+        assert_eq!(code(&latin), FileErrorCode::NotUtf8);
+        #[cfg(unix)]
+        {
+            let link = directory.join("link.md");
+            std::os::unix::fs::symlink(&json, &link).unwrap();
+            assert_eq!(code(&link), FileErrorCode::Unsupported);
+        }
+    }
 
     #[test]
     fn a_second_launch_passes_only_its_text_files() {

@@ -4,7 +4,7 @@ import test from "node:test";
 import { bootApp, settle } from "./helpers/app-harness.js";
 
 const reads = ["list_folders", "list_notes", "search_notes", "get_note", "list_trash"];
-const writes = ["create_note", "create_folder", "append_to_note", "rename_note", "move_note", "rename_folder", "delete_note", "delete_folder", "push_quick_note"];
+const writes = ["create_note", "create_folder", "append_to_note", "rename_note", "move_note", "rename_folder", "delete_note", "delete_folder", "push_quick_note", "open_document"];
 
 test("MCP Configuration controls each function, group selection, failures, and fresh-session defaults", async () => {
   let fail = false;
