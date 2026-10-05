@@ -54,7 +54,7 @@ const NOTE_COMMANDS = [
   "save_file_native", "select_db_file",
   "notes_boot", "notes_import_local", "notes_connect", "notes_disconnect", "notes_sync_structure",
   "notes_trash", "notes_restore", "notes_empty_trash", "notes_vacuum", "doc_push", "doc_pull",
-  "get_mcp_connection_info", "start_mcp_server", "set_mcp_permissions", "stop_mcp_server"
+  "get_mcp_connection_info", "get_mcp_state", "start_mcp_server", "set_mcp_permissions", "stop_mcp_server"
 ];
 const grant = (command) => `allow-${command.replaceAll("_", "-")}`;
 

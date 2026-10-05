@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 use std::sync::{Arc, RwLock};
@@ -27,6 +27,7 @@ use uuid::Uuid;
 
 use crate::docs::commands::SharedRegistry;
 use crate::docs::registry::Workspace;
+use crate::mcp_config::{self, McpConfig};
 use crate::store::workspace::{Folder, Note};
 
 const MCP_PORT: u16 = 39_393;
@@ -97,7 +98,7 @@ fn snapshot_of(workspace: &Workspace) -> Snapshot {
     }
 }
 
-/// The functions an agent may call. Writes start disabled at every start.
+/// The functions an agent may call, as the owner last chose them.
 type Permissions = Arc<RwLock<HashSet<String>>>;
 
 fn read_permissions() -> HashSet<String> {
@@ -132,12 +133,63 @@ fn permission_set(tools: Vec<String>) -> Result<HashSet<String>, String> {
     Ok(tools.into_iter().collect())
 }
 
+/// The saved choices, with any function the file does not name at its default:
+/// reads on, writes off.
+fn saved_permissions(config: &McpConfig) -> HashSet<String> {
+    READ_TOOLS
+        .iter()
+        .chain(WRITE_TOOLS.iter())
+        .filter(|tool| {
+            config
+                .permissions
+                .get(**tool)
+                .copied()
+                .unwrap_or(READ_TOOLS.contains(*tool))
+        })
+        .map(|tool| tool.to_string())
+        .collect()
+}
+
+fn permission_map(enabled: &HashSet<String>) -> BTreeMap<String, bool> {
+    READ_TOOLS
+        .iter()
+        .chain(WRITE_TOOLS.iter())
+        .map(|tool| (tool.to_string(), enabled.contains(*tool)))
+        .collect()
+}
+
+fn config_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    app.path()
+        .app_config_dir()
+        .map(|directory| directory.join(mcp_config::FILE_NAME))
+        .map_err(|error| format!("Could not resolve the app configuration directory: {error}"))
+}
+
+fn sorted(tools: &HashSet<String>) -> Vec<String> {
+    READ_TOOLS
+        .iter()
+        .chain(WRITE_TOOLS.iter())
+        .filter(|tool| tools.contains(**tool))
+        .map(|tool| tool.to_string())
+        .collect()
+}
+
+// Saved before it is applied, so a choice that cannot be remembered is not used.
 #[tauri::command]
 pub(crate) fn set_mcp_permissions(
+    app: tauri::AppHandle,
     state: tauri::State<'_, McpState>,
     tools: Vec<String>,
 ) -> Result<(), String> {
-    *state.permissions.write().map_err(|e| e.to_string())? = permission_set(tools)?;
+    let tools = permission_set(tools)?;
+    mcp_config::save(
+        &config_path(&app)?,
+        &McpConfig {
+            enabled: true,
+            permissions: permission_map(&tools),
+        },
+    )?;
+    *state.permissions.write().map_err(|e| e.to_string())? = tools;
     Ok(())
 }
 
@@ -150,6 +202,8 @@ struct RunningServer {
 pub(crate) struct McpState {
     permissions: Permissions,
     running: tokio::sync::Mutex<Option<RunningServer>>,
+    /// Why access that was on at quit could not start again at launch.
+    start_error: std::sync::Mutex<Option<String>>,
 }
 
 impl Default for McpState {
@@ -157,8 +211,25 @@ impl Default for McpState {
         Self {
             permissions: Arc::new(RwLock::new(read_permissions())),
             running: tokio::sync::Mutex::new(None),
+            start_error: std::sync::Mutex::new(None),
         }
     }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct McpStarted {
+    #[serde(flatten)]
+    connection: McpConnectionInfo,
+    tools: Vec<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct McpStatus {
+    enabled: bool,
+    tools: Vec<String>,
+    error: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -194,7 +265,46 @@ pub(crate) fn get_mcp_connection_info() -> Result<McpConnectionInfo, String> {
 pub(crate) async fn start_mcp_server(
     app: tauri::AppHandle,
     state: tauri::State<'_, McpState>,
-) -> Result<McpConnectionInfo, String> {
+) -> Result<McpStarted, String> {
+    let connection = start(&app, &state).await?;
+    let tools = sorted(&*state.permissions.read().map_err(|e| e.to_string())?);
+    Ok(McpStarted { connection, tools })
+}
+
+#[tauri::command]
+pub(crate) async fn get_mcp_state(state: tauri::State<'_, McpState>) -> Result<McpStatus, String> {
+    let enabled = state.running.lock().await.is_some();
+    let tools = if enabled {
+        sorted(&*state.permissions.read().map_err(|e| e.to_string())?)
+    } else {
+        Vec::new()
+    };
+    let error = state.start_error.lock().map_err(|e| e.to_string())?.clone();
+    Ok(McpStatus {
+        enabled,
+        tools,
+        error,
+    })
+}
+
+/// Starts access at launch when it was on at quit, before any page loads.
+pub(crate) fn start_saved(app: &tauri::AppHandle) {
+    let Ok(path) = config_path(app) else {
+        return;
+    };
+    if !mcp_config::load(&path).enabled {
+        return;
+    }
+    let state = app.state::<McpState>();
+    if let Err(error) = tauri::async_runtime::block_on(start(app, &state)) {
+        eprintln!("{error}");
+        if let Ok(mut saved) = state.start_error.lock() {
+            *saved = Some(error);
+        }
+    }
+}
+
+async fn start(app: &tauri::AppHandle, state: &McpState) -> Result<McpConnectionInfo, String> {
     let mut running = state.running.lock().await;
     if let Some(server) = running.as_ref() {
         return Ok(server.connection.clone());
@@ -214,7 +324,21 @@ pub(crate) async fn start_mcp_server(
         .map_err(|error| format!("Could not resolve the app configuration directory: {error}"))?
         .join(MCP_TOKEN_FILE_NAME);
     let token = load_or_create_token(&token_path)?;
-    *state.permissions.write().map_err(|e| e.to_string())? = read_permissions();
+    let path = config_path(app)?;
+    let permissions = saved_permissions(&mcp_config::load(&path));
+    if let Err(error) = mcp_config::save(
+        &path,
+        &McpConfig {
+            enabled: true,
+            permissions: permission_map(&permissions),
+        },
+    ) {
+        eprintln!("{error}");
+    }
+    *state.permissions.write().map_err(|e| e.to_string())? = permissions;
+    if let Ok(mut error) = state.start_error.lock() {
+        *error = None;
+    }
     let registry = app.state::<SharedRegistry>().inner().clone();
     let cancellation = CancellationToken::new();
     let task = tokio::spawn(serve_local_connections(
@@ -233,8 +357,17 @@ pub(crate) async fn start_mcp_server(
 }
 
 #[tauri::command]
-pub(crate) async fn stop_mcp_server(state: tauri::State<'_, McpState>) -> Result<(), String> {
+pub(crate) async fn stop_mcp_server(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, McpState>,
+) -> Result<(), String> {
     *state.permissions.write().map_err(|e| e.to_string())? = HashSet::new();
+    let path = config_path(&app)?;
+    let mut config = mcp_config::load(&path);
+    config.enabled = false;
+    if let Err(error) = mcp_config::save(&path, &config) {
+        eprintln!("{error}");
+    }
     let server = state.running.lock().await.take();
     if let Some(server) = server {
         server.cancellation.cancel();
@@ -1624,6 +1757,41 @@ mod tests {
         registry
             .with(|workspace| Ok(snapshot_of(workspace).note_revisions[id].clone()))
             .unwrap()
+    }
+
+    #[test]
+    fn saved_permissions_restore_choices_and_default_new_tools() {
+        assert_eq!(saved_permissions(&McpConfig::default()), read_permissions());
+        let config = McpConfig {
+            enabled: true,
+            permissions: [
+                ("get_note".to_string(), false),
+                ("create_note".to_string(), true),
+                ("unknown".to_string(), true),
+            ]
+            .into(),
+        };
+        let restored = saved_permissions(&config);
+        assert!(!restored.contains("get_note"));
+        assert!(restored.contains("create_note"));
+        assert!(
+            restored.contains("list_notes"),
+            "a read missing from the map starts on"
+        );
+        assert!(
+            !restored.contains("append_to_note"),
+            "a write missing from the map starts off"
+        );
+        assert!(!restored.contains("unknown"));
+        let saved = McpConfig {
+            enabled: true,
+            permissions: permission_map(&restored),
+        };
+        assert_eq!(
+            saved.permissions.len(),
+            READ_TOOLS.len() + WRITE_TOOLS.len()
+        );
+        assert_eq!(saved_permissions(&saved), restored);
     }
 
     #[tokio::test]

@@ -22,7 +22,8 @@ test("agent access sends unsent typing to Rust first and can be turned off", asy
     handlers: {
       start_mcp_server: () => ({
         command: "/Applications/Sodilaud.app/Contents/MacOS/sodilaud",
-        args: ["--mcp-stdio"]
+        args: ["--mcp-stdio"],
+        tools: ["list_folders", "list_notes", "search_notes", "get_note", "list_trash"]
       })
     }
   });

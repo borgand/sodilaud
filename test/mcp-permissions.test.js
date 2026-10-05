@@ -9,8 +9,9 @@ const writes = ["create_note", "create_folder", "append_to_note", "rename_note",
 test("MCP Configuration controls each function, group selection, failures, and fresh-session defaults", async () => {
   let fail = false;
   let deferred = null;
+  let remembered = reads;
   const app = await bootApp({ handlers: {
-    start_mcp_server: () => ({ command: "/sodilaud", args: ["--mcp-stdio"] }),
+    start_mcp_server: () => ({ command: "/sodilaud", args: ["--mcp-stdio"], tools: remembered }),
     set_mcp_permissions: async () => {
       if (fail) throw new Error("Permission update failed");
       if (deferred) await new Promise(resolve => { deferred.resolve = resolve; });
@@ -73,7 +74,8 @@ test("MCP Configuration controls each function, group selection, failures, and f
   assert.deepEqual(selected(), beforeClose, "closing configuration preserves this session's choices");
   app.click("close-mcp-config-btn");
   await check("agent-access-toggle-btn");
+  remembered = ["list_notes", "create_note"];
   await check("agent-access-toggle-btn");
   await check("agent-access-config-btn");
-  assert.deepEqual(selected(), reads, "reenabling access resets to read-only defaults");
+  assert.deepEqual(selected(), remembered, "reenabling access restores the permissions Rust remembered");
 });

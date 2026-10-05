@@ -229,6 +229,8 @@ const MCP_READ_TOOLS = ["list_folders", "list_notes", "search_notes", "get_note"
 const MCP_WRITE_TOOLS = ["create_note", "create_folder", "append_to_note", "rename_note", "move_note", "rename_folder", "delete_note", "delete_folder"];
 const defaultMcpPermissions = () => Object.fromEntries([...MCP_READ_TOOLS.map(tool => [tool, true]), ...MCP_WRITE_TOOLS.map(tool => [tool, false])]);
 let mcpPermissions = defaultMcpPermissions();
+const mcpPermissionsFrom = tools => Object.fromEntries([...MCP_READ_TOOLS, ...MCP_WRITE_TOOLS].map(tool => [tool, tools.includes(tool)]));
+let mcpStartError = null;
 let isMcpPermissionSaving = false;
 let isWorkspaceSwitching = false;
 
@@ -713,6 +715,7 @@ async function init() {
   // 5. Render UI
   renderNoteList();
   loadActiveNote();
+  await loadMcpState();
 }
 
 // ----------------------------------------------------
@@ -1670,6 +1673,7 @@ async function toggleMcpAccess() {
 
   agentAccessToggleBtn.disabled = true;
   agentAccessConfigBtn.disabled = true;
+  mcpStartError = null;
   const previousPermissions = mcpPermissions;
   const disabling = isMcpEnabled;
   try {
@@ -1690,11 +1694,14 @@ async function toggleMcpAccess() {
     if (!connection?.command || !Array.isArray(connection?.args) || !connection.args.length) {
       throw new Error("Sodilaud returned incomplete MCP connection details");
     }
-    mcpConnectionInfo = connection;
-    mcpPermissions = defaultMcpPermissions();
+    mcpConnectionInfo = { command: connection.command, args: connection.args };
+    mcpPermissions = mcpPermissionsFrom(Array.isArray(connection.tools) ? connection.tools : []);
     isMcpEnabled = true;
     updateMcpUiState();
-    showNotification("Agent access enabled — reads only until you allow write functions in MCP Configuration");
+    const writeCount = MCP_WRITE_TOOLS.filter(tool => mcpPermissions[tool]).length;
+    showNotification(writeCount
+      ? `Agent access enabled with ${writeCount} write ${writeCount === 1 ? "function" : "functions"} allowed`
+      : "Agent access enabled — reads only until you allow write functions in MCP Configuration");
   } catch (error) {
     if (disabling) mcpPermissions = previousPermissions;
     updateMcpUiState();
@@ -1708,8 +1715,26 @@ async function toggleMcpAccess() {
   }
 }
 
+// Rust starts access at launch when it was on at quit, before this page loads.
+async function loadMcpState() {
+  try {
+    const state = await invoke("get_mcp_state");
+    mcpStartError = state?.error ?? null;
+    if (state?.enabled) {
+      isMcpEnabled = true;
+      mcpPermissions = mcpPermissionsFrom(Array.isArray(state.tools) ? state.tools : []);
+    }
+  } catch (error) {
+    console.error("Could not read the agent access state", error);
+  } finally {
+    updateMcpUiState();
+  }
+}
+
 async function openMcpConfigModal() {
-  mcpPermissionStatus.textContent = isMcpEnabled ? "" : "Agent access is off. Enable it from the actions menu to change function permissions.";
+  mcpPermissionStatus.textContent = isMcpEnabled ? "" : (mcpStartError
+    ? `Agent access was on when Sodilaud quit but could not start again: ${mcpStartError}`
+    : "Agent access is off. Enable it from the actions menu to change function permissions.");
   updateMcpUiState();
   mcpConfigModalPreviousFocus = actionsDropdown.contains(document.activeElement)
     ? actionsBtn
