@@ -25,7 +25,9 @@ use tokio::task::{JoinHandle, JoinSet};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
+use crate::docs::coedit::{self, DocRef};
 use crate::docs::commands::SharedRegistry;
+use crate::docs::merge::Edit;
 use crate::docs::registry::Workspace;
 use crate::mcp_config::{self, McpConfig};
 use crate::store::workspace::{Folder, Note};
@@ -105,14 +107,17 @@ fn read_permissions() -> HashSet<String> {
     READ_TOOLS.into_iter().map(String::from).collect()
 }
 
-const READ_TOOLS: [&str; 5] = [
+const READ_TOOLS: [&str; 8] = [
     "list_folders",
     "list_notes",
     "search_notes",
     "get_note",
     "list_trash",
+    "list_documents",
+    "read_document",
+    "get_pending_comments",
 ];
-const WRITE_TOOLS: [&str; 10] = [
+const WRITE_TOOLS: [&str; 13] = [
     "create_note",
     "create_folder",
     "append_to_note",
@@ -123,7 +128,11 @@ const WRITE_TOOLS: [&str; 10] = [
     "delete_folder",
     "push_quick_note",
     "open_document",
+    "apply_edit",
+    "add_comment",
+    "resolve_comment",
 ];
+const MAX_WAIT_SECONDS: u32 = 1800;
 
 fn permission_set(tools: Vec<String>) -> Result<HashSet<String>, String> {
     if tools
@@ -885,6 +894,75 @@ struct OpenDocumentArgs {
     path: String,
 }
 
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct NoArgs {}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct ReadDocumentArgs {
+    /// Absolute path of a file open in Sodilaud. Give this or noteId.
+    path: Option<String>,
+    /// ID of a note in the open collection. Give this or path.
+    note_id: Option<String>,
+    /// First character to return (Unicode characters, not bytes). Defaults to 0.
+    offset: Option<u32>,
+    /// Characters to return, 1-200000. Defaults to 200000.
+    limit: Option<u32>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct ApplyEditArgs {
+    /// Absolute path of a file open in Sodilaud. Give this or noteId.
+    path: Option<String>,
+    /// ID of a note in the open collection. Give this or path.
+    note_id: Option<String>,
+    /// The version read_document returned with the text the edits were written against.
+    base_version: u64,
+    /// Unique retry key (1-128 characters). Reuse with identical arguments on retry.
+    request_id: String,
+    /// 1-50 replacements. Each oldText is copied from the text read at baseVersion and must identify one place.
+    edits: Vec<Edit>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct PendingCommentsArgs {
+    /// Only comments on this file (absolute path). Omit both for every document.
+    path: Option<String>,
+    /// Only comments on this note.
+    note_id: Option<String>,
+    /// Seconds to wait for a comment when none is queued, 0-1800. Defaults to 0.
+    wait_seconds: Option<u32>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct AddCommentArgs {
+    /// Absolute path of a file open in Sodilaud. Give this or noteId.
+    path: Option<String>,
+    /// ID of a note in the open collection. Give this or path.
+    note_id: Option<String>,
+    /// Exact text to comment on, as it is in the document now.
+    anchor_text: String,
+    /// Which copy of anchorText, from 1, when it occurs more than once.
+    occurrence: Option<u32>,
+    /// The comment, 1-2000 characters.
+    body: String,
+    /// Unique retry key (1-128 characters). Reuse with identical arguments on retry.
+    request_id: String,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct ResolveCommentArgs {
+    /// Comment ID from get_pending_comments or read_document.
+    id: String,
+    /// One line for the owner on what changed, 1-500 characters.
+    note: String,
+}
+
 #[derive(Debug, Serialize, serde::Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct CreateFolderArgs {
@@ -1263,6 +1341,27 @@ fn tool_error(message: String) -> CallToolResult {
     CallToolResult::error(vec![ContentBlock::text(message)])
 }
 
+fn check_request_id(request_id: &str) -> Result<(), McpError> {
+    if request_id.trim().is_empty() || request_id.chars().count() > 128 {
+        return Err(McpError::invalid_params(
+            "requestId must contain 1-128 characters",
+            None,
+        ));
+    }
+    Ok(())
+}
+
+fn doc_ref(path: Option<&str>, note_id: Option<&str>) -> Result<DocRef, CallToolResult> {
+    DocRef::parse(path, note_id).map_err(tool_error)
+}
+
+fn outcome(result: Result<serde_json::Value, String>) -> Result<CallToolResult, McpError> {
+    match result {
+        Ok(value) => successful_result(value),
+        Err(error) => Ok(tool_error(error)),
+    }
+}
+
 #[derive(Clone)]
 struct SodilaudServer {
     registry: SharedRegistry,
@@ -1373,6 +1472,14 @@ impl SodilaudServer {
             Ok(result) => successful_result(result),
             Err(error) => Ok(tool_error(error)),
         }
+    }
+
+    fn denied(&self, tool: &str) -> Result<Option<CallToolResult>, McpError> {
+        Ok((!self.is_allowed(tool)?).then(|| {
+            tool_error(format!(
+                "Permission for {tool} is disabled. Enable it in MCP Configuration."
+            ))
+        }))
     }
 
     fn with_snapshot<T>(&self, operation: impl FnOnce(&Snapshot) -> T) -> Result<T, McpError> {
@@ -1495,7 +1602,11 @@ impl SodilaudServer {
                 .and_then(|_| Err(crate::files::FileError::not_granted(Path::new(&args.path)))),
         };
         match opened {
-            Ok(opened) => successful_result(opened),
+            Ok(opened) => {
+                self.registry
+                    .coedit_mark_file(std::path::Path::new(&opened.path));
+                successful_result(opened)
+            }
             Err(error) => Ok(tool_error(error.message)),
         }
     }
@@ -1618,6 +1729,220 @@ impl SodilaudServer {
                 .map_err(|e| McpError::internal_error(e.to_string(), None))?,
         )
         .await
+    }
+
+    /// List the documents an agent can co-edit: files open in Sodilaud's main window, and notes that have comments or that an agent read. Each has its path or noteId, name, version, whether an agent co-edits it and how many owner comments wait for an agent.
+    #[tool(annotations(
+        title = "List documents",
+        read_only_hint = true,
+        destructive_hint = false,
+        idempotent_hint = true,
+        open_world_hint = false
+    ))]
+    async fn list_documents(
+        &self,
+        Parameters(_): Parameters<NoArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        if let Some(denied) = self.denied("list_documents")? {
+            return Ok(denied);
+        }
+        successful_result(serde_json::json!({ "documents": self.registry.coedit_list() }))
+    }
+
+    /// Read a document to co-edit it with the user: a file open in Sodilaud (path) or a note (noteId). Returns the live text, as the user sees it right now, with its version, headings (character offsets) and the comments an agent may act on. The document becomes co-edited: edit it only with apply_edit, passing this version as baseVersion, never with your native file tools. Offsets count Unicode characters; follow nextOffset until it is null.
+    #[tool(annotations(
+        title = "Read document",
+        read_only_hint = true,
+        destructive_hint = false,
+        idempotent_hint = true,
+        open_world_hint = false
+    ))]
+    async fn read_document(
+        &self,
+        Parameters(args): Parameters<ReadDocumentArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        if let Some(denied) = self.denied("read_document")? {
+            return Ok(denied);
+        }
+        let limit = args.limit.unwrap_or(coedit::DEFAULT_READ_CHARS as u32);
+        if limit == 0 || limit as usize > coedit::DEFAULT_READ_CHARS {
+            return Err(McpError::invalid_params("limit must be 1-200000", None));
+        }
+        let doc = match doc_ref(args.path.as_deref(), args.note_id.as_deref()) {
+            Ok(doc) => doc,
+            Err(error) => return Ok(error),
+        };
+        outcome(
+            self.registry
+                .coedit_read(&doc, args.offset.unwrap_or(0) as usize, limit as usize),
+        )
+    }
+
+    /// Edit a co-edited document while the user keeps typing in it. Each edit replaces oldText, copied from the text read_document returned at baseVersion, with newText. Sodilaud finds each oldText (exactly, then ignoring whitespace layout, then a close match), carries it through what the user typed since, and applies all edits that the user did not touch as one change. The user wins: an edit whose text the user changed comes back as a conflict with its currentText. Partial success is normal; reread and retry conflicts. STALE_BASE means baseVersion is too old: call read_document again. Retry identical arguments with the same requestId after a failure.
+    #[tool(annotations(
+        title = "Apply edit",
+        read_only_hint = false,
+        destructive_hint = false,
+        idempotent_hint = true,
+        open_world_hint = false
+    ))]
+    async fn apply_edit(
+        &self,
+        Parameters(args): Parameters<ApplyEditArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        if let Some(denied) = self.denied("apply_edit")? {
+            return Ok(denied);
+        }
+        check_request_id(&args.request_id)?;
+        if args.edits.is_empty() || args.edits.len() > coedit::MAX_EDITS {
+            return Err(McpError::invalid_params("edits must hold 1-50 edits", None));
+        }
+        if args.edits.iter().any(|edit| edit.old_text.is_empty()) {
+            return Err(McpError::invalid_params(
+                "every oldText must be non-empty",
+                None,
+            ));
+        }
+        let doc = match doc_ref(args.path.as_deref(), args.note_id.as_deref()) {
+            Ok(doc) => doc,
+            Err(error) => return Ok(error),
+        };
+        outcome(
+            self.registry
+                .coedit_apply(&doc, args.base_version, &args.request_id, &args.edits),
+        )
+    }
+
+    /// Take the user's comments that wait for an agent, oldest first, and mark them sent. Each has its document, the anchored text with its heading path and two lines of context each side, and the comment. An answer to one of your own comments carries replyTo with your comment. With waitSeconds it waits up to that long (at most 1800) for a comment and returns as soon as one arrives; timedOut is true when none came. Your own comments are never returned. After addressing a comment, call resolve_comment.
+    #[tool(annotations(
+        title = "Get pending comments",
+        read_only_hint = true,
+        destructive_hint = false,
+        idempotent_hint = false,
+        open_world_hint = false
+    ))]
+    async fn get_pending_comments(
+        &self,
+        Parameters(args): Parameters<PendingCommentsArgs>,
+        cancelled: CancellationToken,
+    ) -> Result<CallToolResult, McpError> {
+        if let Some(denied) = self.denied("get_pending_comments")? {
+            return Ok(denied);
+        }
+        let wait = args.wait_seconds.unwrap_or(0);
+        if wait > MAX_WAIT_SECONDS {
+            return Err(McpError::invalid_params("waitSeconds must be 0-1800", None));
+        }
+        let doc = if args.path.is_some() || args.note_id.is_some() {
+            match doc_ref(args.path.as_deref(), args.note_id.as_deref()) {
+                Ok(doc) => Some(doc),
+                Err(error) => return Ok(error),
+            }
+        } else {
+            None
+        };
+        if let Some(doc) = &doc {
+            if let Err(error) = self.registry.coedit_check(doc) {
+                return Ok(tool_error(error));
+            }
+        }
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(wait.into());
+        let queued = self.registry.coedit_queued();
+        let _listening = (wait > 0).then(|| self.registry.coedit_listen());
+        loop {
+            let notified = queued.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+            // A client that went away must not take comments it will never see.
+            if cancelled.is_cancelled() {
+                return Ok(tool_error("The request was cancelled".into()));
+            }
+            let comments = self.registry.coedit_take_pending(doc.as_ref());
+            if !comments.is_empty() || tokio::time::Instant::now() >= deadline {
+                let timed_out = comments.is_empty() && wait > 0;
+                return successful_result(serde_json::json!({
+                    "comments": comments,
+                    "timedOut": timed_out,
+                }));
+            }
+            tokio::select! {
+                _ = &mut notified => {}
+                _ = tokio::time::sleep_until(deadline) => {}
+                _ = cancelled.cancelled() => {
+                    return Ok(tool_error("The request was cancelled".into()));
+                }
+            }
+        }
+    }
+
+    /// Leave a comment on a document for the user, to start a review: ask about open questions in a document you wrote or opened. anchorText is exact text in the document now; when it occurs more than once, occurrence (from 1) picks one. The user answers in place, and only the answers come back through get_pending_comments, with replyTo naming your comment. The document becomes co-edited. Retry identical arguments with the same requestId after a failure.
+    #[tool(annotations(
+        title = "Add comment",
+        read_only_hint = false,
+        destructive_hint = false,
+        idempotent_hint = true,
+        open_world_hint = false
+    ))]
+    async fn add_comment(
+        &self,
+        Parameters(args): Parameters<AddCommentArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        if let Some(denied) = self.denied("add_comment")? {
+            return Ok(denied);
+        }
+        check_request_id(&args.request_id)?;
+        let body = args.body.trim();
+        if body.is_empty() || body.chars().count() > coedit::MAX_BODY_CHARS {
+            return Err(McpError::invalid_params(
+                "body must contain 1-2000 characters",
+                None,
+            ));
+        }
+        if args.anchor_text.is_empty() || args.occurrence == Some(0) {
+            return Err(McpError::invalid_params(
+                "anchorText must not be empty and occurrence counts from 1",
+                None,
+            ));
+        }
+        let doc = match doc_ref(args.path.as_deref(), args.note_id.as_deref()) {
+            Ok(doc) => doc,
+            Err(error) => return Ok(error),
+        };
+        outcome(self.registry.coedit_add_comment(
+            &doc,
+            &args.anchor_text,
+            args.occurrence.map(|n| n as usize),
+            body,
+            &args.request_id,
+        ))
+    }
+
+    /// Mark a comment addressed, with a one-line note for the user naming what changed, including any other places you changed for consistency. Resolving an answer to your own comment resolves your comment too. Safe to repeat.
+    #[tool(annotations(
+        title = "Resolve comment",
+        read_only_hint = false,
+        destructive_hint = false,
+        idempotent_hint = true,
+        open_world_hint = false
+    ))]
+    async fn resolve_comment(
+        &self,
+        Parameters(args): Parameters<ResolveCommentArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        if let Some(denied) = self.denied("resolve_comment")? {
+            return Ok(denied);
+        }
+        let note = args.note.trim();
+        if args.id.trim().is_empty()
+            || note.is_empty()
+            || note.chars().count() > coedit::MAX_NOTE_CHARS
+        {
+            return Err(McpError::invalid_params(
+                "id is required and note must contain 1-500 characters",
+                None,
+            ));
+        }
+        outcome(self.registry.coedit_resolve(&args.id, note))
     }
 
     /// List deleted-note metadata in the current collection's trash. Content and permanent deletion are not exposed. Only the user can restore or empty trash in the UI.
@@ -1774,7 +2099,7 @@ impl ServerHandler for SodilaudServer {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new("sodilaud-mcp", env!("CARGO_PKG_VERSION")))
             .with_instructions(
-                "Access to the notes collection currently open in Sodilaud, as the editor shows it. Each function requires its permission enabled in MCP Configuration. Read functions start enabled and write functions disabled until the user selects them; choices are remembered across restarts. push_quick_note puts a note into the user's Quick Notes (the From agents folder) and needs no collectionId. open_document opens an absolute .md, .markdown or .txt path in the main window and returns no content. delete_note moves a note to persistent trash and requires expectedRevision from get_note. delete_folder requires expectedRevision from list_folders and rejects nonempty folders. list_trash lists recovery metadata; only the user can restore or empty trash through the UI. rename_note and move_note require expectedRevision from get_note. rename_folder requires expectedRevision from list_folders. All edits preserve content except append_to_note, which requires the expectedRevision from get_note, appends exact text, and never adds separators; line breaks are stored as \\n. A revision conflict requires rereading; after a failure or timeout, retry identical arguments with the same requestId, which never applies a write twice. Get collectionId from a read result and supply a unique requestId for each write; reuse identical arguments on retries. Retry keys last for this collection session; a switch or app restart invalidates collectionId. Results are paginated; follow nextOffset until it is null. get_note offsets count Unicode characters, not bytes.",
+                "Access to the notes collection currently open in Sodilaud, as the editor shows it. Each function requires its permission enabled in MCP Configuration. Read functions start enabled and write functions disabled until the user selects them; choices are remembered across restarts. push_quick_note puts a note into the user's Quick Notes (the From agents folder) and needs no collectionId. open_document opens an absolute .md, .markdown or .txt path in the main window and returns no content. Co-editing: read_document returns a file's or note's live text and version and makes it co-edited; change it only with apply_edit (oldText/newText against that version; the user's typing wins conflicts), never with native file tools. get_pending_comments (with waitSeconds to wait) returns the user's comments anchored to text; address each, then resolve_comment with a one-line note. add_comment asks the user a question on a passage; their answers arrive through get_pending_comments. delete_note moves a note to persistent trash and requires expectedRevision from get_note. delete_folder requires expectedRevision from list_folders and rejects nonempty folders. list_trash lists recovery metadata; only the user can restore or empty trash through the UI. rename_note and move_note require expectedRevision from get_note. rename_folder requires expectedRevision from list_folders. All edits preserve content except append_to_note, which requires the expectedRevision from get_note, appends exact text, and never adds separators; line breaks are stored as \\n. A revision conflict requires rereading; after a failure or timeout, retry identical arguments with the same requestId, which never applies a write twice. Get collectionId from a read result and supply a unique requestId for each write; reuse identical arguments on retries. Retry keys last for this collection session; a switch or app restart invalidates collectionId. Results are paginated; follow nextOffset until it is null. get_note offsets count Unicode characters, not bytes.",
             )
     }
 
@@ -2167,6 +2492,161 @@ mod tests {
         std::fs::remove_file(path).unwrap();
     }
 
+    fn structured(result: CallToolResult) -> serde_json::Value {
+        assert_ne!(result.is_error, Some(true), "{:?}", result.content);
+        result.structured_content.unwrap()
+    }
+
+    fn error_text(result: CallToolResult) -> String {
+        assert_eq!(result.is_error, Some(true));
+        serde_json::to_value(&result.content).unwrap()[0]["text"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    }
+
+    fn args<T: serde::de::DeserializeOwned>(value: serde_json::Value) -> Parameters<T> {
+        Parameters(serde_json::from_value(value).unwrap())
+    }
+
+    #[tokio::test]
+    async fn co_editing_tools_read_merge_comment_and_resolve() {
+        let (server, permissions, path) = server();
+        let read = structured(
+            server
+                .read_document(args(serde_json::json!({ "noteId": "two" })))
+                .await
+                .unwrap(),
+        );
+        assert_eq!(read["content"], "Other body");
+        let apply = serde_json::json!({ "noteId": "two", "baseVersion": read["version"],
+            "requestId": "e1", "edits": [{ "oldText": "Other", "newText": "Another" }] });
+        assert!(
+            error_text(server.apply_edit(args(apply.clone())).await.unwrap()).contains("disabled")
+        );
+        for tool in ["apply_edit", "add_comment", "resolve_comment"] {
+            permissions.write().unwrap().insert(tool.into());
+        }
+        let applied = structured(server.apply_edit(args(apply)).await.unwrap());
+        assert_eq!(applied["applied"], serde_json::json!([0]));
+        let comment = structured(
+            server
+                .add_comment(args(
+                    serde_json::json!({ "noteId": "two", "anchorText": "body",
+                    "body": "Is this right?", "requestId": "c1" }),
+                ))
+                .await
+                .unwrap(),
+        );
+        let id = comment["comment"]["id"].as_str().unwrap().to_string();
+        let listed = structured(
+            server
+                .list_documents(args(serde_json::json!({})))
+                .await
+                .unwrap(),
+        );
+        assert_eq!(listed["documents"][0]["noteId"], "two");
+        assert_eq!(listed["documents"][0]["coEdited"], true);
+        let resolved = structured(
+            server
+                .resolve_comment(args(serde_json::json!({ "id": id, "note": "Answered" })))
+                .await
+                .unwrap(),
+        );
+        assert_eq!(resolved["comment"]["state"], "resolved");
+        assert!(error_text(
+            server
+                .read_document(args(serde_json::json!({ "path": "relative.md" })))
+                .await
+                .unwrap()
+        )
+        .contains("full path"));
+        assert!(server
+            .apply_edit(args(serde_json::json!({ "noteId": "two", "baseVersion": 0,
+                "requestId": "e2", "edits": [] })))
+            .await
+            .is_err());
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_long_poll_returns_a_new_comment_and_a_cancelled_one_takes_nothing() {
+        let (server, _, path) = server();
+        let note = crate::docs::coedit::PageDoc::Note {
+            collection_id: "test-collection".into(),
+            note_id: "two".into(),
+        };
+        let empty = structured(
+            server
+                .get_pending_comments(args(serde_json::json!({})), CancellationToken::new())
+                .await
+                .unwrap(),
+        );
+        assert_eq!(
+            empty,
+            serde_json::json!({ "comments": [], "timedOut": false })
+        );
+        let registry = server.registry.clone();
+        let poll = tokio::spawn({
+            let server = server.clone();
+            async move {
+                server
+                    .get_pending_comments(
+                        args(serde_json::json!({ "noteId": "two", "waitSeconds": 30 })),
+                        CancellationToken::new(),
+                    )
+                    .await
+            }
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        assert!(registry.coedit_state().listening);
+        registry
+            .comment_add(&note, 0, (0, 5), "Tighten this", None)
+            .unwrap();
+        let woken = structured(
+            tokio::time::timeout(std::time::Duration::from_secs(5), poll)
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap(),
+        );
+        assert_eq!(woken["comments"][0]["body"], "Tighten this");
+        assert_eq!(woken["timedOut"], false);
+        assert!(!registry.coedit_state().listening);
+
+        let cancelled = CancellationToken::new();
+        let poll = tokio::spawn({
+            let server = server.clone();
+            let cancelled = cancelled.clone();
+            async move {
+                server
+                    .get_pending_comments(args(serde_json::json!({ "waitSeconds": 30 })), cancelled)
+                    .await
+            }
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        cancelled.cancel();
+        assert_eq!(poll.await.unwrap().unwrap().is_error, Some(true));
+        registry
+            .comment_add(&note, 0, (0, 5), "Later", None)
+            .unwrap();
+        let later = structured(
+            server
+                .get_pending_comments(args(serde_json::json!({})), CancellationToken::new())
+                .await
+                .unwrap(),
+        );
+        assert_eq!(later["comments"][0]["body"], "Later");
+        assert!(server
+            .get_pending_comments(
+                args(serde_json::json!({ "waitSeconds": 1801 })),
+                CancellationToken::new()
+            )
+            .await
+            .is_err());
+        std::fs::remove_file(path).unwrap();
+    }
+
     #[tokio::test]
     async fn an_append_reaches_the_registry_once_per_request_id() {
         let (server, permissions, path) = server();
@@ -2351,7 +2831,7 @@ mod tests {
         .await;
         let tools = receive_json(&mut client).await;
         let tools = tools["result"]["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 15);
+        assert_eq!(tools.len(), 21);
         for forbidden in ["empty_trash", "purge_trash", "restore_note"] {
             assert!(!tools.iter().any(|tool| tool["name"] == forbidden));
         }

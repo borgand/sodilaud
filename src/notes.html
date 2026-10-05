@@ -522,6 +522,18 @@
                 <input type="checkbox" id="mcp-permission-list_trash" data-mcp-tool="list_trash" checked />
                 <span><strong>List trash</strong><code>list_trash</code><small>Deleted-note titles, original folders, and deletion times.</small></span>
               </label>
+              <label class="mcp-permission-option" for="mcp-permission-list_documents">
+                <input type="checkbox" id="mcp-permission-list_documents" data-mcp-tool="list_documents" checked />
+                <span><strong>List documents</strong><code>list_documents</code><small>Open files and commented notes, with pending comment counts.</small></span>
+              </label>
+              <label class="mcp-permission-option" for="mcp-permission-read_document">
+                <input type="checkbox" id="mcp-permission-read_document" data-mcp-tool="read_document" checked />
+                <span><strong>Read document</strong><code>read_document</code><small>Live text of an open file or a note; marks it co-edited.</small></span>
+              </label>
+              <label class="mcp-permission-option" for="mcp-permission-get_pending_comments">
+                <input type="checkbox" id="mcp-permission-get_pending_comments" data-mcp-tool="get_pending_comments" checked />
+                <span><strong>Get pending comments</strong><code>get_pending_comments</code><small>Take your comments that wait for an agent, waiting up to 30 minutes.</small></span>
+              </label>
             </fieldset>
             <fieldset class="mcp-permission-group">
               <legend>Write</legend>
@@ -565,6 +577,18 @@
               <label class="mcp-permission-option" for="mcp-permission-open_document">
                 <input type="checkbox" id="mcp-permission-open_document" data-mcp-tool="open_document" />
                 <span><strong>Open document</strong><code>open_document</code><small>Open a Markdown or text file in the main window. Returns no content.</small></span>
+              </label>
+              <label class="mcp-permission-option" for="mcp-permission-apply_edit">
+                <input type="checkbox" id="mcp-permission-apply_edit" data-mcp-tool="apply_edit" />
+                <span><strong>Apply edit</strong><code>apply_edit</code><small>Merge edits into a co-edited file or note around your typing.</small></span>
+              </label>
+              <label class="mcp-permission-option" for="mcp-permission-add_comment">
+                <input type="checkbox" id="mcp-permission-add_comment" data-mcp-tool="add_comment" />
+                <span><strong>Add comment</strong><code>add_comment</code><small>Leave a question on a passage for you to answer.</small></span>
+              </label>
+              <label class="mcp-permission-option" for="mcp-permission-resolve_comment">
+                <input type="checkbox" id="mcp-permission-resolve_comment" data-mcp-tool="resolve_comment" />
+                <span><strong>Resolve comment</strong><code>resolve_comment</code><small>Mark a comment addressed with a one-line note.</small></span>
               </label>
             </fieldset>
           </div>
