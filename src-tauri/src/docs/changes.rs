@@ -150,6 +150,7 @@ pub(crate) fn sections(changes: &Value) -> Result<Vec<Section>, String> {
 /// at the start of a replaced run stays at the start of its replacement; one
 /// inside goes to its start (`assoc < 0`) or past it; a position where text
 /// was only inserted goes past it unless `assoc < 0`.
+#[cfg(test)]
 pub(crate) fn map_pos(changes: &Value, pos: usize, assoc: i8) -> Result<usize, String> {
     map_pos_in(&sections(changes)?, pos, assoc)
 }
@@ -178,29 +179,24 @@ pub(crate) fn map_pos_in(sections: &[Section], pos: usize, assoc: i8) -> Result<
 
 /// Whether `changes` deleted any of `from..to` or inserted text strictly
 /// inside it. Text inserted right at either end leaves the range alone.
+#[cfg(test)]
 pub(crate) fn touches(changes: &Value, from: usize, to: usize) -> Result<bool, String> {
-    Ok(sections(changes)?.iter().any(|section| {
+    Ok(touches_in(&sections(changes)?, from, to))
+}
+
+pub(crate) fn touches_in(sections: &[Section], from: usize, to: usize) -> bool {
+    sections.iter().any(|section| {
         if section.from == section.to {
             from < section.from && section.from < to
         } else {
             section.from < to && section.to > from
         }
-    }))
+    })
 }
 
 /// The UTF-16 offset of byte index `byte`, which must be a character boundary.
 pub(crate) fn utf16_of_byte(text: &str, byte: usize) -> usize {
     utf16_len(&text[..byte])
-}
-
-/// The UTF-16 offset of the `chars`-th character, or `None` past the end.
-pub(crate) fn char_to_utf16(text: &str, chars: usize) -> Option<usize> {
-    let mut units = 0;
-    let mut iter = text.chars();
-    for _ in 0..chars {
-        units += iter.next()?.len_utf16();
-    }
-    Some(units)
 }
 
 /// The number of characters before UTF-16 offset `units`.
@@ -493,9 +489,6 @@ mod tests {
     fn converts_between_bytes_characters_and_utf16() {
         let text = "a😀õb";
         assert_eq!(utf16_of_byte(text, 5), 3);
-        assert_eq!(char_to_utf16(text, 2), Some(3));
-        assert_eq!(char_to_utf16(text, 4), Some(5));
-        assert_eq!(char_to_utf16(text, 5), None);
         assert_eq!(utf16_to_char(text, 3), 2);
         assert_eq!(utf16_to_char(text, 99), 4);
     }

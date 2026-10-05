@@ -359,23 +359,34 @@ pub(crate) fn comments_get(
     registry.comments_get(&page_doc(&window, doc)?)
 }
 
+/// A new owner comment on `from..to` of the text at `version`, or an answer
+/// to the agent comment `replyTo`, which takes that comment's range.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct NewComment {
+    #[serde(default)]
+    version: u64,
+    #[serde(default)]
+    from: usize,
+    #[serde(default)]
+    to: usize,
+    body: String,
+    reply_to: Option<String>,
+}
+
 #[tauri::command]
 pub(crate) fn comment_add(
     window: Window,
     registry: tauri::State<'_, SharedRegistry>,
     doc: DocAddress,
-    version: u64,
-    from: usize,
-    to: usize,
-    body: String,
-    reply_to: Option<String>,
+    comment: NewComment,
 ) -> Result<Comment, String> {
     registry.comment_add(
         &page_doc(&window, doc)?,
-        version,
-        (from, to),
-        &body,
-        reply_to.as_deref(),
+        comment.version,
+        (comment.from, comment.to),
+        &comment.body,
+        comment.reply_to.as_deref(),
     )
 }
 

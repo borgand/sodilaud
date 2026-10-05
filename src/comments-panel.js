@@ -130,7 +130,7 @@ export function createComments({ document, invoke, root, countButton, editors, a
     await flush();
     const range = toConfirmed(view.state, from, to);
     if (range.to <= range.from) throw new Error("The selected text changed; select it again");
-    await invoke("comment_add", { doc: target, version: range.version, from: range.from, to: range.to, body, replyTo: null });
+    await invoke("comment_add", { doc: target, comment: { version: range.version, from: range.from, to: range.to, body } });
     await refresh(target);
     if (!open) toggle(true);
   }
@@ -246,7 +246,7 @@ export function createComments({ document, invoke, root, countButton, editors, a
       element.append(inlineEditor(kind === "edit" ? comment.body : "", kind === "edit" ? "Edit comment" : "Reply", text => {
         editing = null;
         if (kind === "edit") act("comment_edit", { id, body: text });
-        else act("comment_add", { version: 0, from: 0, to: 0, body: text, replyTo: id });
+        else act("comment_add", { comment: { body: text, replyTo: id } });
       }));
     }
     if (state === "open" && comment.author === "agent") {

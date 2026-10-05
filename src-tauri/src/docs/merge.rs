@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use similar::TextDiff;
 
-use super::changes::{self, Section};
+use super::changes;
 use super::collab::Update;
 
 /// How alike a window of lines must be to `oldText` to count as a fuzzy match.
@@ -148,11 +148,11 @@ pub(crate) fn fuzzy(haystack: &str, needle: &str) -> Result<(usize, usize), Reas
         if size == 0 || size > starts.len() {
             continue;
         }
-        for first in 0..=(starts.len() - size) {
+        for (first, &from) in starts.iter().enumerate().take(starts.len() - size + 1) {
             if Instant::now() > deadline {
                 return Err(Reason::NotFound);
             }
-            let (from, to) = (starts[first], line_end(first + size - 1));
+            let to = line_end(first + size - 1);
             let window = &haystack[from..to];
             let length = window.chars().count() as f32;
             if (length - wanted_chars).abs() > 0.2 * length.max(wanted_chars) {
@@ -237,7 +237,7 @@ pub(crate) fn merge(base: &str, current: &str, since: &[Update], edits: &[Edit])
         };
         let mut touched = false;
         for update in &sections {
-            if !touched && touched_by(update, from, to) {
+            if !touched && changes::touches_in(update, from, to) {
                 touched = true;
             }
             let (assoc_from, assoc_to) = if touched { (-1, 1) } else { (1, -1) };
@@ -277,16 +277,6 @@ pub(crate) fn merge(base: &str, current: &str, since: &[Update], edits: &[Edit])
         conflicts,
         changes,
     }
-}
-
-fn touched_by(update: &[Section], from: usize, to: usize) -> bool {
-    update.iter().any(|section| {
-        if section.from == section.to {
-            from < section.from && section.from < to
-        } else {
-            section.from < to && section.to > from
-        }
-    })
 }
 
 #[cfg(test)]

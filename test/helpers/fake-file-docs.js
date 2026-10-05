@@ -115,7 +115,7 @@ export function createFakeFileDocs({ emit, disk = {} }) {
   }
   const commentCommands = {
     comments_get: ({ doc: { path, docId } }) => commentsEvent(path, find(path, docId)),
-    comment_add: ({ doc: { path, docId }, version: at, from, to, body, replyTo }) => {
+    comment_add: ({ doc: { path, docId }, comment: { version: at, from, to, body, replyTo } }) => {
       const doc = find(path, docId);
       if (replyTo) {
         const parent = doc.comments.find(c => c.id === replyTo);

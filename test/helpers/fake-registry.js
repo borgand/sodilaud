@@ -233,7 +233,7 @@ export function createFakeRegistry({ emit, seed = {}, files = {}, open = DEFAULT
       check(doc.collectionId);
       return commentsEvent(doc.noteId);
     },
-    comment_add: ({ doc, version, from, to, body, replyTo }) => {
+    comment_add: ({ doc, comment: { version, from, to, body, replyTo } }) => {
       check(doc.collectionId);
       if (replyTo) {
         const parent = commentsOf(doc.noteId).find(c => c.id === replyTo);

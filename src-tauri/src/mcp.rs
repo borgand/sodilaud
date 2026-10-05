@@ -1375,10 +1375,6 @@ fn check_request_id(request_id: &str) -> Result<(), McpError> {
     Ok(())
 }
 
-fn doc_ref(path: Option<&str>, note_id: Option<&str>) -> Result<DocRef, CallToolResult> {
-    DocRef::parse(path, note_id).map_err(tool_error)
-}
-
 fn outcome(result: Result<serde_json::Value, String>) -> Result<CallToolResult, McpError> {
     match result {
         Ok(value) => successful_result(value),
@@ -1792,9 +1788,9 @@ impl SodilaudServer {
         if limit == 0 || limit as usize > coedit::DEFAULT_READ_CHARS {
             return Err(McpError::invalid_params("limit must be 1-200000", None));
         }
-        let doc = match doc_ref(args.path.as_deref(), args.note_id.as_deref()) {
+        let doc = match DocRef::parse(args.path.as_deref(), args.note_id.as_deref()) {
             Ok(doc) => doc,
-            Err(error) => return Ok(error),
+            Err(error) => return Ok(tool_error(error)),
         };
         outcome(
             self.registry
@@ -1827,9 +1823,9 @@ impl SodilaudServer {
                 None,
             ));
         }
-        let doc = match doc_ref(args.path.as_deref(), args.note_id.as_deref()) {
+        let doc = match DocRef::parse(args.path.as_deref(), args.note_id.as_deref()) {
             Ok(doc) => doc,
-            Err(error) => return Ok(error),
+            Err(error) => return Ok(tool_error(error)),
         };
         outcome(
             self.registry
@@ -1858,9 +1854,9 @@ impl SodilaudServer {
             return Err(McpError::invalid_params("waitSeconds must be 0-1800", None));
         }
         let doc = if args.path.is_some() || args.note_id.is_some() {
-            match doc_ref(args.path.as_deref(), args.note_id.as_deref()) {
+            match DocRef::parse(args.path.as_deref(), args.note_id.as_deref()) {
                 Ok(doc) => Some(doc),
-                Err(error) => return Ok(error),
+                Err(error) => return Ok(tool_error(error)),
             }
         } else {
             None
@@ -1928,9 +1924,9 @@ impl SodilaudServer {
                 None,
             ));
         }
-        let doc = match doc_ref(args.path.as_deref(), args.note_id.as_deref()) {
+        let doc = match DocRef::parse(args.path.as_deref(), args.note_id.as_deref()) {
             Ok(doc) => doc,
-            Err(error) => return Ok(error),
+            Err(error) => return Ok(tool_error(error)),
         };
         outcome(self.registry.coedit_add_comment(
             &doc,
@@ -2226,6 +2222,7 @@ mod tests {
                 ("unknown".to_string(), true),
             ]
             .into(),
+            ..McpConfig::default()
         };
         let restored = saved_permissions(&config);
         assert!(!restored.contains("get_note"));
@@ -2242,6 +2239,7 @@ mod tests {
         let saved = McpConfig {
             enabled: true,
             permissions: permission_map(&restored),
+            ..McpConfig::default()
         };
         assert_eq!(
             saved.permissions.len(),
@@ -3095,7 +3093,7 @@ mod tests {
         )
         .await;
         let tools = receive_json(&mut client).await;
-        assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 15);
+        assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 21);
         cancellation.cancel();
         server.await.unwrap();
     }
