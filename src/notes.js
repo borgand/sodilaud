@@ -15,7 +15,7 @@ import { getNotePreview } from "./note-preview.js";
 import { createThemes } from "./themes.js";
 import { createAppearance } from "./appearance.js";
 import { broadcastPreference, onPreferenceChange } from "./preferences.js";
-import { trapModalFocus } from "./modal-focus.js";
+import { createAgentAccess } from "./agent-access.js";
 import { applyPlatformShortcutLabels, isMacLikePlatform } from "./platform-labels.js";
 import { compareNoteText, emptyNoteComparison } from "./note-compare.js";
 import { findTextMatches } from "./find.js";
@@ -75,7 +75,6 @@ const wordCharCount = document.getElementById("word-char-count");
 const cursorPosition = document.getElementById("cursor-position");
 const selectionCount = document.getElementById("selection-count");
 const saveStatus = document.getElementById("save-status");
-const mcpStatus = document.getElementById("mcp-status");
 const focusBtn = document.getElementById("focus-btn");
 const splitNoteBtn = document.getElementById("split-note-btn");
 const compareNotesBtn = document.getElementById("compare-notes-btn");
@@ -97,12 +96,6 @@ const exportBtn = document.getElementById("export-btn");
 const dbConnectBtn = document.getElementById("db-connect-btn");
 const dbDisconnectBtn = document.getElementById("db-disconnect-btn");
 const workspaceMenuValue = document.getElementById("workspace-menu-value");
-const mcpPermissionsSummary = document.getElementById("mcp-permissions-summary");
-const agentAccessToggleBtn = document.getElementById("agent-access-toggle-btn");
-const mcpPermissionInputs = [...document.querySelectorAll("[data-mcp-tool]")];
-const mcpSelectAllInputs = [...document.querySelectorAll("[data-mcp-select-all]")];
-const mcpPermissionStatus = document.getElementById("mcp-permission-status");
-const agentAccessConfigBtn = document.getElementById("agent-access-config-btn");
 
 const panesContainer = document.getElementById("panes-container");
 const primaryPaneWrapper = document.getElementById("primary-pane-wrapper");
@@ -169,22 +162,6 @@ const quickNotesCloseBtn = document.getElementById("quicknotes-close-btn");
 const quickNotesDragRegion = document.getElementById("quicknotes-header");
 const splitDropOverlay = document.getElementById("split-drop-overlay");
 
-const mcpConfigModalBackdrop = document.getElementById("mcp-config-modal-backdrop");
-const mcpConfigModal = document.getElementById("mcp-config-modal");
-const closeMcpConfigBtn = document.getElementById("close-mcp-config-btn");
-const mcpConfigCommand = document.getElementById("mcp-config-command");
-const mcpConfigArgs = document.getElementById("mcp-config-args");
-const copyMcpCommandBtn = document.getElementById("copy-mcp-command-btn");
-const copyMcpArgsBtn = document.getElementById("copy-mcp-args-btn");
-const copyMcpExampleBtn = document.getElementById("copy-mcp-example-btn");
-const mcpConfigExampleCode = document.getElementById("mcp-config-example-code");
-const integrationSummary = document.getElementById("coedit-integration-summary");
-const integrationChanges = document.getElementById("coedit-integration-changes");
-const integrationBtn = document.getElementById("coedit-integration-btn");
-const integrationConfirmBtn = document.getElementById("coedit-integration-confirm-btn");
-const integrationCancelBtn = document.getElementById("coedit-integration-cancel-btn");
-const integrationRemoveBtn = document.getElementById("coedit-integration-remove-btn");
-
 const ACTIVE_NOTE_KEY = "sodilaud_quicknotes_active_note";
 const COLLAPSED_FOLDERS_KEY = "sodilaud_collapsed_folders";
 
@@ -208,8 +185,6 @@ let currentLayoutMode = "live";
 let primaryEditor = null;
 let secondaryEditor = null;
 let isFocusMode = false;
-let isMcpConfigModalOpen = false;
-let mcpConfigModalPreviousFocus = null;
 let findMatches = [];
 let activeMatchIndex = -1;
 let isFindBarOpen = false;
@@ -233,14 +208,6 @@ let titleSyncTimer = null;
 let notificationSequence = 0;
 let activeNotification = null;
 let previewHighlightsRendered = false;
-let isMcpEnabled = false;
-const MCP_READ_TOOLS = ["list_folders", "list_notes", "search_notes", "get_note", "list_trash", "list_documents", "read_document", "get_pending_comments"];
-const MCP_WRITE_TOOLS = ["create_note", "create_folder", "append_to_note", "rename_note", "move_note", "rename_folder", "delete_note", "delete_folder", "push_quick_note", "open_document", "apply_edit", "add_comment", "resolve_comment"];
-const defaultMcpPermissions = () => Object.fromEntries([...MCP_READ_TOOLS.map(tool => [tool, true]), ...MCP_WRITE_TOOLS.map(tool => [tool, false])]);
-let mcpPermissions = defaultMcpPermissions();
-const mcpPermissionsFrom = tools => Object.fromEntries([...MCP_READ_TOOLS, ...MCP_WRITE_TOOLS].map(tool => [tool, tools.includes(tool)]));
-let mcpStartError = null;
-let isMcpPermissionSaving = false;
 let isWorkspaceSwitching = false;
 
 const shareAppearance = (key) => broadcastPreference(window, key);
@@ -597,7 +564,19 @@ const trashUi = createTrashUi({
 
 function refreshTrashUi() { trashUi.refresh(); }
 
-let mcpConnectionInfo = null;
+const agentAccess = createAgentAccess({
+  document,
+  invoke,
+  notify: showNotification,
+  menuSection: document.getElementById("agent-access-menu-section"),
+  statusAnchor: document.getElementById("comments-count-btn"),
+  closeMenu: () => {
+    toggleActionsDropdown(false);
+    actionsBtn.focus({ preventScroll: true });
+  },
+  // Agents read what Rust holds, so send what is still unsent first.
+  beforeEnable: flushPendingSaves
+});
 
 // Comments on the notes the panes show. The drawer follows the active pane.
 const paneDocs = () => {
@@ -763,7 +742,7 @@ async function init() {
   // 5. Render UI
   renderNoteList();
   loadActiveNote();
-  await loadMcpState();
+  await agentAccess.load();
   try {
     comments.setState(await invoke("coedit_get_state"));
   } catch (error) {
@@ -1675,202 +1654,6 @@ function toggleActionsDropdown(show) {
   actionsBtn.setAttribute("aria-expanded", String(actionsDropdown.classList.contains("show")));
 }
 
-function updateMcpUiState() {
-  mcpStatus.hidden = !isMcpEnabled;
-  const readCount = MCP_READ_TOOLS.filter(tool => mcpPermissions[tool]).length;
-  const writeCount = MCP_WRITE_TOOLS.filter(tool => mcpPermissions[tool]).length;
-  mcpPermissionsSummary.textContent = isMcpEnabled ? `${readCount} read · ${writeCount} write functions enabled` : "Off";
-  mcpStatus.title = `MCP listening: ${mcpPermissionsSummary.textContent.toLowerCase()}`;
-  agentAccessToggleBtn.textContent = isMcpEnabled ? "On" : "Off";
-  agentAccessToggleBtn.setAttribute("aria-pressed", String(isMcpEnabled));
-  for (const input of mcpPermissionInputs) {
-    input.checked = mcpPermissions[input.dataset.mcpTool];
-    input.disabled = !isMcpEnabled || isMcpPermissionSaving;
-  }
-  for (const input of mcpSelectAllInputs) {
-    const tools = input.dataset.mcpSelectAll === "read" ? MCP_READ_TOOLS : MCP_WRITE_TOOLS;
-    const count = tools.filter(tool => mcpPermissions[tool]).length;
-    input.checked = count === tools.length;
-    input.indeterminate = count > 0 && count < tools.length;
-    input.disabled = !isMcpEnabled || isMcpPermissionSaving;
-  }
-}
-
-async function changeMcpPermissions(next) {
-  if (!isMcpEnabled || isMcpPermissionSaving) { updateMcpUiState(); return; }
-  const previous = mcpPermissions;
-  isMcpPermissionSaving = true;
-  agentAccessToggleBtn.disabled = true;
-  // Revoke immediately so queued writes cannot begin during the native update.
-  // New grants take effect only after the backend confirms them.
-  mcpPermissions = Object.fromEntries(Object.keys(previous).map(tool => [tool, previous[tool] && next[tool]]));
-  updateMcpUiState();
-  mcpPermissionStatus.textContent = "Saving permissions…";
-  try {
-    await invoke("set_mcp_permissions", { tools: Object.keys(next).filter(tool => next[tool]) });
-    mcpPermissions = next;
-    mcpPermissionStatus.textContent = "Permissions saved";
-  } catch (error) {
-    mcpPermissions = previous;
-    mcpPermissionStatus.textContent = `Could not save permissions: ${error.message || error}`;
-  } finally {
-    isMcpPermissionSaving = false;
-    agentAccessToggleBtn.disabled = false;
-    updateMcpUiState();
-  }
-}
-
-async function toggleMcpAccess() {
-  if (!window.__TAURI__) {
-    showNotification("Agent access is only available in the desktop app");
-    return;
-  }
-
-  agentAccessToggleBtn.disabled = true;
-  agentAccessConfigBtn.disabled = true;
-  mcpStartError = null;
-  const previousPermissions = mcpPermissions;
-  const disabling = isMcpEnabled;
-  try {
-    if (isMcpEnabled) {
-      if (isMcpConfigModalOpen) closeMcpConfigModal();
-      mcpPermissions = Object.fromEntries(Object.keys(mcpPermissions).map(tool => [tool, false]));
-      await invoke("stop_mcp_server");
-      isMcpEnabled = false;
-      mcpConnectionInfo = null;
-      updateMcpUiState();
-      showNotification("Agent access disabled");
-      return;
-    }
-
-    // Agents read what Rust holds, so send what is still unsent first.
-    await flushPendingSaves();
-    const connection = await invoke("start_mcp_server");
-    if (!connection?.command || !Array.isArray(connection?.args) || !connection.args.length) {
-      throw new Error("Sodilaud returned incomplete MCP connection details");
-    }
-    mcpConnectionInfo = { command: connection.command, args: connection.args };
-    mcpPermissions = mcpPermissionsFrom(Array.isArray(connection.tools) ? connection.tools : []);
-    isMcpEnabled = true;
-    updateMcpUiState();
-    const writeCount = MCP_WRITE_TOOLS.filter(tool => mcpPermissions[tool]).length;
-    showNotification(writeCount
-      ? `Agent access enabled with ${writeCount} write ${writeCount === 1 ? "function" : "functions"} allowed`
-      : "Agent access enabled — reads only until you allow write functions in MCP Configuration");
-  } catch (error) {
-    if (disabling) mcpPermissions = previousPermissions;
-    updateMcpUiState();
-    console.error("Could not change MCP agent access", error);
-    showNotification(disabling
-      ? "Could not disable agent access"
-      : `Could not enable agent access: ${error}`);
-  } finally {
-    agentAccessToggleBtn.disabled = false;
-    agentAccessConfigBtn.disabled = false;
-  }
-}
-
-// Rust starts access at launch when it was on at quit, before this page loads.
-async function loadMcpState() {
-  try {
-    const state = await invoke("get_mcp_state");
-    mcpStartError = state?.error ?? null;
-    if (state?.enabled) {
-      isMcpEnabled = true;
-      mcpPermissions = mcpPermissionsFrom(Array.isArray(state.tools) ? state.tools : []);
-    }
-  } catch (error) {
-    console.error("Could not read the agent access state", error);
-  } finally {
-    updateMcpUiState();
-  }
-}
-
-async function openMcpConfigModal() {
-  mcpPermissionStatus.textContent = isMcpEnabled ? "" : (mcpStartError
-    ? `Agent access was on when Sodilaud quit but could not start again: ${mcpStartError}`
-    : "Agent access is off. Enable it from the actions menu to change function permissions.");
-  updateMcpUiState();
-  mcpConfigModalPreviousFocus = actionsDropdown.contains(document.activeElement)
-    ? actionsBtn
-    : document.activeElement;
-  isMcpConfigModalOpen = true;
-  mcpConfigModalBackdrop.style.display = "flex";
-  mcpConfigModalBackdrop.setAttribute("aria-hidden", "false");
-  closeMcpConfigBtn.focus({ preventScroll: true });
-  runIntegration("coedit_integration_plan");
-  const copyButtons = [copyMcpCommandBtn, copyMcpArgsBtn, copyMcpExampleBtn];
-  copyButtons.forEach(button => { button.disabled = true; });
-  try {
-    if (!mcpConnectionInfo) mcpConnectionInfo = await invoke("get_mcp_connection_info");
-    if (!isMcpConfigModalOpen) return;
-    if (!mcpConnectionInfo?.command || !Array.isArray(mcpConnectionInfo.args) || !mcpConnectionInfo.args.length) {
-      throw new Error("Connection details are unavailable");
-    }
-    mcpConfigCommand.value = mcpConnectionInfo.command;
-    mcpConfigArgs.value = mcpConnectionInfo.args.join(" ");
-    mcpConfigExampleCode.textContent = JSON.stringify({
-      mcpServers: { sodilaud: { command: mcpConnectionInfo.command, args: mcpConnectionInfo.args } }
-    }, null, 2);
-    copyButtons.forEach(button => { button.disabled = false; });
-  } catch (error) {
-    if (isMcpConfigModalOpen) mcpPermissionStatus.textContent = `Could not load MCP configuration: ${error.message || error}`;
-  }
-}
-
-// The Claude Code integration writes into the owner's home folder, so the
-// button first shows what would change and writes only once confirmed.
-function renderIntegration(plan, { previewing = false, message = null } = {}) {
-  const installed = Boolean(plan?.installed);
-  const present = Boolean(plan?.present);
-  const changes = Array.isArray(plan?.changes) ? plan.changes : [];
-  integrationSummary.textContent = message ?? (installed
-    ? "Installed."
-    : present ? "Installed, but out of date." : "Not installed.");
-  integrationChanges.replaceChildren(...(previewing ? changes : []).map(change => {
-    const item = document.createElement("li");
-    item.textContent = change;
-    return item;
-  }));
-  integrationChanges.hidden = !previewing;
-  integrationBtn.hidden = previewing || installed;
-  integrationBtn.textContent = present ? "Update Claude Code integration…" : "Install Claude Code integration…";
-  integrationConfirmBtn.hidden = !previewing;
-  integrationCancelBtn.hidden = !previewing;
-  integrationRemoveBtn.hidden = previewing || !present;
-}
-
-async function runIntegration(command, previewing = false) {
-  try {
-    renderIntegration(await invoke(command), { previewing });
-  } catch (error) {
-    renderIntegration(null, { message: `Claude Code integration: ${error.message || error}` });
-    integrationBtn.hidden = false;
-  }
-}
-
-function closeMcpConfigModal() {
-  isMcpConfigModalOpen = false;
-  mcpConfigModalBackdrop.style.display = "none";
-  mcpConfigModalBackdrop.setAttribute("aria-hidden", "true");
-  mcpConfigCommand.value = "";
-  mcpConfigArgs.value = "";
-  mcpConfigExampleCode.textContent = "";
-  if (mcpConfigModalPreviousFocus && mcpConfigModalPreviousFocus.isConnected) {
-    mcpConfigModalPreviousFocus.focus({ preventScroll: true });
-  }
-  mcpConfigModalPreviousFocus = null;
-}
-
-function copyMcpConfigValue(value, label) {
-  navigator.clipboard.writeText(value).then(() => {
-    showNotification(`${label} copied`);
-  }).catch(error => {
-    console.error(`Failed to copy MCP ${label.toLowerCase()}`, error);
-    showNotification(`Could not copy ${label.toLowerCase()}`);
-  });
-}
-
 function copyMarkdownToClipboard() {
   const text = primaryEditor.getText();
   navigator.clipboard.writeText(text).then(() => {
@@ -2056,39 +1839,6 @@ function attachEventListeners() {
     invoke("qn_start_drag").catch(() => {});
   });
 
-    // MCP Configuration Modal
-  for (const input of mcpPermissionInputs) {
-    input.addEventListener("change", () => changeMcpPermissions({ ...mcpPermissions, [input.dataset.mcpTool]: input.checked }));
-  }
-  for (const input of mcpSelectAllInputs) {
-    input.addEventListener("change", () => {
-      const tools = input.dataset.mcpSelectAll === "read" ? MCP_READ_TOOLS : MCP_WRITE_TOOLS;
-      changeMcpPermissions({ ...mcpPermissions, ...Object.fromEntries(tools.map(tool => [tool, input.checked])) });
-    });
-  }
-  agentAccessConfigBtn.addEventListener("click", () => {
-    toggleActionsDropdown(false);
-    actionsBtn.focus({ preventScroll: true });
-    openMcpConfigModal();
-  });
-  closeMcpConfigBtn.addEventListener("click", closeMcpConfigModal);
-  integrationBtn.addEventListener("click", () => runIntegration("coedit_integration_plan", true));
-  integrationConfirmBtn.addEventListener("click", () => runIntegration("coedit_integration_install"));
-  integrationCancelBtn.addEventListener("click", () => runIntegration("coedit_integration_plan"));
-  integrationRemoveBtn.addEventListener("click", () => runIntegration("coedit_integration_remove"));
-  mcpConfigModalBackdrop.addEventListener("click", (e) => {
-    if (e.target === mcpConfigModalBackdrop) closeMcpConfigModal();
-  });
-  copyMcpCommandBtn.addEventListener("click", () => {
-    copyMcpConfigValue(mcpConfigCommand.value, "MCP command");
-  });
-  copyMcpArgsBtn.addEventListener("click", () => {
-    copyMcpConfigValue(mcpConfigArgs.value, "MCP argument");
-  });
-  copyMcpExampleBtn.addEventListener("click", () => {
-    copyMcpConfigValue(mcpConfigExampleCode.textContent, "Configuration example");
-  });
-
   // Split Note toggle
   splitNoteBtn.addEventListener("click", () => toggleSplitNoteMode());
   compareNotesBtn.addEventListener("click", () => setCompareMode());
@@ -2121,10 +1871,7 @@ function attachEventListeners() {
   exportBtn.addEventListener("click", exportAsMarkdownFile);
   dbConnectBtn.addEventListener("click", connectDatabase);
   dbDisconnectBtn.addEventListener("click", disconnectDatabase);
-  agentAccessToggleBtn.addEventListener("click", (event) => {
-    event.stopPropagation();
-    toggleMcpAccess();
-  });
+  agentAccess.attach();
 
   // Custom Context Menu Events
   document.addEventListener("contextmenu", showContextMenu);
@@ -2299,8 +2046,8 @@ function attachEventListeners() {
     const isMeta = e.metaKey || e.ctrlKey;
     const isShift = e.shiftKey;
 
-    if (isMcpConfigModalOpen && e.key === "Tab" && !isMeta && !e.altKey) {
-      trapModalFocus(e, mcpConfigModal);
+    if (agentAccess.isModalOpen() && e.key === "Tab" && !isMeta && !e.altKey) {
+      agentAccess.handleKeydown(e);
       return;
     }
 
@@ -2372,9 +2119,8 @@ function attachEventListeners() {
     if (e.key === "Escape") {
       if (closeFormatMenus()) {
         e.preventDefault();
-      } else if (isMcpConfigModalOpen) {
+      } else if (agentAccess.handleKeydown(e)) {
         e.preventDefault();
-        closeMcpConfigModal();
       } else if (isFindBarOpen) {
         e.preventDefault();
         hideFindBar();
@@ -3697,8 +3443,8 @@ function toggleNotePinned(noteId) {
 // ----------------------------------------------------
 // Quick Notes panel
 // ----------------------------------------------------
-// The main window asks for a note (its start page links the Welcome note) or
-// for this window's menu (where agent access lives).
+// The main window asks for a note (its start page links the Welcome note), and
+// Rust tells both windows when agent access changes.
 async function registerQuickNotesHandlers() {
   const listen = window.__TAURI__?.event?.listen;
   if (typeof listen !== "function") return;
@@ -3712,9 +3458,7 @@ async function registerQuickNotesHandlers() {
       const note = notes.find(candidate => candidate.title === payload?.title);
       if (note) focusNote(note);
     });
-    await listen("quicknotes-open-menu", () => {
-      toggleActionsDropdown(true);
-    });
+    await agentAccess.listen(listen);
   } catch (error) {
     console.error("Failed to register the Quick Notes handlers", error);
   }

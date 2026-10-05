@@ -61,16 +61,13 @@ test("help and settings open in the main window", async () => {
   assert.equal(document.getElementById("help-modal-backdrop"), null);
 });
 
-test("the main window can select a note by title and open this menu", async () => {
+test("the main window can select a note by title", async () => {
   await app.emit("quicknotes-focus-note", { title: "Welcome to Quick Notes" });
   assert.equal(app.editorText(), "Welcome to Quick Notes");
   assert.equal(app.storage.getItem("sodilaud_quicknotes_active_note"), "b");
 
   await app.emit("quicknotes-focus-note", { title: "No such note" });
   assert.equal(app.editorText(), "Welcome to Quick Notes");
-
-  await app.emit("quicknotes-open-menu");
-  assert.equal(document.getElementById("actions-dropdown-content").classList.contains("show"), true);
 });
 
 test("an agent push selects its note by ID, in a collapsed folder or once it arrives", async () => {

@@ -5,13 +5,25 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { JSDOM } from "jsdom";
 import { bootApp } from "./helpers/app-harness.js";
+import { createAgentAccess } from "../src/agent-access.js";
 
 const parse = async (page) => new JSDOM(await readFile(new URL(`../src/${page}`, import.meta.url), "utf8")).window.document;
 const notesDocument = await parse("notes.html");
 const document = await parse("index.html");
 
+// The agent access section and modal are built in JS, from one source for both windows.
+const agentAccessDocument = new JSDOM(`<div id="section"></div><span id="anchor"></span>`).window.document;
+createAgentAccess({
+  document: agentAccessDocument,
+  invoke: async () => null,
+  notify: () => {},
+  menuSection: agentAccessDocument.getElementById("section"),
+  statusAnchor: agentAccessDocument.getElementById("anchor"),
+  closeMenu: () => {}
+});
+
 test("interactive controls have an accessible name", () => {
-  const unnamed = [notesDocument, document].flatMap(page => [...page.querySelectorAll("button, input, select, textarea")])
+  const unnamed = [notesDocument, document, agentAccessDocument].flatMap(page => [...page.querySelectorAll("button, input, select, textarea")])
     .filter((element) => {
       const visibleText = element.textContent.trim();
       const hasLabel = [...(element.labels || [])].some(label => label.textContent.trim());
@@ -34,8 +46,9 @@ test("both editors expose their content element with an accessible name", async 
 test("help, theme, about, MCP, clipboard, and trash overlays expose modal dialog semantics", () => {
   const ids = (page) => [...page.querySelectorAll("[role='dialog']")].map(dialog => dialog.id).sort();
   assert.deepEqual(ids(document), ["about-modal", "clipboard-settings-modal", "help-modal", "theme-modal"]);
-  assert.deepEqual(ids(notesDocument), ["mcp-config-modal", "trash-modal"]);
-  const dialogs = [document, notesDocument].flatMap(page => [...page.querySelectorAll("[role='dialog']")]);
+  assert.deepEqual(ids(notesDocument), ["trash-modal"]);
+  assert.deepEqual(ids(agentAccessDocument), ["mcp-config-modal"]);
+  const dialogs = [document, notesDocument, agentAccessDocument].flatMap(page => [...page.querySelectorAll("[role='dialog']")]);
 
   dialogs.forEach((dialog) => {
     assert.equal(dialog.getAttribute("aria-modal"), "true");
