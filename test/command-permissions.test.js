@@ -53,8 +53,11 @@ test("popup commands are granted only to the clipboard window", async () => {
 const NOTE_COMMANDS = [
   "save_file_native", "select_db_file",
   "notes_boot", "notes_import_local", "notes_connect", "notes_disconnect", "notes_sync_structure",
-  "notes_trash", "notes_restore", "notes_empty_trash", "notes_vacuum", "doc_push", "doc_pull",
-  "get_mcp_connection_info", "get_mcp_state", "start_mcp_server", "set_mcp_permissions", "stop_mcp_server"
+  "notes_trash", "notes_restore", "notes_empty_trash", "notes_vacuum", "doc_push", "doc_pull"
+];
+const AGENT_ACCESS_COMMANDS = [
+  "get_mcp_connection_info", "get_mcp_state", "start_mcp_server", "set_mcp_permissions", "stop_mcp_server",
+  "coedit_integration_plan", "coedit_integration_install", "coedit_integration_remove"
 ];
 const grant = (command) => `allow-${command.replaceAll("_", "-")}`;
 
@@ -66,6 +69,17 @@ test("only the Quick Notes window can read, write or expose notes", async () => 
     const holders = caps.filter(cap => cap.permissions.includes(grant(command))).map(cap => cap.identifier);
     assert.deepEqual(holders, ["quicknotes"], `${command} must be granted to the Quick Notes window only`);
   }
+});
+
+test("both windows show and change agent access, and both hear when it changes", async () => {
+  const caps = await capabilities();
+  const holders = (command) => caps.filter(cap => cap.permissions.includes(grant(command))).map(cap => cap.identifier).sort();
+  for (const command of AGENT_ACCESS_COMMANDS) {
+    assert.deepEqual(holders(command), ["default", "quicknotes"], command);
+  }
+  const mcp = await readFile("src-tauri/src/mcp.rs", "utf8");
+  assert.doesNotMatch(mcp, /\.emit\(/, "a broadcast would reach every webview");
+  assert.match(mcp, /crate::quicknotes::window::LABEL,\s*crate::quicknotes::window::MAIN_LABEL,?\s*\][\s\S]*emit_to\(window, STATE_EVENT/);
 });
 
 test("note contents are sent to the Quick Notes window only", async () => {
@@ -113,9 +127,6 @@ test("both windows comment, each only on its own documents", async () => {
   const holders = (command) => caps.filter(cap => cap.permissions.includes(grant(command))).map(cap => cap.identifier).sort();
   for (const command of ["comments_get", "comment_add", "comment_edit", "comment_delete", "comment_resolve", "comment_resend", "comments_send_review", "comments_clear_resolved", "coedit_get_state", "coedit_set_hold"]) {
     assert.deepEqual(holders(command), ["default", "quicknotes"], command);
-  }
-  for (const command of ["coedit_integration_plan", "coedit_integration_install", "coedit_integration_remove"]) {
-    assert.deepEqual(holders(command), ["quicknotes"], command);
   }
   const commands = await readFile("src-tauri/src/docs/commands.rs", "utf8");
   const pageDoc = commands.slice(commands.indexOf("fn page_doc"), commands.indexOf("fn comments_get"));

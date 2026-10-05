@@ -185,20 +185,13 @@ fn sorted(tools: &HashSet<String>) -> Vec<String> {
         .collect()
 }
 
-// Saved before it is applied, so a choice that cannot be remembered is not used.
 #[tauri::command]
-pub(crate) fn set_mcp_permissions(
+pub(crate) async fn set_mcp_permissions(
     app: tauri::AppHandle,
     state: tauri::State<'_, McpState>,
     tools: Vec<String>,
 ) -> Result<(), String> {
-    let tools = permission_set(tools)?;
-    let path = config_path(&app)?;
-    let mut config = mcp_config::load(&path);
-    config.permissions = permission_map(&tools);
-    mcp_config::save(&path, &config)?;
-    *state.permissions.write().map_err(|e| e.to_string())? = tools;
-    Ok(())
+    state.set_permissions(&config_path(&app)?, tools).await
 }
 
 struct RunningServer {
@@ -207,11 +200,43 @@ struct RunningServer {
     connection: McpConnectionInfo,
 }
 
+pub(crate) const STATE_EVENT: &str = "mcp-state-changed";
+
+/// What both windows show of agent access, sent whenever it changes.
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct McpStateChanged {
+    #[serde(flatten)]
+    status: McpStatus,
+    /// Set only when the Claude Code integration was installed or removed.
+    integration: Option<crate::integration::Plan>,
+}
+
+/// Where agent access changes go: both windows, or a test recorder.
+pub(crate) trait McpEvents: Send + Sync {
+    fn state_changed(&self, event: &McpStateChanged);
+}
+
+struct AppEvents(tauri::AppHandle);
+
+impl McpEvents for AppEvents {
+    fn state_changed(&self, event: &McpStateChanged) {
+        use tauri::Emitter;
+        for window in [
+            crate::quicknotes::window::LABEL,
+            crate::quicknotes::window::MAIN_LABEL,
+        ] {
+            let _ = self.0.emit_to(window, STATE_EVENT, event);
+        }
+    }
+}
+
 pub(crate) struct McpState {
     permissions: Permissions,
     running: tokio::sync::Mutex<Option<RunningServer>>,
     /// Why access that was on at quit could not start again at launch.
     start_error: std::sync::Mutex<Option<String>>,
+    events: RwLock<Option<Arc<dyn McpEvents>>>,
 }
 
 impl Default for McpState {
@@ -220,7 +245,79 @@ impl Default for McpState {
             permissions: Arc::new(RwLock::new(read_permissions())),
             running: tokio::sync::Mutex::new(None),
             start_error: std::sync::Mutex::new(None),
+            events: RwLock::new(None),
         }
+    }
+}
+
+impl McpState {
+    pub(crate) fn set_events(&self, events: Arc<dyn McpEvents>) {
+        if let Ok(mut slot) = self.events.write() {
+            *slot = Some(events);
+        }
+    }
+
+    async fn status(&self) -> Result<McpStatus, String> {
+        let enabled = self.running.lock().await.is_some();
+        let tools = if enabled {
+            sorted(&*self.permissions.read().map_err(|e| e.to_string())?)
+        } else {
+            Vec::new()
+        };
+        let error = self.start_error.lock().map_err(|e| e.to_string())?.clone();
+        Ok(McpStatus {
+            enabled,
+            tools,
+            error,
+        })
+    }
+
+    pub(crate) async fn publish(&self, integration: Option<crate::integration::Plan>) {
+        let events = self.events.read().ok().and_then(|slot| slot.clone());
+        let Some(events) = events else {
+            return;
+        };
+        match self.status().await {
+            Ok(status) => events.state_changed(&McpStateChanged {
+                status,
+                integration,
+            }),
+            Err(error) => eprintln!("Could not read the agent access state: {error}"),
+        }
+    }
+
+    // Saved before it is applied, so a choice that cannot be remembered is not used.
+    async fn set_permissions(&self, path: &Path, tools: Vec<String>) -> Result<(), String> {
+        let tools = permission_set(tools)?;
+        let mut config = mcp_config::load(path);
+        config.permissions = permission_map(&tools);
+        mcp_config::save(path, &config)?;
+        *self.permissions.write().map_err(|e| e.to_string())? = tools;
+        self.publish(None).await;
+        Ok(())
+    }
+
+    async fn stop(&self, path: &Path) -> Result<(), String> {
+        *self.permissions.write().map_err(|e| e.to_string())? = HashSet::new();
+        let mut config = mcp_config::load(path);
+        config.enabled = false;
+        if let Err(error) = mcp_config::save(path, &config) {
+            eprintln!("{error}");
+        }
+        let server = self.running.lock().await.take();
+        if let Some(server) = server {
+            server.cancellation.cancel();
+            let mut task = server.task;
+            if tokio::time::timeout(std::time::Duration::from_secs(2), &mut task)
+                .await
+                .is_err()
+            {
+                task.abort();
+                let _ = task.await;
+            }
+        }
+        self.publish(None).await;
+        Ok(())
     }
 }
 
@@ -232,7 +329,7 @@ pub(crate) struct McpStarted {
     tools: Vec<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct McpStatus {
     enabled: bool,
@@ -295,28 +392,20 @@ pub(crate) async fn start_mcp_server(
 ) -> Result<McpStarted, String> {
     let connection = start(&app, &state).await?;
     let tools = sorted(&*state.permissions.read().map_err(|e| e.to_string())?);
+    state.publish(None).await;
     Ok(McpStarted { connection, tools })
 }
 
 #[tauri::command]
 pub(crate) async fn get_mcp_state(state: tauri::State<'_, McpState>) -> Result<McpStatus, String> {
-    let enabled = state.running.lock().await.is_some();
-    let tools = if enabled {
-        sorted(&*state.permissions.read().map_err(|e| e.to_string())?)
-    } else {
-        Vec::new()
-    };
-    let error = state.start_error.lock().map_err(|e| e.to_string())?.clone();
-    Ok(McpStatus {
-        enabled,
-        tools,
-        error,
-    })
+    state.status().await
 }
 
 /// Starts access at launch when it was on at quit, before any page loads,
 /// and restores how owner comments are sent.
 pub(crate) fn start_saved(app: &tauri::AppHandle) {
+    app.state::<McpState>()
+        .set_events(Arc::new(AppEvents(app.clone())));
     let Ok(path) = config_path(app) else {
         return;
     };
@@ -394,26 +483,7 @@ pub(crate) async fn stop_mcp_server(
     app: tauri::AppHandle,
     state: tauri::State<'_, McpState>,
 ) -> Result<(), String> {
-    *state.permissions.write().map_err(|e| e.to_string())? = HashSet::new();
-    let path = config_path(&app)?;
-    let mut config = mcp_config::load(&path);
-    config.enabled = false;
-    if let Err(error) = mcp_config::save(&path, &config) {
-        eprintln!("{error}");
-    }
-    let server = state.running.lock().await.take();
-    if let Some(server) = server {
-        server.cancellation.cancel();
-        let mut task = server.task;
-        if tokio::time::timeout(std::time::Duration::from_secs(2), &mut task)
-            .await
-            .is_err()
-        {
-            task.abort();
-            let _ = task.await;
-        }
-    }
-    Ok(())
+    state.stop(&config_path(&app)?).await
 }
 
 // The app owns the live collection. Each headless invocation relays its stdio
@@ -2136,9 +2206,18 @@ impl ServerHandler for SodilaudServer {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[derive(Default)]
+    pub(crate) struct McpRecorder(pub(crate) std::sync::Mutex<Vec<McpStateChanged>>);
+
+    impl McpEvents for McpRecorder {
+        fn state_changed(&self, event: &McpStateChanged) {
+            self.0.lock().unwrap().push(event.clone());
+        }
+    }
     use tokio::io::{AsyncBufReadExt, BufReader};
 
     fn snapshot() -> Snapshot {
@@ -2246,6 +2325,61 @@ mod tests {
             READ_TOOLS.len() + WRITE_TOOLS.len()
         );
         assert_eq!(saved_permissions(&saved), restored);
+    }
+
+    fn config_file() -> std::path::PathBuf {
+        std::env::temp_dir()
+            .join(format!("sodilaud-mcp-events-{}", Uuid::new_v4().simple()))
+            .join(mcp_config::FILE_NAME)
+    }
+
+    async fn pretend_running(state: &McpState) {
+        *state.running.lock().await = Some(RunningServer {
+            cancellation: CancellationToken::new(),
+            task: tokio::spawn(async {}),
+            connection: McpConnectionInfo {
+                command: "/sodilaud".into(),
+                args: vec!["--mcp-stdio".into()],
+            },
+        });
+    }
+
+    #[tokio::test]
+    async fn permission_changes_and_stopping_tell_every_window() {
+        let state = McpState::default();
+        let recorder = Arc::new(McpRecorder::default());
+        state.set_events(recorder.clone());
+        let path = config_file();
+        pretend_running(&state).await;
+
+        state
+            .set_permissions(&path, vec!["create_note".into(), "list_notes".into()])
+            .await
+            .unwrap();
+        assert!(state
+            .set_permissions(&path, vec!["unknown".into()])
+            .await
+            .is_err());
+        state.stop(&path).await.unwrap();
+
+        let events = recorder.0.lock().unwrap().clone();
+        let events: Vec<serde_json::Value> = events
+            .iter()
+            .map(|event| serde_json::to_value(event).unwrap())
+            .collect();
+        assert_eq!(
+            events,
+            vec![
+                serde_json::json!({ "enabled": true, "tools": ["list_notes", "create_note"], "error": null, "integration": null }),
+                serde_json::json!({ "enabled": false, "tools": [], "error": null, "integration": null }),
+            ],
+            "a refused change announces nothing"
+        );
+        assert!(!mcp_config::load(&path).enabled);
+        assert_eq!(
+            mcp_config::load(&path).permissions.get("create_note"),
+            Some(&true)
+        );
     }
 
     #[tokio::test]

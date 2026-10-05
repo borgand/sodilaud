@@ -13,6 +13,7 @@ use serde::Serialize;
 use serde_json::{json, Map, Value};
 
 use crate::hook;
+use crate::mcp::McpState;
 
 pub(crate) const COMMAND: &str = include_str!("../resources/claude/sodilaud.md");
 pub(crate) const SKILL: &str = include_str!("../resources/claude/SKILL.md");
@@ -287,18 +288,58 @@ pub(crate) fn coedit_integration_plan() -> Result<Plan, String> {
 }
 
 #[tauri::command]
-pub(crate) fn coedit_integration_install() -> Result<Plan, String> {
-    install(&home()?, &crate::mcp::executable()?)
+pub(crate) async fn coedit_integration_install(
+    state: tauri::State<'_, McpState>,
+) -> Result<Plan, String> {
+    announced(&state, install(&home()?, &crate::mcp::executable()?)).await
 }
 
 #[tauri::command]
-pub(crate) fn coedit_integration_remove() -> Result<Plan, String> {
-    remove(&home()?, &crate::mcp::executable()?)
+pub(crate) async fn coedit_integration_remove(
+    state: tauri::State<'_, McpState>,
+) -> Result<Plan, String> {
+    announced(&state, remove(&home()?, &crate::mcp::executable()?)).await
+}
+
+async fn announced(state: &McpState, plan: Result<Plan, String>) -> Result<Plan, String> {
+    let plan = plan?;
+    state.publish(Some(plan.clone())).await;
+    Ok(plan)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::mcp::tests::McpRecorder;
+    use std::sync::Arc;
+
+    #[tokio::test]
+    async fn installing_and_removing_tell_every_window() {
+        let home = home();
+        let state = McpState::default();
+        let recorder = Arc::new(McpRecorder::default());
+        state.set_events(recorder.clone());
+        let installed = announced(&state, install(&home, EXE)).await.unwrap();
+        let removed = announced(&state, remove(&home, EXE)).await.unwrap();
+        assert!(announced(&state, Err("refused".into())).await.is_err());
+        let events: Vec<Value> = recorder
+            .0
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|event| serde_json::to_value(event).unwrap())
+            .collect();
+        assert_eq!(events.len(), 2, "a refused change announces nothing");
+        assert_eq!(
+            events[0]["integration"],
+            serde_json::to_value(&installed).unwrap()
+        );
+        assert_eq!(
+            events[1]["integration"],
+            serde_json::to_value(&removed).unwrap()
+        );
+        assert_eq!(events[1]["enabled"], false);
+    }
 
     const EXE: &str = "/Applications/Sodilaud.app/Contents/MacOS/sodilaud";
 
