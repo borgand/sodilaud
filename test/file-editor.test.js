@@ -229,3 +229,38 @@ test("Reading mode renders the file and follows outside edits; a file opened fro
   assert.equal(app.editorText(), "from finder");
   assert.equal(doc(app).querySelectorAll(".open-file-item").length, 2);
 });
+
+test("Save As onto the file's own path right after typing keeps every change", async () => {
+  const fake = lists({ open: ["/docs/s.md"] });
+  let disk;
+  let app;
+  const errors = [];
+  app = await bootMainWindow({
+    instance: 9,
+    platform: "MacIntel",
+    disk: { "/docs/s.md": "s" },
+    beforeBoot: (dom) => { dom.window.console.error = (...args) => errors.push(args); },
+    handlers: {
+      ...fake.handlers,
+      file_save_as_dialog: ({ text }) => {
+        app.fileDocs.discard("/docs/s.md");
+        disk.set("/docs/s.md", text);
+        return { path: "/docs/s.md", name: "s.md", hash: `h-${text.length}` };
+      }
+    }
+  });
+  disk = app.fileDocs.files;
+  const consoleError = console.error;
+  console.error = (...args) => errors.push(args);
+  try {
+    typeAt(app, 1, "1");
+    key(app, { key: "s", code: "KeyS", metaKey: true, shiftKey: true });
+    await app.settle(300);
+    typeAt(app, 2, "2");
+    await app.settle(2300);
+    assert.equal(app.fileDocs.files.get("/docs/s.md"), "s12");
+    assert.deepEqual(errors, []);
+  } finally {
+    console.error = consoleError;
+  }
+});

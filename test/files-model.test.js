@@ -8,7 +8,7 @@ import { createFilesModel, isDirty, needsPrompt } from "../src/files.js";
 let counter = 0;
 const model = () => createFilesModel({ newId: () => `id-${(counter += 1)}` });
 const opened = (path, text = "hello\n", fields = {}) => ({
-  path, name: path.split("/").pop(), text, version: 0, savedVersion: 0, lineEnding: "lf", bom: false, external: null, ...fields
+  docId: `doc:${path}`, path, name: path.split("/").pop(), text, version: 0, savedVersion: 0, lineEnding: "lf", bom: false, external: null, ...fields
 });
 
 test("a file is dirty while changes are unsent or not yet on disk", () => {
@@ -17,11 +17,14 @@ test("a file is dirty while changes are unsent or not yet on disk", () => {
   assert.equal(files.active().id, buffer.id);
   assert.equal(isDirty(buffer), false);
   assert.equal(isDirty(buffer, true), true, "typing not yet sent");
-  files.docUpdated("/a/notes.md", 4);
+  const event = { docId: "doc:/a/notes.md", path: "/a/notes.md" };
+  files.docUpdated({ ...event, version: 4 });
   assert.equal(isDirty(buffer), true, "sent, not yet saved");
-  files.saved("/a/notes.md", { version: 4, error: null });
+  files.saved({ ...event, docId: "an earlier opening", version: 9, error: null });
+  assert.equal(buffer.savedVersion, 3, "events from an earlier opening of the path are ignored");
+  files.saved({ ...event, version: 4, error: null });
   assert.equal(isDirty(buffer), false);
-  files.saved("/a/notes.md", { version: 3, error: "disk full" });
+  files.saved({ ...event, version: 3, error: "disk full" });
   assert.equal(buffer.savedVersion, 4, "a late event never moves the saved version back");
   assert.equal(buffer.error, "disk full");
 });
@@ -66,15 +69,16 @@ test("closing the active file activates a neighbor", () => {
 test("outside changes set and clear the file's disk state", () => {
   const files = model();
   const buffer = files.openFile(opened("/a/f.md"));
-  assert.equal(files.external("/a/f.md", "conflict"), buffer);
+  const event = (path, kind) => ({ docId: `doc:${path}`, path, kind });
+  assert.equal(files.external(event("/a/f.md", "conflict")), buffer);
   assert.equal(buffer.external, "conflict");
-  files.external("/a/f.md", "applied");
+  files.external(event("/a/f.md", "applied"));
   assert.equal(buffer.external, null);
-  files.external("/a/f.md", "removed");
+  files.external(event("/a/f.md", "removed"));
   assert.equal(buffer.external, "removed");
-  files.external("/a/f.md", "merged");
+  files.external(event("/a/f.md", "merged"));
   assert.equal(buffer.external, null);
-  assert.equal(files.external("/elsewhere.md", "conflict"), null);
+  assert.equal(files.external(event("/elsewhere.md", "conflict")), null);
 });
 
 test("Save As adopts the new file and a reload replaces the text", () => {

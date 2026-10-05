@@ -69,18 +69,18 @@ export function createFileEditor({
   });
 
   const sync = createDocSync({
-    push: ({ path }, version, updates) => invoke("file_doc_push", { path, version, updates }),
-    pull: ({ path }, since) => invoke("file_doc_pull", { path, since }),
-    same: (doc, event) => doc.path === event.path,
-    // The file was closed, or Save As replaced it: nothing is left to send to.
+    push: ({ path, docId }, version, updates) => invoke("file_doc_push", { path, docId, version, updates }),
+    pull: ({ path, docId }, since) => invoke("file_doc_pull", { path, docId, since }),
+    same: (doc, event) => doc.path === event.path && doc.docId === event.docId,
+    // The file was closed or reopened, or Save As replaced it: nothing is left to send to.
     isGone: (error) => error?.code === "NotOpen",
     onStatus: () => {
       renderTitle();
       renderSidebar();
     },
-    onReload: ({ path }, text, version) => {
+    onReload: ({ path, docId }, text, version) => {
       const buffer = model.byPath(path);
-      if (!buffer) return;
+      if (!buffer || buffer.docId !== docId) return;
       model.reload(buffer.id, text, version);
       if (shownId === buffer.id) loadBuffer(buffer);
       render();
@@ -88,12 +88,12 @@ export function createFileEditor({
     label: "main"
   });
 
-  const unsent = (buffer) => buffer.path !== null && sync.pending((doc) => doc.path === buffer.path);
+  const unsent = (buffer) => buffer.path !== null && sync.pending((doc) => doc.docId === buffer.docId);
   const dirty = (buffer) => isDirty(buffer, unsent(buffer));
   const errorMessage = (error) => error?.message ?? String(error);
 
   function loadBuffer(buffer) {
-    const extensions = buffer.path === null ? [] : sync.extension({ path: buffer.path }, buffer.version);
+    const extensions = buffer.path === null ? [] : sync.extension({ path: buffer.path, docId: buffer.docId }, buffer.version);
     editor.loadText(buffer.text, { extensions });
   }
 
@@ -255,9 +255,9 @@ export function createFileEditor({
     const sent = await sync.flush();
     let ok = sent;
     try {
-      model.saved(path, await invoke("file_doc_save", { path }));
+      model.saved(await invoke("file_doc_save", { path }));
     } catch (error) {
-      model.saved(path, { version: buffer.savedVersion, error: errorMessage(error) });
+      model.saved({ docId: buffer.docId, path, version: buffer.savedVersion, error: errorMessage(error) });
       ok = false;
     }
     render();
@@ -267,6 +267,9 @@ export function createFileEditor({
   async function saveAs(id = model.active()?.id) {
     const buffer = model.get(id);
     if (!buffer) return false;
+    // Rust drops the document if the new path is this file, so nothing may
+    // still be on its way to it.
+    if (buffer.path !== null) await sync.flush();
     const shown = buffer.id === shownId;
     const text = shown ? editor.getText() : buffer.editorState?.doc.toString() ?? buffer.text;
     let saved;
@@ -288,7 +291,6 @@ export function createFileEditor({
     if (existing && existing.id !== id) model.close(existing.id, { force: true });
     const previousPath = buffer.path;
     if (previousPath !== null && previousPath !== saved.path) {
-      await sync.flush();
       await invoke("file_doc_close", { path: previousPath }).catch((error) => console.error("Could not close the old file", error));
     }
     let opened;
@@ -482,7 +484,7 @@ export function createFileEditor({
   function receiveUpdates(event) {
     if (!event?.path) return;
     sync.receive(event);
-    const buffer = model.docUpdated(event.path, event.version);
+    const buffer = model.docUpdated(event);
     if (buffer && buffer.id === shownId) renderPreview();
     renderTitle();
     renderSidebar();
@@ -490,13 +492,13 @@ export function createFileEditor({
 
   function handleSaved(event) {
     if (!event?.path) return;
-    model.saved(event.path, event);
+    model.saved(event);
     render();
   }
 
   function handleExternal(event) {
     if (!event?.path) return;
-    model.external(event.path, event.kind);
+    model.external(event);
     render();
   }
 

@@ -35,14 +35,15 @@ export function createFakeFileDocs({ emit, disk = {} }) {
   const docs = new Map();
   const writes = [];
   let failure = null;
+  let opening = 0;
   const version = (doc) => doc.updates.length;
 
-  const find = (path) => {
+  const find = (path, docId) => {
     const doc = docs.get(path);
-    if (!doc) throw { code: "NotOpen", message: `${name(path)} is not open in Sodilaud.` };
+    if (!doc || (docId !== undefined && doc.docId !== docId)) throw { code: "NotOpen", message: `${name(path)} is not open in Sodilaud.` };
     return doc;
   };
-  const savedEvent = (path, doc) => ({ path, version: doc.savedVersion, hash: `h-${doc.synced.length}`, error: doc.error });
+  const savedEvent = (path, doc) => ({ docId: doc.docId, path, version: doc.savedVersion, hash: `h-${doc.synced.length}`, error: doc.error });
 
   function schedule(path, doc) {
     clearTimeout(doc.timer);
@@ -74,7 +75,7 @@ export function createFakeFileDocs({ emit, disk = {} }) {
     const updates = [{ clientID: "disk", changes: minimalChanges(doc.text, text) }];
     doc.text = text;
     doc.updates.push(...updates);
-    emit("file-doc-updates", { path, from, updates, version: version(doc) });
+    emit("file-doc-updates", { docId: doc.docId, path, from, updates, version: version(doc) });
   }
 
   function takeDisk(path, doc) {
@@ -82,10 +83,11 @@ export function createFakeFileDocs({ emit, disk = {} }) {
     Object.assign(doc, { synced: doc.text, savedVersion: version(doc), external: null, error: null });
     clearTimeout(doc.timer);
     emit("file-doc-saved", savedEvent(path, doc));
-    emit("file-doc-external", { path, kind: "applied" });
+    emit("file-doc-external", { docId: doc.docId, path, kind: "applied" });
   }
 
   const opened = (path, doc) => ({
+    docId: doc.docId,
     path, name: name(path), text: doc.text, version: version(doc), lineEnding: "lf", bom: false,
     savedVersion: doc.savedVersion, external: doc.external
   });
@@ -95,21 +97,21 @@ export function createFakeFileDocs({ emit, disk = {} }) {
       if (!docs.has(path)) {
         if (!files.has(path)) throw { code: "NotFound", message: `${name(path)} is no longer on disk.` };
         const text = files.get(path);
-        docs.set(path, { text, synced: text, updates: [], savedVersion: 0, external: null, error: null, timer: null });
+        docs.set(path, { docId: `doc-${(opening += 1)}`, text, synced: text, updates: [], savedVersion: 0, external: null, error: null, timer: null });
       }
       return opened(path, docs.get(path));
     },
-    file_doc_push: ({ path, version: base, updates }) => {
-      const doc = find(path);
+    file_doc_push: ({ path, docId, version: base, updates }) => {
+      const doc = find(path, docId);
       if (base !== version(doc)) return { accepted: false, version: version(doc) };
       if (updates.length === 0) return { accepted: true, version: base };
       doc.text = applyUpdatesToText(doc.text, updates);
       doc.updates.push(...updates);
-      emit("file-doc-updates", { path, from: base, updates, version: version(doc) });
+      emit("file-doc-updates", { docId, path, from: base, updates, version: version(doc) });
       schedule(path, doc);
       return { accepted: true, version: version(doc) };
     },
-    file_doc_pull: ({ path, since }) => ({ updates: find(path).updates.slice(since) }),
+    file_doc_pull: ({ path, docId, since }) => ({ updates: find(path, docId).updates.slice(since) }),
     file_doc_save: ({ path }) => save(path),
     file_doc_close: ({ path }) => {
       if (!docs.has(path)) return null;
@@ -125,7 +127,7 @@ export function createFakeFileDocs({ emit, disk = {} }) {
         return null;
       }
       doc.external = null;
-      emit("file-doc-external", { path, kind: "applied" });
+      emit("file-doc-external", { docId: doc.docId, path, kind: "applied" });
       save(path);
       return null;
     }
@@ -148,19 +150,24 @@ export function createFakeFileDocs({ emit, disk = {} }) {
       doc.synced = text;
       if (merged === undefined) {
         doc.external = "conflict";
-        emit("file-doc-external", { path, kind: "conflict" });
+        emit("file-doc-external", { docId: doc.docId, path, kind: "conflict" });
         return;
       }
       replace(path, doc, merged);
-      emit("file-doc-external", { path, kind: "merged" });
+      emit("file-doc-external", { docId: doc.docId, path, kind: "merged" });
       schedule(path, doc);
+    },
+    /** What `file_save_as_dialog` does to a document open at the chosen path. */
+    discard(path) {
+      clearTimeout(docs.get(path)?.timer);
+      docs.delete(path);
     },
     remove(path) {
       files.delete(path);
       const doc = docs.get(path);
       if (!doc) return;
       doc.external = "removed";
-      emit("file-doc-external", { path, kind: "removed" });
+      emit("file-doc-external", { docId: doc.docId, path, kind: "removed" });
     }
   };
 }

@@ -139,11 +139,12 @@ pub fn file_doc_push(
     files: State<'_, Files>,
     registry: State<'_, SharedRegistry>,
     path: String,
+    doc_id: String,
     version: u64,
     updates: Vec<Update>,
 ) -> Result<Pushed, FileError> {
     require_main(&window)?;
-    registry.file_push(&files.require(&path)?, version, updates)
+    registry.file_push(&files.require(&path)?, &doc_id, version, updates)
 }
 
 #[tauri::command]
@@ -152,10 +153,11 @@ pub fn file_doc_pull(
     files: State<'_, Files>,
     registry: State<'_, SharedRegistry>,
     path: String,
+    doc_id: String,
     since: u64,
 ) -> Result<Pulled, FileError> {
     require_main(&window)?;
-    registry.file_pull(&files.require(&path)?, since)
+    registry.file_pull(&files.require(&path)?, &doc_id, since)
 }
 
 /// Writes a pending save, then closes the file in the registry.

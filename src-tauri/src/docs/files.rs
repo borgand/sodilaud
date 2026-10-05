@@ -63,6 +63,9 @@ struct SaveState {
 }
 
 pub(crate) struct FileDoc {
+    /// Tells this opening of the file from an earlier one at the same path,
+    /// whose version numbers start over.
+    id: String,
     pub(crate) collab: Collab,
     line_ending: LineEnding,
     bom: bool,
@@ -76,6 +79,7 @@ pub(crate) struct FileDoc {
 impl FileDoc {
     fn opened(&self, path: &Path) -> FileOpened {
         FileOpened {
+            doc_id: self.id.clone(),
             path: path.to_string_lossy().into_owned(),
             name: io::file_name(path),
             text: self.collab.text().to_string(),
@@ -89,6 +93,7 @@ impl FileDoc {
 
     fn saved(&self, path: &Path) -> FileSaved {
         FileSaved {
+            doc_id: self.id.clone(),
             path: path.to_string_lossy().into_owned(),
             version: self.save.saved_version,
             hash: Some(self.disk_hash.clone()),
@@ -109,6 +114,7 @@ pub(crate) struct FileDocs {
 #[derive(Serialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct FileOpened {
+    pub(crate) doc_id: String,
     pub(crate) path: String,
     pub(crate) name: String,
     pub(crate) text: String,
@@ -122,6 +128,7 @@ pub(crate) struct FileOpened {
 #[derive(Serialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct FileDocUpdates {
+    pub(crate) doc_id: String,
     pub(crate) path: String,
     /// The version the first update applies to.
     pub(crate) from: u64,
@@ -133,6 +140,7 @@ pub(crate) struct FileDocUpdates {
 #[derive(Serialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct FileSaved {
+    pub(crate) doc_id: String,
     pub(crate) path: String,
     pub(crate) version: u64,
     pub(crate) hash: Option<String>,
@@ -155,8 +163,20 @@ pub(crate) enum ExternalKind {
 #[derive(Serialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct FileExternal {
+    pub(crate) doc_id: String,
     pub(crate) path: String,
     pub(crate) kind: ExternalKind,
+}
+
+/// The document open at `path`, if it is still the opening the client knows.
+fn current<'a>(
+    docs: &'a mut HashMap<PathBuf, FileDoc>,
+    path: &Path,
+    doc_id: &str,
+) -> Result<&'a mut FileDoc, FileError> {
+    docs.get_mut(path)
+        .filter(|doc| doc.id == doc_id)
+        .ok_or_else(|| FileError::not_open(path))
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -177,13 +197,14 @@ impl Registry {
         lock(&self.files.docs)
     }
 
-    fn emit_file_doc(&self, path: &Path, from: u64, updates: Vec<Update>, version: u64) {
+    fn emit_file_doc(&self, path: &Path, doc: &FileDoc, from: u64, updates: Vec<Update>) {
         if let Some(sink) = self.sink() {
             sink.file_doc(&FileDocUpdates {
+                doc_id: doc.id.clone(),
+                version: doc.collab.version(),
                 path: path.to_string_lossy().into_owned(),
                 from,
                 updates,
-                version,
             });
         }
     }
@@ -204,6 +225,7 @@ impl Registry {
         let (text, line_ending, bom) = io::decode_normalized(&bytes)?;
         let mut docs = self.file_docs();
         let doc = docs.entry(path.to_path_buf()).or_insert_with(|| FileDoc {
+            id: uuid::Uuid::new_v4().to_string(),
             collab: Collab::new(text.clone()),
             line_ending,
             bom,
@@ -222,13 +244,12 @@ impl Registry {
     pub(crate) fn file_push(
         &self,
         path: &Path,
+        doc_id: &str,
         version: u64,
         updates: Vec<Update>,
     ) -> Result<Pushed, FileError> {
         let mut docs = self.file_docs();
-        let doc = docs
-            .get_mut(path)
-            .ok_or_else(|| FileError::not_open(path))?;
+        let doc = current(&mut docs, path, doc_id)?;
         let current = doc.collab.version();
         if version != current {
             return Ok(Pushed {
@@ -246,7 +267,7 @@ impl Registry {
         let from = doc.collab.commit(text, updates.clone());
         let version = doc.collab.version();
         doc.save.due = Some(Instant::now() + SAVE_DELAY);
-        self.emit_file_doc(path, from, updates, version);
+        self.emit_file_doc(path, doc, from, updates);
         self.files.wake.notify_all();
         Ok(Pushed {
             accepted: true,
@@ -254,9 +275,14 @@ impl Registry {
         })
     }
 
-    pub(crate) fn file_pull(&self, path: &Path, since: u64) -> Result<Pulled, FileError> {
-        let docs = self.file_docs();
-        let doc = docs.get(path).ok_or_else(|| FileError::not_open(path))?;
+    pub(crate) fn file_pull(
+        &self,
+        path: &Path,
+        doc_id: &str,
+        since: u64,
+    ) -> Result<Pulled, FileError> {
+        let mut docs = self.file_docs();
+        let doc = current(&mut docs, path, doc_id)?;
         doc.collab.pull(since).map_err(FileError::other)
     }
 
@@ -284,6 +310,7 @@ impl Registry {
         let mut docs = self.file_docs();
         let Some(doc) = docs.get_mut(path) else {
             return written.map(|hash| FileSaved {
+                doc_id: String::new(),
                 path: path.to_string_lossy().into_owned(),
                 version,
                 hash: Some(hash),
@@ -327,9 +354,10 @@ impl Registry {
         self.file_docs().remove(path);
     }
 
-    fn emit_external(&self, path: &Path, kind: ExternalKind) {
+    fn emit_external(&self, path: &Path, doc: &FileDoc, kind: ExternalKind) {
         if let Some(sink) = self.sink() {
             sink.file_external(&FileExternal {
+                doc_id: doc.id.clone(),
                 path: path.to_string_lossy().into_owned(),
                 kind,
             });
@@ -340,7 +368,7 @@ impl Registry {
     /// and document agree again.
     fn take_disk(&self, path: &Path, doc: &mut FileDoc, bytes: &[u8], text: String) {
         if let Some((from, updates)) = doc.collab.replace(DISK_CLIENT, &text) {
-            self.emit_file_doc(path, from, updates, doc.collab.version());
+            self.emit_file_doc(path, doc, from, updates);
         }
         doc.synced = text;
         doc.disk_hash = io::hash(bytes);
@@ -351,7 +379,7 @@ impl Registry {
             error: None,
         };
         self.emit_saved(&doc.saved(path));
-        self.emit_external(path, ExternalKind::Applied);
+        self.emit_external(path, doc, ExternalKind::Applied);
     }
 
     /// The watcher saw `path` change on disk. Sodilaud's own writes are
@@ -363,7 +391,7 @@ impl Registry {
         if removed {
             if let Some(doc) = self.file_docs().get_mut(path) {
                 doc.external = Some(External::Removed);
-                self.emit_external(path, ExternalKind::Removed);
+                self.emit_external(path, doc, ExternalKind::Removed);
             }
             return;
         }
@@ -381,13 +409,13 @@ impl Registry {
                     doc.save.due = Some(Instant::now() + SAVE_DELAY);
                     self.files.wake.notify_all();
                 }
-                self.emit_external(path, ExternalKind::Applied);
+                self.emit_external(path, doc, ExternalKind::Applied);
             }
             return;
         }
         let Ok((theirs, line_ending, bom)) = io::decode_normalized(&bytes) else {
             doc.external = Some(External::Conflict);
-            self.emit_external(path, ExternalKind::Conflict);
+            self.emit_external(path, doc, ExternalKind::Conflict);
             return;
         };
         doc.line_ending = line_ending;
@@ -402,20 +430,20 @@ impl Registry {
             Some(merged) if merged == theirs => self.take_disk(path, doc, &bytes, theirs),
             Some(merged) => {
                 if let Some((from, updates)) = doc.collab.replace(DISK_CLIENT, &merged) {
-                    self.emit_file_doc(path, from, updates, doc.collab.version());
+                    self.emit_file_doc(path, doc, from, updates);
                 }
                 doc.synced = theirs;
                 doc.disk_hash = io::hash(&bytes);
                 doc.external = None;
                 doc.save.due = Some(Instant::now() + SAVE_DELAY);
                 self.files.wake.notify_all();
-                self.emit_external(path, ExternalKind::Merged);
+                self.emit_external(path, doc, ExternalKind::Merged);
             }
             None => {
                 doc.synced = theirs;
                 doc.disk_hash = io::hash(&bytes);
                 doc.external = Some(External::Conflict);
-                self.emit_external(path, ExternalKind::Conflict);
+                self.emit_external(path, doc, ExternalKind::Conflict);
             }
         }
     }
@@ -449,7 +477,7 @@ impl Registry {
                         .get_mut(path)
                         .ok_or_else(|| FileError::not_open(path))?;
                     doc.external = None;
-                    self.emit_external(path, ExternalKind::Applied);
+                    self.emit_external(path, doc, ExternalKind::Applied);
                 }
                 self.file_save(path, disk).map(|_| ())
             }
@@ -541,6 +569,10 @@ mod tests {
         (registry, recorder)
     }
 
+    fn id(registry: &Registry, path: &Path) -> String {
+        registry.file_open(path, &TestDisk).unwrap().doc_id
+    }
+
     fn update(changes: serde_json::Value) -> Update {
         Update {
             client_id: "page".into(),
@@ -569,7 +601,12 @@ mod tests {
         let (registry, recorder) = registry();
         registry.file_open(&path, &TestDisk).unwrap();
         let pushed = registry
-            .file_push(&path, 0, vec![update(json!([5, [0, "!"]]))])
+            .file_push(
+                &path,
+                &id(&registry, &path),
+                0,
+                vec![update(json!([5, [0, "!"]]))],
+            )
             .unwrap();
         assert_eq!(
             pushed,
@@ -592,15 +629,20 @@ mod tests {
             Some(path.clone())
         );
         let stale = registry
-            .file_push(&path, 0, vec![update(json!([[6, "x"]]))])
+            .file_push(
+                &path,
+                &id(&registry, &path),
+                0,
+                vec![update(json!([[6, "x"]]))],
+            )
             .unwrap();
         assert!(!stale.accepted);
         assert_eq!(
-            registry.file_pull(&path, 0).unwrap(),
+            registry.file_pull(&path, &id(&registry, &path), 0).unwrap(),
             Pulled::Updates(vec![update(json!([5, [0, "!"]]))])
         );
         assert!(registry
-            .file_push(&path, 1, vec![update(json!([9]))])
+            .file_push(&path, &id(&registry, &path), 1, vec![update(json!([9]))])
             .is_err());
     }
 
@@ -610,13 +652,20 @@ mod tests {
         let (registry, _) = registry();
         registry.file_open(&path, &TestDisk).unwrap();
         registry
-            .file_push(&path, 0, vec![update(json!([3, [0, " two"]]))])
+            .file_push(
+                &path,
+                &id(&registry, &path),
+                0,
+                vec![update(json!([3, [0, " two"]]))],
+            )
             .unwrap();
         let again = registry.file_open(&path, &TestDisk).unwrap();
         assert_eq!((again.text.as_str(), again.version), ("one two", 1));
         registry.file_close(&path, &TestDisk).unwrap();
         assert_eq!(fs::read(&path).unwrap(), b"one two", "close flushes");
-        let error = registry.file_push(&path, 1, vec![]).unwrap_err();
+        let error = registry
+            .file_push(&path, &again.doc_id, 1, vec![])
+            .unwrap_err();
         assert_eq!(error.code, FileErrorCode::NotOpen);
     }
 
@@ -648,7 +697,12 @@ mod tests {
             let version = self.0.file_open(path, &TestDisk).unwrap().version;
             let length = crate::docs::changes::utf16_len(text);
             self.0
-                .file_push(path, version, vec![update(json!([length, [0, "+"]]))])
+                .file_push(
+                    path,
+                    &self.0.file_open(path, &TestDisk).unwrap().doc_id,
+                    version,
+                    vec![update(json!([length, [0, "+"]]))],
+                )
                 .unwrap();
             io::write_atomic(path, text, line_ending, bom)
         }
@@ -660,7 +714,12 @@ mod tests {
         let (registry, recorder) = registry();
         registry.file_open(&path, &TestDisk).unwrap();
         registry
-            .file_push(&path, 0, vec![update(json!([8, [0, "3😀"]]))])
+            .file_push(
+                &path,
+                &id(&registry, &path),
+                0,
+                vec![update(json!([8, [0, "3😀"]]))],
+            )
             .unwrap();
         let saved = registry.file_save(&path, &TestDisk).unwrap();
         assert_eq!(saved.version, 1);
@@ -682,7 +741,12 @@ mod tests {
         let (registry, _) = registry();
         registry.file_open(&path, &TestDisk).unwrap();
         registry
-            .file_push(&path, 0, vec![update(json!([1, [0, "b"]]))])
+            .file_push(
+                &path,
+                &id(&registry, &path),
+                0,
+                vec![update(json!([1, [0, "b"]]))],
+            )
             .unwrap();
         let saved = registry.file_save(&path, &TypingDisk(&registry)).unwrap();
         assert_eq!(saved.version, 1);
@@ -698,7 +762,12 @@ mod tests {
         let (registry, recorder) = registry();
         registry.file_open(&path, &TestDisk).unwrap();
         registry
-            .file_push(&path, 0, vec![update(json!([1, [0, "y"]]))])
+            .file_push(
+                &path,
+                &id(&registry, &path),
+                0,
+                vec![update(json!([1, [0, "y"]]))],
+            )
             .unwrap();
         let error = registry.file_save(&path, &FailingDisk).unwrap_err();
         assert_eq!(error.message, "disk full");
@@ -732,7 +801,12 @@ mod tests {
         std::thread::sleep(Duration::from_millis(20));
         let pushed_at = Instant::now();
         registry
-            .file_push(&path, 0, vec![update(json!([[0, "z"]]))])
+            .file_push(
+                &path,
+                &id(&registry, &path),
+                0,
+                vec![update(json!([[0, "z"]]))],
+            )
             .unwrap();
         assert_eq!(waiting.join().unwrap(), path);
         assert!(pushed_at.elapsed() >= SAVE_DELAY);
@@ -774,7 +848,12 @@ mod tests {
         let (registry, recorder) = registry();
         registry.file_open(&path, &TestDisk).unwrap();
         registry
-            .file_push(&path, 0, vec![update(json!([1, [0, "b"]]))])
+            .file_push(
+                &path,
+                &id(&registry, &path),
+                0,
+                vec![update(json!([1, [0, "b"]]))],
+            )
             .unwrap();
         registry.file_save(&path, &TestDisk).unwrap();
         registry.file_changed_on_disk(&path, false, &TestDisk);
@@ -788,7 +867,12 @@ mod tests {
         let (registry, recorder) = registry();
         registry.file_open(&path, &TestDisk).unwrap();
         registry
-            .file_push(&path, 0, vec![update(json!([[3, "ONE"], 11]))])
+            .file_push(
+                &path,
+                &id(&registry, &path),
+                0,
+                vec![update(json!([[3, "ONE"], 11]))],
+            )
             .unwrap();
         fs::write(&path, b"one\ntwo\nTHREE\n").unwrap();
         registry.file_changed_on_disk(&path, false, &TestDisk);
@@ -810,7 +894,12 @@ mod tests {
         let (registry, _) = registry();
         registry.file_open(&path, &TestDisk).unwrap();
         registry
-            .file_push(&path, 0, vec![update(json!([3, [0, "𝄞"], 5]))])
+            .file_push(
+                &path,
+                &id(&registry, &path),
+                0,
+                vec![update(json!([3, [0, "𝄞"], 5]))],
+            )
             .unwrap();
         fs::write(&path, "a😀\r\nb\r\nc ž\r\n".as_bytes()).unwrap();
         registry.file_changed_on_disk(&path, false, &TestDisk);
@@ -824,7 +913,12 @@ mod tests {
         let (registry, recorder) = registry();
         registry.file_open(&path, &TestDisk).unwrap();
         registry
-            .file_push(&path, 0, vec![update(json!([4, [3, "mine"], 1]))])
+            .file_push(
+                &path,
+                &id(&registry, &path),
+                0,
+                vec![update(json!([4, [3, "mine"], 1]))],
+            )
             .unwrap();
         fs::write(&path, b"one\ntheirs\n").unwrap();
         registry.file_changed_on_disk(&path, false, &TestDisk);
@@ -844,7 +938,12 @@ mod tests {
 
         fs::write(&path, b"one\nlater\n").unwrap();
         registry
-            .file_push(&path, 1, vec![update(json!([4, [4, "again"], 1]))])
+            .file_push(
+                &path,
+                &id(&registry, &path),
+                1,
+                vec![update(json!([4, [4, "again"], 1]))],
+            )
             .unwrap();
         registry.file_changed_on_disk(&path, false, &TestDisk);
         registry
@@ -864,7 +963,12 @@ mod tests {
         fs::remove_file(&path).unwrap();
         registry.file_changed_on_disk(&path, true, &TestDisk);
         registry
-            .file_push(&path, 0, vec![update(json!([4, [0, "!"]]))])
+            .file_push(
+                &path,
+                &id(&registry, &path),
+                0,
+                vec![update(json!([4, [0, "!"]]))],
+            )
             .unwrap();
         registry.file_save(&path, &TestDisk).unwrap();
         assert!(!path.exists());
@@ -876,15 +980,43 @@ mod tests {
     }
 
     #[test]
+    fn a_reopened_file_refuses_the_old_document_and_tells_events_apart() {
+        let path = scratch("reopen", b"a");
+        let (registry, recorder) = registry();
+        let old = registry.file_open(&path, &TestDisk).unwrap().doc_id;
+        registry
+            .file_push(&path, &old, 0, vec![update(json!([1, [0, "b"]]))])
+            .unwrap();
+        registry.file_discard(&path);
+        let new = registry.file_open(&path, &TestDisk).unwrap().doc_id;
+        assert_ne!(old, new);
+        let error = registry
+            .file_push(&path, &old, 0, vec![update(json!([1, [0, "c"]]))])
+            .unwrap_err();
+        assert_eq!(error.code, FileErrorCode::NotOpen);
+        assert_eq!(
+            registry.file_pull(&path, &old, 0).unwrap_err().code,
+            FileErrorCode::NotOpen
+        );
+        assert_eq!(recorder.file_docs.lock().unwrap()[0].doc_id, old);
+    }
+
+    #[test]
     fn discarding_drops_a_document_without_writing() {
         let path = scratch("discard", b"keep");
         let (registry, _) = registry();
         registry.file_open(&path, &TestDisk).unwrap();
         registry
-            .file_push(&path, 0, vec![update(json!([[4, "lost"]]))])
+            .file_push(
+                &path,
+                &id(&registry, &path),
+                0,
+                vec![update(json!([[4, "lost"]]))],
+            )
             .unwrap();
+        let doc_id = id(&registry, &path);
         registry.file_discard(&path);
         assert_eq!(fs::read(&path).unwrap(), b"keep");
-        assert!(registry.file_pull(&path, 0).is_err());
+        assert!(registry.file_pull(&path, &doc_id, 0).is_err());
     }
 }

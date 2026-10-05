@@ -87,7 +87,12 @@ src/
    "removed". Mixed line endings are normalized on open and the majority ending (LF on a tie) is
    used once the file is edited; `io::decode` and its "mixed files reach the editor unchanged"
    behaviour are gone.
-6. **`Collab` API**, for spec C: `new(text)`, `text()`, `version()`, `apply(&[Update]) -> Result<String>`
+6. **Each opening of a file has a `docId`.** `file_doc_open` returns it, `file_doc_push` and
+   `file_doc_pull` take it, and every `file-doc-*` event carries it, as notes carry
+   `collectionId`. A file closed and opened again (or replaced by Save As onto its own path)
+   starts over at version 0, so without it an update still in flight from the earlier opening
+   would apply to the new one. A push or pull for an earlier opening fails with `NotOpen`.
+7. **`Collab` API**, for spec C: `new(text)`, `text()`, `version()`, `apply(&[Update]) -> Result<String>`
    (pure), `commit(text, updates) -> from`, `replace(client_id, text) -> Option<(from, updates)>`
    (minimal diff), `pull(since) -> Result<Pulled>`. Notes persist between `apply` and `commit`;
    files call `commit` directly.
