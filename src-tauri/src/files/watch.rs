@@ -14,7 +14,6 @@ use serde::Serialize;
 
 use super::io;
 
-pub const CHANGED_EVENT: &str = "file-changed";
 pub const INTERVAL: Duration = Duration::from_secs(1);
 
 #[derive(Clone, Debug, PartialEq, Eq)]

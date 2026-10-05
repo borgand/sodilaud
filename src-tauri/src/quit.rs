@@ -105,8 +105,17 @@ pub fn request(app: &AppHandle) {
     }
 }
 
-/// Remembers which windows were showing, so the next launch restores them.
+/// Writes any autosave still pending and remembers which windows were
+/// showing, so the next launch restores them.
 fn exit(app: &AppHandle) {
+    if let (Some(registry), Some(files)) = (
+        app.try_state::<crate::docs::commands::SharedRegistry>(),
+        app.try_state::<crate::files::Files>(),
+    ) {
+        for error in registry.file_flush_all(&*files) {
+            eprintln!("Could not save a file before quitting: {}", error.message);
+        }
+    }
     let visible = |label: &str| {
         app.get_webview_window(label)
             .and_then(|window| window.is_visible().ok())

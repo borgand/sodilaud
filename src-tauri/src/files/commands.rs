@@ -5,9 +5,12 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use tauri::{State, Window};
 
-use super::io::{self, FileText, LineEnding};
+use super::io::{self, LineEnding};
 use super::store::FileLists;
 use super::{FileError, Files};
+use crate::docs::commands::SharedRegistry;
+use crate::docs::files::{FileOpened, FileSaved, Resolve};
+use crate::docs::registry::{Pulled, Pushed, Update};
 use crate::quicknotes::window::MAIN_LABEL;
 
 pub const OPEN_REQUEST_EVENT: &str = "file-open-request";
@@ -59,19 +62,13 @@ fn lists_view(lists: FileLists) -> Lists {
     }
 }
 
-fn open_granted(files: &Files, path: &Path) -> Result<FileText, FileError> {
-    let file = io::read(path)?;
-    files.update_lists(|lists| lists.opened(&file.path));
-    files.record(path, &file.hash);
-    Ok(file)
-}
-
-/// Open File: the native dialog, then the chosen file.
+/// Open File: the native dialog. The page opens the chosen file with
+/// `file_doc_open`.
 #[tauri::command]
 pub fn file_open_dialog(
     window: Window,
     files: State<'_, Files>,
-) -> Result<Option<FileText>, FileError> {
+) -> Result<Option<String>, FileError> {
     require_main(&window)?;
     let Some(chosen) = rfd::FileDialog::new()
         .set_title("Open File")
@@ -82,14 +79,16 @@ pub fn file_open_dialog(
         return Ok(None);
     };
     let path = files.grant(&chosen)?;
-    open_granted(&files, &path).map(Some)
+    Ok(Some(path.to_string_lossy().to_string()))
 }
 
-/// Save As, and the first save of a new file.
+/// Save As, and the first save of a new file. The page then opens the new
+/// file with `file_doc_open`.
 #[tauri::command]
 pub fn file_save_as_dialog(
     window: Window,
     files: State<'_, Files>,
+    registry: State<'_, SharedRegistry>,
     text: String,
     suggested_name: String,
     line_ending: LineEnding,
@@ -106,6 +105,8 @@ pub fn file_save_as_dialog(
         return Ok(None);
     };
     let path: PathBuf = files.grant(&chosen)?;
+    // A document open at that path would otherwise autosave over this write.
+    registry.file_discard(&path);
     let hash = files.write(&path, &text, line_ending, bom)?;
     let path_text = path.to_string_lossy().to_string();
     files.update_lists(|lists| lists.opened(&path_text));
@@ -116,30 +117,82 @@ pub fn file_save_as_dialog(
     }))
 }
 
-/// Reopens a file the user opened before (from the recent list, or at start-up).
+/// Opens a granted file in the registry: from the dialog, the recent list,
+/// Finder, or at start-up.
 #[tauri::command]
-pub fn file_read(
+pub fn file_doc_open(
     window: Window,
     files: State<'_, Files>,
+    registry: State<'_, SharedRegistry>,
     path: String,
-) -> Result<FileText, FileError> {
+) -> Result<FileOpened, FileError> {
     require_main(&window)?;
     let path = files.require(&path)?;
-    open_granted(&files, &path)
+    let opened = registry.file_open(&path, &*files)?;
+    files.update_lists(|lists| lists.opened(&opened.path));
+    Ok(opened)
 }
 
 #[tauri::command]
-pub fn file_write(
+pub fn file_doc_push(
     window: Window,
     files: State<'_, Files>,
+    registry: State<'_, SharedRegistry>,
     path: String,
-    text: String,
-    line_ending: LineEnding,
-    bom: bool,
-) -> Result<String, FileError> {
+    version: u64,
+    updates: Vec<Update>,
+) -> Result<Pushed, FileError> {
     require_main(&window)?;
-    let path = files.require(&path)?;
-    files.write(&path, &text, line_ending, bom)
+    registry.file_push(&files.require(&path)?, version, updates)
+}
+
+#[tauri::command]
+pub fn file_doc_pull(
+    window: Window,
+    files: State<'_, Files>,
+    registry: State<'_, SharedRegistry>,
+    path: String,
+    since: u64,
+) -> Result<Pulled, FileError> {
+    require_main(&window)?;
+    registry.file_pull(&files.require(&path)?, since)
+}
+
+/// Writes a pending save, then closes the file in the registry.
+#[tauri::command]
+pub fn file_doc_close(
+    window: Window,
+    files: State<'_, Files>,
+    registry: State<'_, SharedRegistry>,
+    path: String,
+) -> Result<(), FileError> {
+    require_main(&window)?;
+    registry.file_close(&files.require(&path)?, &*files)
+}
+
+/// Saves now: Cmd+S, Try again, and a quit.
+#[tauri::command]
+pub fn file_doc_save(
+    window: Window,
+    files: State<'_, Files>,
+    registry: State<'_, SharedRegistry>,
+    path: String,
+) -> Result<FileSaved, FileError> {
+    require_main(&window)?;
+    registry.file_save(&files.require(&path)?, &*files)
+}
+
+/// Reload or Keep mine, after a file changed on disk while it had unsaved edits.
+#[tauri::command]
+pub fn file_doc_resolve(
+    window: Window,
+    files: State<'_, Files>,
+    registry: State<'_, SharedRegistry>,
+    path: String,
+    keep: Resolve,
+) -> Result<(), FileError> {
+    require_main(&window)?;
+    registry.file_resolve(&files.require(&path)?, keep, &*files)
 }
 
 #[tauri::command]

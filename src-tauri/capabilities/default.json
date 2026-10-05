@@ -21,12 +21,16 @@
     "allow-qn-show",
     "allow-file-open-dialog",
     "allow-file-save-as-dialog",
-    "allow-file-read",
-    "allow-file-write",
     "allow-file-lists",
     "allow-file-set-open",
     "allow-file-take-pending",
     "allow-file-forget-recent",
-    "allow-file-confirm-discard"
+    "allow-file-confirm-discard",
+    "allow-file-doc-open",
+    "allow-file-doc-push",
+    "allow-file-doc-pull",
+    "allow-file-doc-close",
+    "allow-file-doc-save",
+    "allow-file-doc-resolve"
   ]
 }
