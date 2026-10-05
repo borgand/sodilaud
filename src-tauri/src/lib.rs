@@ -13,6 +13,7 @@ use tauri::{
 mod clipboard;
 mod docs;
 mod files;
+mod hook;
 mod mcp;
 mod mcp_config;
 mod platform;
@@ -20,6 +21,7 @@ mod quicknotes;
 mod quit;
 mod store;
 mod workspace;
+pub use hook::{run_pretooluse_hook, FLAG as PRETOOLUSE_HOOK_FLAG};
 pub use mcp::run_mcp_stdio;
 
 pub(crate) const PREFERENCES_FILE_NAME: &str = "sodilaud-preferences.json";

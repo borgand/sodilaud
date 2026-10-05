@@ -254,6 +254,7 @@ pub fn start(app: &AppHandle) {
     });
     if let Ok(directory) = app.path().app_data_dir() {
         registry.set_comment_dir(directory.join(crate::store::comments::DIRECTORY));
+        registry.set_coedit_mirror(directory.join(crate::docs::coedit::FILE_NAME));
     }
     let saving = app.clone();
     thread::spawn(move || loop {

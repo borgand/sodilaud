@@ -115,6 +115,7 @@ fn exit(app: &AppHandle) {
         for error in registry.file_flush_all(&*files) {
             eprintln!("Could not save a file before quitting: {}", error.message);
         }
+        registry.coedit_clear_mirror();
     }
     let visible = |label: &str| {
         app.get_webview_window(label)
