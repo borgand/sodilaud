@@ -184,13 +184,10 @@ pub(crate) fn set_mcp_permissions(
     tools: Vec<String>,
 ) -> Result<(), String> {
     let tools = permission_set(tools)?;
-    mcp_config::save(
-        &config_path(&app)?,
-        &McpConfig {
-            enabled: true,
-            permissions: permission_map(&tools),
-        },
-    )?;
+    let path = config_path(&app)?;
+    let mut config = mcp_config::load(&path);
+    config.permissions = permission_map(&tools);
+    mcp_config::save(&path, &config)?;
     *state.permissions.write().map_err(|e| e.to_string())? = tools;
     Ok(())
 }
@@ -1492,15 +1489,12 @@ impl SodilaudServer {
                 "Permission for open_document is disabled. Enable it in MCP Configuration.".into(),
             ));
         }
-        if let Err(error) = crate::files::agent_document(&args.path) {
-            return Ok(tool_error(error.message));
-        }
-        let Some(app) = &self.app else {
-            return Ok(tool_error(
-                "Opening documents needs the running Sodilaud app".into(),
-            ));
+        let opened = match &self.app {
+            Some(app) => crate::files::open_for_agent(app, &args.path),
+            None => crate::files::agent_document(&args.path)
+                .and_then(|_| Err(crate::files::FileError::not_granted(Path::new(&args.path)))),
         };
-        match crate::files::open_for_agent(app, &args.path) {
+        match opened {
             Ok(opened) => successful_result(opened),
             Err(error) => Ok(tool_error(error.message)),
         }
