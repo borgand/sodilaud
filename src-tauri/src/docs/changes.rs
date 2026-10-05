@@ -331,6 +331,28 @@ pub(crate) fn diff(old: &str, new: &str) -> Value {
     builder.finish()
 }
 
+/// A change set over a document of `length` UTF-16 units that replaces each
+/// `from..to` with its text. The ranges must be sorted and must not overlap.
+pub(crate) fn from_replacements(length: usize, replacements: &[(usize, usize, &str)]) -> Value {
+    let mut parts = Vec::new();
+    let mut position = 0;
+    for &(from, to, text) in replacements {
+        if from > position {
+            parts.push(Value::from(from - position));
+        }
+        let mut part = vec![Value::from(to - from)];
+        if !text.is_empty() {
+            part.extend(lines(text));
+        }
+        parts.push(Value::Array(part));
+        position = to;
+    }
+    if length > position {
+        parts.push(Value::from(length - position));
+    }
+    Value::Array(parts)
+}
+
 /// Replaces the whole of `document` with `replacement`.
 #[cfg(test)]
 pub(crate) fn replace_all(document: &str, replacement: &str) -> Value {
