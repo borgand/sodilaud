@@ -28,6 +28,7 @@ pub enum FileErrorCode {
     NotUtf8,
     TooLarge,
     WrongWindow,
+    NotOpen,
     Io,
 }
 
@@ -41,6 +42,17 @@ pub struct FileError {
 impl FileError {
     fn new(code: FileErrorCode, message: String) -> Self {
         Self { code, message }
+    }
+
+    pub fn not_open(path: &Path) -> Self {
+        Self::new(
+            FileErrorCode::NotOpen,
+            format!("{} is not open in Sodilaud.", io::file_name(path)),
+        )
+    }
+
+    pub fn other(message: String) -> Self {
+        Self::new(FileErrorCode::Io, message)
     }
 
     pub fn not_granted(path: &Path) -> Self {

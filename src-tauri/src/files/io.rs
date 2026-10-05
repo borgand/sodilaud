@@ -61,6 +61,25 @@ pub fn decode(bytes: &[u8]) -> Result<(String, LineEnding, bool), FileError> {
     }
 }
 
+/// Splits a file into registry text, which uses `\n` only as CM6 does, the
+/// line ending most of its lines use, and whether it had a BOM.
+pub fn decode_normalized(bytes: &[u8]) -> Result<(String, LineEnding, bool), FileError> {
+    let (body, bom) = match bytes.strip_prefix(BOM) {
+        Some(rest) => (rest, true),
+        None => (bytes, false),
+    };
+    let text = std::str::from_utf8(body).map_err(|_| FileError::not_utf8())?;
+    let crlf = text.matches("\r\n").count();
+    let lf = text.matches('\n').count() - crlf;
+    let line_ending = if crlf > lf {
+        LineEnding::Crlf
+    } else {
+        LineEnding::Lf
+    };
+    let text = crate::docs::changes::normalize_newlines(text).into_owned();
+    Ok((text, line_ending, bom))
+}
+
 pub fn encode(text: &str, line_ending: LineEnding, bom: bool) -> Vec<u8> {
     let body = match line_ending {
         LineEnding::Lf => text.to_string(),
@@ -80,7 +99,8 @@ pub fn file_name(path: &Path) -> String {
         .unwrap_or_else(|| path.to_string_lossy().to_string())
 }
 
-pub fn read(path: &Path) -> Result<FileText, FileError> {
+/// The bytes of a regular file of at most `MAX_BYTES`.
+pub fn read_bytes(path: &Path) -> Result<Vec<u8>, FileError> {
     let metadata = fs::metadata(path).map_err(|error| FileError::io(path, &error))?;
     if !metadata.is_file() {
         return Err(FileError::not_found(path));
@@ -88,7 +108,11 @@ pub fn read(path: &Path) -> Result<FileText, FileError> {
     if metadata.len() > MAX_BYTES {
         return Err(FileError::too_large(path));
     }
-    let bytes = fs::read(path).map_err(|error| FileError::io(path, &error))?;
+    fs::read(path).map_err(|error| FileError::io(path, &error))
+}
+
+pub fn read(path: &Path) -> Result<FileText, FileError> {
+    let bytes = read_bytes(path)?;
     let (text, line_ending, bom) = decode(&bytes)?;
     Ok(FileText {
         path: path.to_string_lossy().to_string(),
@@ -192,6 +216,17 @@ mod tests {
         assert_eq!(text, "a\r\nb\nc");
         assert_eq!(line_ending, LineEnding::Lf);
         assert_eq!(encode(&text, line_ending, false), b"a\r\nb\nc");
+    }
+
+    #[test]
+    fn registry_text_is_normalized_and_keeps_the_majority_ending() {
+        let (text, line_ending, bom) = decode_normalized(b"\xEF\xBB\xBFa\r\nb\r\nc\n").unwrap();
+        assert_eq!(
+            (text.as_str(), line_ending, bom),
+            ("a\nb\nc\n", LineEnding::Crlf, true)
+        );
+        let (text, line_ending, _) = decode_normalized(b"a\r\nb\nc\n").unwrap();
+        assert_eq!((text.as_str(), line_ending), ("a\nb\nc\n", LineEnding::Lf));
     }
 
     #[cfg(unix)]

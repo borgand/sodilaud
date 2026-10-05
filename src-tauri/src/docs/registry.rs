@@ -20,6 +20,7 @@ use super::collab::Collab;
 #[cfg(test)]
 use super::collab::HISTORY;
 pub(crate) use super::collab::{Pulled, Pushed, Update};
+use super::files::{FileDocUpdates, FileDocs, FileExternal, FileSaved};
 use crate::store::workspace::{self as store, Folder, Note, TrashEntry};
 
 pub(crate) const UNTITLED: &str = "Untitled Scratchpad";
@@ -107,6 +108,9 @@ pub(crate) struct DocUpdates {
 pub(crate) trait Sink: Send + Sync {
     fn changed(&self, state: &State);
     fn doc(&self, updates: &DocUpdates);
+    fn file_doc(&self, _updates: &FileDocUpdates) {}
+    fn file_saved(&self, _saved: &FileSaved) {}
+    fn file_external(&self, _external: &FileExternal) {}
 }
 
 #[derive(Debug, Deserialize)]
@@ -430,6 +434,8 @@ impl Workspace {
 
 pub(crate) struct Registry {
     workspace: Mutex<Option<Workspace>>,
+    /// Files open in the main window, independent of the open workspace.
+    pub(crate) files: FileDocs,
     sink: RwLock<Option<Arc<dyn Sink>>>,
     seq: AtomicU64,
 }
@@ -438,6 +444,7 @@ impl Default for Registry {
     fn default() -> Self {
         Self {
             workspace: Mutex::new(None),
+            files: FileDocs::default(),
             sink: RwLock::new(None),
             seq: AtomicU64::new(0),
         }
@@ -449,7 +456,7 @@ impl Registry {
         *self.sink.write().unwrap_or_else(PoisonError::into_inner) = Some(sink);
     }
 
-    fn sink(&self) -> Option<Arc<dyn Sink>> {
+    pub(super) fn sink(&self) -> Option<Arc<dyn Sink>> {
         self.sink
             .read()
             .unwrap_or_else(PoisonError::into_inner)
@@ -911,6 +918,9 @@ pub(crate) mod tests {
     pub(crate) struct Recorder {
         pub(crate) changed: Mutex<Vec<State>>,
         pub(crate) docs: Mutex<Vec<DocUpdates>>,
+        pub(crate) file_docs: Mutex<Vec<FileDocUpdates>>,
+        pub(crate) saved: Mutex<Vec<FileSaved>>,
+        pub(crate) external: Mutex<Vec<FileExternal>>,
     }
 
     impl Sink for Recorder {
@@ -919,6 +929,15 @@ pub(crate) mod tests {
         }
         fn doc(&self, updates: &DocUpdates) {
             self.docs.lock().unwrap().push(updates.clone());
+        }
+        fn file_doc(&self, updates: &FileDocUpdates) {
+            self.file_docs.lock().unwrap().push(updates.clone());
+        }
+        fn file_saved(&self, saved: &FileSaved) {
+            self.saved.lock().unwrap().push(saved.clone());
+        }
+        fn file_external(&self, external: &FileExternal) {
+            self.external.lock().unwrap().push(external.clone());
         }
     }
 
