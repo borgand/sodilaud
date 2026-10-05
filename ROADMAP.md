@@ -85,15 +85,17 @@ Open: whether `push_quick_note` is on by default, given that write tools reset t
 
 ## 4. External files and folders
 
-Status: files done in 0.10; folders, merge and the rest not started
+Status: files done in 0.10; files joined the document registry with 3-way merge of outside
+edits (design: [`docs/superpowers/specs/2026-10-05-files-in-registry-design.md`](docs/superpowers/specs/2026-10-05-files-in-registry-design.md));
+folders and the rest not started
 
 Shipped: New, Open, Save As, autosave, open and recent lists across restarts, outside-edit
-detection (reload a clean file, Reload / Keep mine for an edited one), `.md`, `.markdown` and
-`.txt`, and Finder "Open With". The file list lives in the main window's sidebar, not in
-`doc-*` windows. Still to do, in this order:
+detection, `.md`, `.markdown` and `.txt`, and Finder "Open With". The file list lives in the
+main window's sidebar, not in `doc-*` windows. Open files are registry documents: Rust owns
+the text, autosaves it, and merges outside edits (Reload / Keep mine only when both sides
+changed the same lines). Still to do, in this order:
 
 - Open Folder and the Folders section below
-- 3-way merge of outside edits (needs item 2)
 - `.csv` and `.tsv`
 - MCP `open_document` and drafts
 - Find and replace, split view and compare for files

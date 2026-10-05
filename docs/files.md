@@ -33,16 +33,20 @@ reopen at the next launch.
 ## Saving
 
 Once a file has a location, every change is saved automatically 400 ms after you stop typing.
-`Cmd/Ctrl+S` saves at once. A new file is not saved until you give it a name with
+`Cmd/Ctrl+S` saves at once. Saving happens in the app itself, not in the window, so a change
+that reached it is written even if the window is busy. A new file is not saved until you give it a name with
 `Cmd/Ctrl+S` or Save As; closing it, or quitting, with text in it asks whether to save it
 first.
 
 Saving writes a temporary file next to the original and renames it into place, so a crash
 leaves either the old or the new version, never half of each. The file keeps its
-permissions, its byte-order mark if it had one, and CRLF line endings if it used them
-throughout. Nothing else about the file changes: Sodilaud does not reformat Markdown, trim
-whitespace or add a final newline. A file that mixes LF and CRLF line endings is saved with
-LF once you edit it.
+permissions, its byte-order mark if it had one, and its line endings (LF or CRLF). Nothing
+else about the file changes: Sodilaud does not reformat Markdown, trim whitespace or add a
+final newline. A file that mixes LF and CRLF line endings is saved with the one most of its
+lines use, and only once you edit it; opening a file never writes it.
+
+Save As starts a fresh undo history for the file under its new name. When a file that already
+had a name is saved under another one, edits made just before are saved to the old file too.
 
 If a save fails (for example, the disk is full or the file became read-only), a bar above the
 editor says so with **Try again** and **Save As…**, the file stays marked as unsaved, and a
@@ -52,10 +56,14 @@ quit is cancelled until it is saved.
 
 Sodilaud checks the open files for changes about once a second.
 
-- **A file you have not edited** is reloaded quietly.
-- **A file you are editing** shows "changed on disk while you were editing it", with
-  **Reload** (take the version on disk) and **Keep mine** (save yours over it). Nothing is
-  saved until you choose.
+- **A file without unsaved changes** takes the new text quietly. Only the lines that changed
+  are replaced, so the cursor, the scroll position and your undo history stay.
+- **A file with unsaved changes** gets the outside edit merged in when the two touched
+  different lines: both changes stay, and the result is saved. Your typing is never lost or
+  undone, and undo takes back only your own changes.
+- **A file where both sides changed the same lines** keeps your text and shows "changed on
+  disk while you were editing it", with **Reload** (take the version on disk) and **Keep mine**
+  (save yours over it). Nothing is saved until you choose.
 - **A file that was deleted or moved** shows "no longer on disk", with **Save As…** and
   **Close**. Nothing is saved to the old location.
 

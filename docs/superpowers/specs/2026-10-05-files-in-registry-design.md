@@ -1,7 +1,7 @@
 # Files in the document registry - design
 
 Date: 2026-10-05
-Status: awaiting written-spec review
+Status: implemented 2026-10-05 on `feat/files-registry`
 Branch: `feat/files-registry`
 Roadmap: the "3-way merge of outside edits" part of item 4 in
 [`ROADMAP.md`](../../../ROADMAP.md), and the prerequisite for item 5. Builds on
@@ -64,6 +64,33 @@ src/
   file-editor.js       buffers hold version and saved version; autosave timers removed
   files.js             model: saved state from events, external = merged | conflict | removed
 ```
+
+## Changes made during implementation
+
+1. **Two more commands and one more event.** `file_doc_save(path) -> { path, version, hash, error }`
+   writes at once (Cmd+S, Try again, and a quit, which then reports a failed write and
+   cancels, as before). `file_doc_resolve(path, keep: "disk" | "mine")` answers the conflict
+   banner. Event `file-doc-external { path, kind: "applied" | "merged" | "conflict" | "removed" }`
+   tells the page what an outside edit did; the page keeps `external` as `null`, `"conflict"`
+   or `"removed"`, and a merge needs no banner.
+2. **`file_read` and `file_write` are removed.** `file_doc_open` reads and `file_save_as_dialog`
+   writes, so nothing used them. `file_open_dialog` returns the granted path, which the page
+   opens with `file_doc_open`.
+3. **Save As drops a document open at the chosen path** (`file_discard`) before writing, so its
+   pending autosave cannot overwrite the new file. The page then opens the new path as a fresh
+   document: the editor keeps its text and selection, but undo history starts over.
+4. **Quit flushes twice.** The page sends its unconfirmed changes and calls `file_doc_save` for
+   every file, so a failed write cancels the quit; Rust also writes any pending save in
+   `quit::exit`, for a window that never answered.
+5. **Edge cases.** An outside edit that is not UTF-8 counts as a conflict (Reload then reports
+   the encoding). A removed file that comes back with the bytes last seen is no longer
+   "removed". Mixed line endings are normalized on open and the majority ending (LF on a tie) is
+   used once the file is edited; `io::decode` and its "mixed files reach the editor unchanged"
+   behaviour are gone.
+6. **`Collab` API**, for spec C: `new(text)`, `text()`, `version()`, `apply(&[Update]) -> Result<String>`
+   (pure), `commit(text, updates) -> from`, `replace(client_id, text) -> Option<(from, updates)>`
+   (minimal diff), `pull(since) -> Result<Pulled>`. Notes persist between `apply` and `commit`;
+   files call `commit` directly.
 
 ## Risks
 
