@@ -36,6 +36,8 @@ export function createFakeFileDocs({ emit, disk = {} }) {
   const writes = [];
   let failure = null;
   let opening = 0;
+  let hold = false;
+  let commentCounter = 0;
   const version = (doc) => doc.updates.length;
 
   const find = (path, docId) => {
@@ -92,12 +94,69 @@ export function createFakeFileDocs({ emit, disk = {} }) {
     savedVersion: doc.savedVersion, external: doc.external
   });
 
+  // Comments, in the simplest form the page can tell apart from Rust's: no
+  // mapping through edits (the Rust tests cover that), only states and events.
+  const commentsEvent = (path, doc) => ({ path, docId: doc.docId, version: version(doc), comments: structuredClone(doc.comments) });
+  const changedComments = (path, doc) => emit("comments-changed", commentsEvent(path, doc));
+  const commentOf = ({ doc: { path, docId }, id }) => {
+    const doc = find(path, docId);
+    const comment = doc.comments.find(c => c.id === id);
+    if (!comment) throw new Error("This comment no longer exists");
+    return { path, doc, comment };
+  };
+  function addComment(path, doc, { from, to, body, author = "owner", replyTo = null }) {
+    const comment = {
+      id: `c_${(commentCounter += 1)}`, author, state: author === "agent" ? "open" : hold ? "held" : "queued", orphaned: false,
+      from, to, anchoredText: doc.text.slice(from, to), headingPath: [], body, note: null, replyTo, createdAt: commentCounter, updatedAt: commentCounter
+    };
+    doc.comments.push(comment);
+    changedComments(path, doc);
+    return comment;
+  }
+  const commentCommands = {
+    comments_get: ({ doc: { path, docId } }) => commentsEvent(path, find(path, docId)),
+    comment_add: ({ doc: { path, docId }, version: at, from, to, body, replyTo }) => {
+      const doc = find(path, docId);
+      if (replyTo) {
+        const parent = doc.comments.find(c => c.id === replyTo);
+        return addComment(path, doc, { from: parent.from, to: parent.to, body, replyTo });
+      }
+      if (at !== version(doc)) throw new Error("The selected text changed; select it again");
+      return addComment(path, doc, { from, to, body });
+    },
+    comment_edit: (args) => { const { path, doc, comment } = commentOf(args); comment.body = args.body; changedComments(path, doc); },
+    comment_delete: (args) => { const { path, doc, comment } = commentOf(args); doc.comments = doc.comments.filter(c => c !== comment); changedComments(path, doc); },
+    comment_resolve: (args) => {
+      const { path, doc, comment } = commentOf(args);
+      comment.state = "resolved";
+      const parent = doc.comments.find(c => c.id === comment.replyTo);
+      if (parent) parent.state = "resolved";
+      changedComments(path, doc);
+    },
+    comment_resend: (args) => { const { path, doc, comment } = commentOf(args); comment.state = "queued"; changedComments(path, doc); },
+    comments_send_review: ({ doc: { path, docId } }) => {
+      const doc = find(path, docId);
+      const held = doc.comments.filter(c => c.state === "held");
+      held.forEach(c => { c.state = "queued"; });
+      changedComments(path, doc);
+      return held.length;
+    },
+    comments_clear_resolved: ({ doc: { path, docId } }) => {
+      const doc = find(path, docId);
+      doc.comments = doc.comments.filter(c => c.state !== "resolved");
+      changedComments(path, doc);
+    },
+    coedit_get_state: () => ({ holdForReview: hold, listening: false }),
+    coedit_set_hold: ({ hold: next }) => { hold = next; return { holdForReview: hold, listening: false }; }
+  };
+
   const commands = {
+    ...commentCommands,
     file_doc_open: ({ path }) => {
       if (!docs.has(path)) {
         if (!files.has(path)) throw { code: "NotFound", message: `${name(path)} is no longer on disk.` };
         const text = files.get(path);
-        docs.set(path, { docId: `doc-${(opening += 1)}`, text, synced: text, updates: [], savedVersion: 0, external: null, error: null, timer: null });
+        docs.set(path, { docId: `doc-${(opening += 1)}`, text, synced: text, updates: [], savedVersion: 0, external: null, error: null, timer: null, comments: [] });
       }
       return opened(path, docs.get(path));
     },
@@ -156,6 +215,35 @@ export function createFakeFileDocs({ emit, disk = {} }) {
       replace(path, doc, merged);
       emit("file-doc-external", { docId: doc.docId, path, kind: "merged" });
       schedule(path, doc);
+    },
+    comments: (path) => docs.get(path)?.comments ?? [],
+    /** An agent's apply_edit landing: one update from client `agent`. */
+    agentEdit(path, changes) {
+      const doc = docs.get(path);
+      const from = version(doc);
+      const updates = [{ clientID: "agent", changes }];
+      doc.text = applyUpdatesToText(doc.text, updates);
+      doc.updates.push(...updates);
+      emit("file-doc-updates", { docId: doc.docId, path, from, updates, version: version(doc) });
+    },
+    agentComment(path, anchor, body) {
+      const doc = docs.get(path);
+      const from = doc.text.indexOf(anchor);
+      return addComment(path, doc, { from, to: from + anchor.length, body, author: "agent" });
+    },
+    /** An agent took the queued comments. */
+    take(path) {
+      const doc = docs.get(path);
+      const taken = doc.comments.filter(c => c.state === "queued");
+      taken.forEach(c => { c.state = "sent"; });
+      changedComments(path, doc);
+      return taken;
+    },
+    resolveAsAgent(path, id, note) {
+      const doc = docs.get(path);
+      const comment = doc.comments.find(c => c.id === id);
+      Object.assign(comment, { state: "resolved", note });
+      changedComments(path, doc);
     },
     /** What `file_save_as_dialog` does to a document open at the chosen path. */
     discard(path) {

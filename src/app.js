@@ -460,6 +460,8 @@ async function registerNativeHandlers() {
     await listen("file-doc-saved", ({ payload }) => fileEditor.handleSaved(payload));
     await listen("file-doc-external", ({ payload }) => fileEditor.handleExternal(payload));
     await listen("file-open-request", () => fileEditor.takePending());
+    await listen("comments-changed", ({ payload }) => fileEditor.receiveComments(payload));
+    await listen("coedit-state", ({ payload }) => fileEditor.setCoeditState(payload));
   } catch (error) {
     console.error("Failed to register the main window's native handlers", error);
   }
@@ -486,6 +488,11 @@ async function startApp() {
   }
   await loadQuickNotesConfig();
   await fileEditor.restore();
+  try {
+    fileEditor.setCoeditState(await invoke("coedit_get_state"));
+  } catch (error) {
+    console.error("Could not read the comment mode", error);
+  }
 }
 
 if (document.readyState === "loading") {
