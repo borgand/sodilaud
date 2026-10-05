@@ -106,6 +106,22 @@ pub fn order_front_key(window: &WebviewWindow) -> bool {
     present(window)
 }
 
+/// Orders the window in, opaque and clickable, without making it key, so typing
+/// stays with the app in front. Returns false when it is not a panel, which would
+/// activate Sodilaud.
+pub fn order_front_passive(window: &WebviewWindow) -> bool {
+    let Ok(ns_window) = ns_window(window) else {
+        return false;
+    };
+    if ns_window.downcast_ref::<NSPanel>().is_none() {
+        return false;
+    }
+    ns_window.setIgnoresMouseEvents(false);
+    ns_window.setAlphaValue(1.0);
+    ns_window.orderFrontRegardless();
+    true
+}
+
 /// Takes the panel off the screen visually at once while it stays ordered in, so
 /// WebKit still paints the page (the emptied DOM) before `order_out`.
 pub fn conceal(window: &WebviewWindow) {

@@ -14,6 +14,7 @@ mod clipboard;
 mod docs;
 mod files;
 mod mcp;
+mod mcp_config;
 mod platform;
 mod quicknotes;
 mod quit;
@@ -408,6 +409,7 @@ pub fn run(context: tauri::Context<tauri::Wry>) {
             docs::commands::doc_push,
             docs::commands::doc_pull,
             mcp::get_mcp_connection_info,
+            mcp::get_mcp_state,
             mcp::start_mcp_server,
             mcp::set_mcp_permissions,
             mcp::stop_mcp_server,
@@ -453,6 +455,7 @@ pub fn run(context: tauri::Context<tauri::Wry>) {
             if let Err(error) = docs::commands::start(app.handle()) {
                 eprintln!("Could not open the notes collection: {error}");
             }
+            mcp::start_saved(app.handle());
             quicknotes::start(app.handle());
             files::start(app.handle());
             quicknotes::restore_windows(app.handle());

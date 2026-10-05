@@ -26,9 +26,34 @@ const GEOMETRY_SAVE_DELAY: Duration = Duration::from_millis(300);
 const MIN_WIDTH: f64 = 420.0;
 const MIN_HEIGHT: f64 = 320.0;
 
+/// The note the page should select when the panel shows.
+pub enum Focus {
+    Title(String),
+    /// An agent's push: titles can repeat, IDs cannot.
+    Id(String),
+}
+
 #[derive(Clone, serde::Serialize)]
 struct FocusNote {
-    title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    title: Option<String>,
+}
+
+impl Focus {
+    fn payload(self) -> FocusNote {
+        match self {
+            Focus::Id(id) => FocusNote {
+                id: Some(id),
+                title: None,
+            },
+            Focus::Title(title) => FocusNote {
+                id: None,
+                title: Some(title),
+            },
+        }
+    }
 }
 
 /// Builds the hidden panel unless it exists. Must run on the main thread.
@@ -78,19 +103,38 @@ pub fn toggle(app: &AppHandle) {
 }
 
 /// Shows the panel where it was, back on a visible screen if needed, and asks the
-/// page to select the note titled `focus_note` when one is given.
-pub fn show(app: &AppHandle, focus_note: Option<String>) {
+/// page to select `focus` when one is given.
+pub fn show(app: &AppHandle, focus: Option<Focus>) {
     let Some(window) = ensure_created(app) else {
         return;
     };
+    place(app, &window);
+    present(&window);
+    if let Some(focus) = focus {
+        let _ = window.emit_to(LABEL, FOCUS_NOTE_EVENT, focus.payload());
+    }
+}
+
+/// Shows the panel, if hidden, without taking keyboard focus from the app in
+/// front, and selects `focus`. For agent pushes, which arrive while the user is
+/// busy elsewhere. Must run on the main thread.
+pub fn reveal(app: &AppHandle, focus: Focus) {
+    let Some(window) = ensure_created(app) else {
+        return;
+    };
+    let _ = window.emit_to(LABEL, FOCUS_NOTE_EVENT, focus.payload());
+    if is_visible(app) {
+        return;
+    }
+    place(app, &window);
+    present_passive(&window);
+}
+
+fn place(app: &AppHandle, window: &WebviewWindow) {
     let saved = app.state::<QuickNotes>().config().frame;
-    if let Some(frame) = placement(&window, saved) {
+    if let Some(frame) = placement(window, saved) {
         let _ = window.set_size(PhysicalSize::new(frame.width, frame.height));
         let _ = window.set_position(PhysicalPosition::new(frame.x, frame.y));
-    }
-    present(&window);
-    if let Some(title) = focus_note {
-        let _ = window.emit_to(LABEL, FOCUS_NOTE_EVENT, FocusNote { title });
     }
 }
 
@@ -107,6 +151,18 @@ fn present(window: &WebviewWindow) {
     let _ = window.show();
     let _ = window.unminimize();
     let _ = window.set_focus();
+}
+
+#[cfg(target_os = "macos")]
+fn present_passive(window: &WebviewWindow) {
+    if !crate::platform::panel::order_front_passive(window) {
+        let _ = window.show();
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn present_passive(window: &WebviewWindow) {
+    let _ = window.show();
 }
 
 pub fn hide(app: &AppHandle) {
@@ -208,5 +264,22 @@ pub fn show_main(app: &AppHandle, section: Option<String>) {
     }
     if let Some(section) = section {
         let _ = app.emit_to(MAIN_LABEL, OPEN_SECTION_EVENT, section);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_page_is_told_which_note_by_id_or_by_title() {
+        assert_eq!(
+            serde_json::to_value(Focus::Id("note_1".into()).payload()).unwrap(),
+            serde_json::json!({ "id": "note_1" })
+        );
+        assert_eq!(
+            serde_json::to_value(Focus::Title("Welcome".into()).payload()).unwrap(),
+            serde_json::json!({ "title": "Welcome" })
+        );
     }
 }

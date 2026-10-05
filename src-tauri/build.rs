@@ -22,6 +22,7 @@ fn main() {
             "doc_push",
             "doc_pull",
             "get_mcp_connection_info",
+            "get_mcp_state",
             "start_mcp_server",
             "set_mcp_permissions",
             "stop_mcp_server",
