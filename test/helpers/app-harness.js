@@ -10,7 +10,6 @@ import { readFile } from "node:fs/promises";
 import { JSDOM } from "jsdom";
 import * as Diff from "diff";
 import { polyfillLayout } from "./cm-dom.js";
-import { createFakeRegistry } from "./fake-registry.js";
 
 export const settle = (ms = 50) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -42,11 +41,7 @@ async function bootPage({ page, script, label, storage = {}, handlers = {}, regi
   }
 
   const eventListeners = new Map();
-  // Tauri delivers events asynchronously, after the command that caused them.
-  const registry = createFakeRegistry({
-    ...registryOptions,
-    emit: (name, payload) => setTimeout(() => eventListeners.get(name)?.({ payload: structuredClone(payload) }), 0)
-  });
+  let registry;
 
   const invocations = [];
   async function invoke(command, args) {
@@ -100,9 +95,16 @@ async function bootPage({ page, script, label, storage = {}, handlers = {}, regi
 
   beforeBoot?.(dom);
   // CodeMirror reads navigator.platform once, when its module first loads, to
-  // pick Cmd or Ctrl for Mod. Load it only after the booted navigator is in
-  // place, or it reports the host OS instead of the `platform` asked for.
+  // pick Cmd or Ctrl for Mod. Load it, and the fake registry that imports it,
+  // only after the booted navigator is in place, or it reports the host OS
+  // instead of the `platform` asked for.
   const { EditorView } = await import("../../src/vendor/codemirror.js");
+  const { createFakeRegistry } = await import("./fake-registry.js");
+  // Tauri delivers events asynchronously, after the command that caused them.
+  registry = createFakeRegistry({
+    ...registryOptions,
+    emit: (name, payload) => setTimeout(() => eventListeners.get(name)?.({ payload: structuredClone(payload) }), 0)
+  });
   await import(`${new URL(`../../src/${script}`, import.meta.url).href}?boot=${instance}`);
   await settle();
 

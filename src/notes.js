@@ -539,7 +539,16 @@ function refreshOpenNoteViews(noteId) {
       if (note && document.activeElement !== secondaryNoteTitle) secondaryNoteTitle.value = note.title;
       updateSecondaryMarkdownPreview();
     }
-    if (isCompareMode && (activeNoteId === noteId || secondaryNoteId === noteId)) scheduleNoteComparisonRefresh();
+    // A pending refresh reads the editors when it fires, and the echo of this
+    // page's own push leaves the texts as last compared: neither needs a new one.
+    if (
+      isCompareMode &&
+      (activeNoteId === noteId || secondaryNoteId === noteId) &&
+      !isNoteComparisonPending &&
+      !noteComparisonMatches(primaryEditor.getText(), secondaryEditor.getText())
+    ) {
+      scheduleNoteComparisonRefresh();
+    }
     if (isFindResultsOpen && isFindAllNotesMode) renderFindResults();
     if (isFindBarOpen && activeNoteId === noteId) runFind({ preserveActive: true, selectActive: false });
     populateSecondaryNoteSelect();
