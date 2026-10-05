@@ -492,6 +492,7 @@ function applyWorkspaceState(state, { initial = false } = {}) {
   if (!isCreatingFolder && editingFolderId === null) renderNoteList(searchInput.value);
   populateSecondaryNoteSelect();
   if (isFindResultsOpen && isFindAllNotesMode) renderFindResults();
+  if (pendingFocusNoteId !== null) focusPendingNote();
 }
 
 // Text another client changed: this page's editors, another pane, or an agent.
@@ -3599,12 +3600,13 @@ async function registerQuickNotesHandlers() {
   if (typeof listen !== "function") return;
   try {
     await listen("quicknotes-focus-note", ({ payload }) => {
+      if (typeof payload?.id === "string") {
+        pendingFocusNoteId = payload.id;
+        focusPendingNote();
+        return;
+      }
       const note = notes.find(candidate => candidate.title === payload?.title);
-      if (!note) return;
-      if (isFocusMode) toggleFocusMode();
-      activeNoteId = note.id;
-      renderNoteList(searchInput.value);
-      loadActiveNote();
+      if (note) focusNote(note);
     });
     await listen("quicknotes-open-menu", () => {
       toggleActionsDropdown(true);
@@ -3612,6 +3614,27 @@ async function registerQuickNotesHandlers() {
   } catch (error) {
     console.error("Failed to register the Quick Notes handlers", error);
   }
+}
+
+// An agent's push names its note by ID. The event can arrive before the state
+// that contains the note, so the request waits for it.
+let pendingFocusNoteId = null;
+
+function focusPendingNote() {
+  const note = notes.find(candidate => candidate.id === pendingFocusNoteId);
+  if (!note) return;
+  pendingFocusNoteId = null;
+  focusNote(note);
+}
+
+function focusNote(note) {
+  if (isFocusMode) toggleFocusMode();
+  if (!isNotePinned(note) && collapsedFolderIds.delete(validFolderId(note.folderId, folders) || UNFILED_SECTION_ID)) {
+    persistCollapsedFolders();
+  }
+  activeNoteId = note.id;
+  renderNoteList(searchInput.value);
+  loadActiveNote();
 }
 
 function hideQuickNotes() {
