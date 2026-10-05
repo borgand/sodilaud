@@ -4,6 +4,7 @@ pub(crate) mod agent;
 pub(crate) mod changes;
 pub(crate) mod collab;
 pub(crate) mod commands;
+pub(crate) mod comments;
 pub(crate) mod files;
 pub(crate) mod merge;
 pub(crate) mod registry;

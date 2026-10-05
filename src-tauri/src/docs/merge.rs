@@ -128,7 +128,7 @@ fn whitespace_tolerant(haystack: &str, needle: &str) -> Vec<(usize, usize)> {
 
 /// The window of whole lines most like `needle`, if it is alike enough and
 /// no other window that does not overlap it is as alike.
-fn fuzzy(haystack: &str, needle: &str) -> Result<(usize, usize), Reason> {
+pub(crate) fn fuzzy(haystack: &str, needle: &str) -> Result<(usize, usize), Reason> {
     let wanted = needle.strip_suffix('\n').unwrap_or(needle);
     if wanted.trim().is_empty() || wanted.chars().count() > FUZZY_MAX_CHARS {
         return Err(Reason::NotFound);
