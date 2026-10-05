@@ -17,6 +17,9 @@ pub struct McpConfig {
     pub enabled: bool,
     #[serde(default)]
     pub permissions: BTreeMap<String, bool>,
+    /// Owner comments wait for Send review instead of going to agents at once.
+    #[serde(default, rename = "holdForReview")]
+    pub hold_for_review: bool,
 }
 
 pub fn load(path: &Path) -> McpConfig {
@@ -67,6 +70,7 @@ mod tests {
         let config = McpConfig {
             enabled: true,
             permissions: [("create_note".to_string(), true)].into(),
+            hold_for_review: true,
         };
         save(&path, &config).unwrap();
         assert_eq!(load(&path), config);

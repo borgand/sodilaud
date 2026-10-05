@@ -273,6 +273,21 @@ pub(crate) fn get_mcp_connection_info() -> Result<McpConnectionInfo, String> {
     })
 }
 
+/// Send as I go, or Hold for review. Saved before it is applied.
+#[tauri::command]
+pub(crate) fn coedit_set_hold(
+    app: tauri::AppHandle,
+    registry: tauri::State<'_, SharedRegistry>,
+    hold: bool,
+) -> Result<crate::docs::coedit::CoeditState, String> {
+    let path = config_path(&app)?;
+    let mut config = mcp_config::load(&path);
+    config.hold_for_review = hold;
+    mcp_config::save(&path, &config)?;
+    registry.set_hold_for_review(hold);
+    Ok(registry.coedit_state())
+}
+
 #[tauri::command]
 pub(crate) async fn start_mcp_server(
     app: tauri::AppHandle,
@@ -299,12 +314,16 @@ pub(crate) async fn get_mcp_state(state: tauri::State<'_, McpState>) -> Result<M
     })
 }
 
-/// Starts access at launch when it was on at quit, before any page loads.
+/// Starts access at launch when it was on at quit, before any page loads,
+/// and restores how owner comments are sent.
 pub(crate) fn start_saved(app: &tauri::AppHandle) {
     let Ok(path) = config_path(app) else {
         return;
     };
-    if !mcp_config::load(&path).enabled {
+    let config = mcp_config::load(&path);
+    app.state::<SharedRegistry>()
+        .set_hold_for_review(config.hold_for_review);
+    if !config.enabled {
         return;
     }
     let state = app.state::<McpState>();
@@ -343,6 +362,7 @@ async fn start(app: &tauri::AppHandle, state: &McpState) -> Result<McpConnection
         &McpConfig {
             enabled: true,
             permissions: permission_map(&permissions),
+            ..mcp_config::load(&path)
         },
     ) {
         eprintln!("{error}");

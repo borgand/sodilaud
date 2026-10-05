@@ -7,11 +7,11 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 
-use serde::Serialize;
-use tauri::{AppHandle, Emitter, Manager};
+use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Emitter, Manager, Window};
 
-use super::coedit::CoeditState;
-use super::comments::CommentsEvent;
+use super::coedit::{CoeditState, PageDoc};
+use super::comments::{Comment, CommentsEvent};
 use super::files::{FileDocUpdates, FileExternal, FileSaved};
 use super::registry::{
     DocUpdates, LocalCollection, Pulled, Pushed, Registry, Sink, State, Structure, Update,
@@ -310,4 +310,135 @@ pub(crate) fn doc_pull(
     since: u64,
 ) -> Result<Pulled, String> {
     registry.pull(&collection_id, &note_id, since)
+}
+
+/// A document as a window names it: a note by its collection, or a file by
+/// the opening the main window knows.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DocAddress {
+    collection_id: Option<String>,
+    note_id: Option<String>,
+    path: Option<String>,
+    doc_id: Option<String>,
+}
+
+/// Notes are only the Quick Notes window's, files only the main window's,
+/// and a file must be one the owner opened.
+fn page_doc(window: &Window, doc: DocAddress) -> Result<PageDoc, String> {
+    match doc {
+        DocAddress {
+            collection_id: Some(collection_id),
+            note_id: Some(note_id),
+            path: None,
+            ..
+        } if window.label() == quicknotes::window::LABEL => Ok(PageDoc::Note {
+            collection_id,
+            note_id,
+        }),
+        DocAddress {
+            path: Some(path),
+            doc_id: Some(doc_id),
+            note_id: None,
+            ..
+        } if window.label() == quicknotes::window::MAIN_LABEL => {
+            let files = window.state::<crate::files::Files>();
+            let path = files.require(&path).map_err(|error| error.message)?;
+            Ok(PageDoc::File { path, doc_id })
+        }
+        _ => Err("This window cannot comment on that document".into()),
+    }
+}
+
+#[tauri::command]
+pub(crate) fn comments_get(
+    window: Window,
+    registry: tauri::State<'_, SharedRegistry>,
+    doc: DocAddress,
+) -> Result<CommentsEvent, String> {
+    registry.comments_get(&page_doc(&window, doc)?)
+}
+
+#[tauri::command]
+pub(crate) fn comment_add(
+    window: Window,
+    registry: tauri::State<'_, SharedRegistry>,
+    doc: DocAddress,
+    version: u64,
+    from: usize,
+    to: usize,
+    body: String,
+    reply_to: Option<String>,
+) -> Result<Comment, String> {
+    registry.comment_add(
+        &page_doc(&window, doc)?,
+        version,
+        (from, to),
+        &body,
+        reply_to.as_deref(),
+    )
+}
+
+#[tauri::command]
+pub(crate) fn comment_edit(
+    window: Window,
+    registry: tauri::State<'_, SharedRegistry>,
+    doc: DocAddress,
+    id: String,
+    body: String,
+) -> Result<(), String> {
+    registry.comment_edit(&page_doc(&window, doc)?, &id, &body)
+}
+
+#[tauri::command]
+pub(crate) fn comment_delete(
+    window: Window,
+    registry: tauri::State<'_, SharedRegistry>,
+    doc: DocAddress,
+    id: String,
+) -> Result<(), String> {
+    registry.comment_delete(&page_doc(&window, doc)?, &id)
+}
+
+#[tauri::command]
+pub(crate) fn comment_resolve(
+    window: Window,
+    registry: tauri::State<'_, SharedRegistry>,
+    doc: DocAddress,
+    id: String,
+) -> Result<(), String> {
+    registry.comment_resolve(&page_doc(&window, doc)?, &id)
+}
+
+#[tauri::command]
+pub(crate) fn comment_resend(
+    window: Window,
+    registry: tauri::State<'_, SharedRegistry>,
+    doc: DocAddress,
+    id: String,
+) -> Result<(), String> {
+    registry.comment_resend(&page_doc(&window, doc)?, &id)
+}
+
+#[tauri::command]
+pub(crate) fn comments_send_review(
+    window: Window,
+    registry: tauri::State<'_, SharedRegistry>,
+    doc: DocAddress,
+) -> Result<usize, String> {
+    registry.comments_send_review(&page_doc(&window, doc)?)
+}
+
+#[tauri::command]
+pub(crate) fn comments_clear_resolved(
+    window: Window,
+    registry: tauri::State<'_, SharedRegistry>,
+    doc: DocAddress,
+) -> Result<(), String> {
+    registry.comments_clear_resolved(&page_doc(&window, doc)?)
+}
+
+#[tauri::command]
+pub(crate) fn coedit_get_state(registry: tauri::State<'_, SharedRegistry>) -> CoeditState {
+    registry.coedit_state()
 }

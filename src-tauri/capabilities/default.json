@@ -31,6 +31,16 @@
     "allow-file-doc-pull",
     "allow-file-doc-close",
     "allow-file-doc-save",
-    "allow-file-doc-resolve"
+    "allow-file-doc-resolve",
+    "allow-comments-get",
+    "allow-comment-add",
+    "allow-comment-edit",
+    "allow-comment-delete",
+    "allow-comment-resolve",
+    "allow-comment-resend",
+    "allow-comments-send-review",
+    "allow-comments-clear-resolved",
+    "allow-coedit-get-state",
+    "allow-coedit-set-hold"
   ]
 }

@@ -107,3 +107,18 @@ test("file contents are sent to the main window only", async () => {
     assert.match(commands, new RegExp(`emit_to\\(\\s*quicknotes::window::MAIN_LABEL,\\s*${event}`), event);
   }
 });
+
+test("both windows comment, each only on its own documents", async () => {
+  const caps = await capabilities();
+  const holders = (command) => caps.filter(cap => cap.permissions.includes(grant(command))).map(cap => cap.identifier).sort();
+  for (const command of ["comments_get", "comment_add", "comment_edit", "comment_delete", "comment_resolve", "comment_resend", "comments_send_review", "comments_clear_resolved", "coedit_get_state", "coedit_set_hold"]) {
+    assert.deepEqual(holders(command), ["default", "quicknotes"], command);
+  }
+  for (const command of ["coedit_integration_plan", "coedit_integration_install", "coedit_integration_remove"]) {
+    assert.deepEqual(holders(command), ["quicknotes"], command);
+  }
+  const commands = await readFile("src-tauri/src/docs/commands.rs", "utf8");
+  const pageDoc = commands.slice(commands.indexOf("fn page_doc"), commands.indexOf("fn comments_get"));
+  assert.match(pageDoc, /note_id: Some[\s\S]*window\.label\(\) == quicknotes::window::LABEL/);
+  assert.match(pageDoc, /doc_id: Some[\s\S]*window\.label\(\) == quicknotes::window::MAIN_LABEL[\s\S]*files\.require/);
+});
