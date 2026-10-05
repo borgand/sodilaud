@@ -32,7 +32,7 @@ use crate::docs::registry::Workspace;
 use crate::mcp_config::{self, McpConfig};
 use crate::store::workspace::{Folder, Note};
 
-const MCP_PORT: u16 = 39_393;
+pub(crate) const MCP_PORT: u16 = 39_393;
 const MCP_TOKEN_FILE_NAME: &str = "sodilaud-mcp-token";
 const CONNECTION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 const INITIAL_ACCEPT_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(25);

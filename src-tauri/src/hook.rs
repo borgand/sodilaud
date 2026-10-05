@@ -54,9 +54,19 @@ pub(crate) fn decide(input: &str, list: &Path) -> Option<&'static str> {
 }
 
 /// Runs the hook and returns the process exit code.
+fn sodilaud_listening() -> bool {
+    let address = std::net::SocketAddr::from(([127, 0, 0, 1], crate::mcp::MCP_PORT));
+    std::net::TcpStream::connect_timeout(&address, std::time::Duration::from_millis(200)).is_ok()
+}
+
 pub fn run_pretooluse_hook(identifier: &str) -> i32 {
     let mut input = String::new();
     if std::io::stdin().read_to_string(&mut input).is_err() {
+        return 0;
+    }
+    // A list left behind by a crash must not block edits while Sodilaud is not
+    // there to take them.
+    if !sodilaud_listening() {
         return 0;
     }
     let Some(data) = dirs::data_dir() else {

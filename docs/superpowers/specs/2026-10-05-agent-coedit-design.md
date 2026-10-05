@@ -143,7 +143,9 @@ src/
    the hook protects it from the first call.
 8. **Hook data.** `coedit.json` is `{ "files": [...] }` in the app data folder
    (`<data dir>/<identifier>`, which the hook finds without Tauri). It is emptied at launch and at
-   quit; after a crash it is stale until the next launch.
+   quit. The hook first checks that something listens on the MCP port and allows the edit
+   when nothing does, so a list left by a crash, or agent access turned off, never blocks
+   native edits.
 9. **Integration.** The plan also reports whether an older install is present, so the button reads
    Install or Update. `serde_json`'s `preserve_order` feature is on, so `settings.json` keeps its key
    order. Claude Code must name the server `sodilaud`, since the command, skill and hook refer to

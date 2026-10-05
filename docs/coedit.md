@@ -66,7 +66,8 @@ It lists what it will add and changes nothing until you choose **Install**:
 - the `sodilaud` skill, which tells Claude Code when to show you a file, push a quick note,
   open a review or co-edit,
 - a hook that stops Claude Code from editing a co-edited file with its own Edit or Write tools
-  and points it at Sodilaud instead. Your `~/.claude/settings.json` is copied to
+  and points it at Sodilaud instead. It only does so while Sodilaud runs with agent access
+  on; otherwise Claude Code edits the file normally. Your `~/.claude/settings.json` is copied to
   `settings.json.bak` first; other settings and hooks are kept.
 
 Add Sodilaud to Claude Code as an MCP server named `sodilaud` (see [MCP agent
