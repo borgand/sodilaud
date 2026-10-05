@@ -1,7 +1,7 @@
 # Agent push and open - design
 
 Date: 2026-10-05
-Status: awaiting written-spec review
+Status: implemented
 Branch: `feat/mcp-push-open`
 Roadmap: item 3 (agent push) and the `open_document` part of item 4 in
 [`ROADMAP.md`](../../../ROADMAP.md). Sibling specs:
@@ -82,3 +82,24 @@ audit file gets a dated addendum recording this change.
 - MCP socket test: `tools/list` includes both tools; both reject while their permission is off.
 - JS: focus-by-id selects the right note when two notes share a title.
 - Manual: push with the panel hidden, while typing in another app (focus must stay there).
+
+## Changes made during implementation
+
+1. **Page learns the state from Rust.** A new command, `get_mcp_state`, tells the Quick Notes
+   page whether access is on, which functions are enabled and why a remembered start failed.
+   `start_mcp_server` also returns the restored function list, so re-enabling access in the
+   same session brings back the saved choices instead of the read-only defaults.
+2. **Saving.** A permission change that cannot be written to `mcp.json` is refused and the
+   page restores the previous choices. A failed write when access is toggled is logged and
+   the toggle still takes effect.
+3. **New error texts.** The file editor had no error for a relative path or a non-text
+   extension, so `FileError` gained `Unsupported` with two messages for those cases. Missing
+   files, folders, non-UTF-8 and oversized files keep the file editor's texts.
+4. **Focus without key.** On macOS the panel is ordered in without becoming key. On Windows
+   and Linux the panel is shown without `set_focus`; whether the window manager still
+   activates it is up to the platform.
+5. **Selecting the pushed note.** The ID can reach the page before the note does, so the page
+   keeps the request until a state containing the note arrives. It also expands the note's
+   folder if it was collapsed.
+6. **Retries.** `show` is not part of a push's retry fingerprint: retrying with a different
+   `show` returns the original note.

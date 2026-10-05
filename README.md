@@ -41,7 +41,7 @@ New in v0.10: the main window edits `.md`, `.markdown`, and `.txt` files on disk
 
 - **Your file, unchanged.** Saves are atomic and keep the file's permissions, byte-order mark, and CRLF line endings. Sodilaud never reformats a file.
 - **Outside edits handled.** A file changed by another app reloads if you have not edited it, and asks **Reload** or **Keep mine** if you have.
-- **Scoped access.** The main window can reach only files you chose, and agents cannot see files at all.
+- **Scoped access.** The main window can reach only files you chose. Agents cannot read files; with your permission they can ask the main window to open one.
 
 See [editing files](docs/files.md) for the details and limits.
 
@@ -65,7 +65,8 @@ Clipboard history is off by default. Turn it on in **Sodilaud menu → Clipboard
 - Quick Notes: a floating, always-on-top notes panel on a global hotkey that stays open while you work in other apps
 - A Markdown file editor with autosave, recent files, Finder "Open With", and outside-edit detection
 - Clipboard history on macOS: press `⌘⇧V` in any app to pick from your recent copies, with secrets masked, entries kept in memory only, and automatic expiry
-- Optional local MCP agent access with five read tools, eight individually enabled write tools, and a live listening indicator
+- Optional local MCP agent access with five read tools, ten individually enabled write tools, and a live listening indicator; access and permissions are remembered across restarts
+- Agents can push a note into Quick Notes (a **From agents** folder) and open a Markdown or text file in the main window
 - Multiple notes with automatic saving, titles derived from the first line, and quick creation by double-clicking empty sidebar space
 - Live, Source, and Reading editing modes, with inline Markdown rendering and per-line raw source in Live mode
 - Optional Markdown editor coloring and language-aware fenced-code highlighting in Reading mode
@@ -102,8 +103,9 @@ The optional [MCP agent access](docs/mcp.md) uses a stdio mode built into the
 desktop executable and is off by default. While enabled, it can read the collection open
 in Sodilaud, including edits that have not been saved yet. Individually enabled
 write functions can create notes and folders, append text, rename notes and
-folders, move notes between folders, move notes to recoverable trash, and delete
-empty folders. Agents can list trash metadata; restoring and permanently
+folders, move notes between folders, move notes to recoverable trash, delete
+empty folders, push a note into Quick Notes, and open a text file in the main
+window without reading it. Agents can list trash metadata; restoring and permanently
 emptying trash are available only in the UI. Existing-item edits require revision
 checks and support safe retries. A connected agent
 may send returned note contents to its model provider.
@@ -120,12 +122,12 @@ manual test checklist.
 
 Agents work with your Quick Notes, so access is set there: open Quick Notes, open its menu (top right), and turn **Agent access** **On**. The main window's **Sodilaud menu → Agent access…** takes you there. Choose **MCP Configuration** to copy the executable path, `--mcp-stdio` argument, or generic JSON example into a client that supports local stdio MCP servers. Configuration stays available while access is off. Sodilaud must remain open, but the Quick Notes panel does not need to be visible; the accent-colored **MCP listening** indicator appears beside its save status while access is enabled.
 
-Each time access starts, all five read permissions are on and all eight write permissions are off. Use the **Read** and **Write** checkboxes to choose individual functions or select all in a section. Changes apply to connected clients immediately and reset when access is restarted.
+On a new installation, all five read permissions are on and all ten write permissions are off. Use the **Read** and **Write** checkboxes to choose individual functions or select all in a section. Changes apply to connected clients immediately. Sodilaud remembers them, and whether access is on: if access was on when you quit, it starts again at launch with the same permissions.
 
 | Permission group | Functions |
 | --- | --- |
 | Read | List folders, list notes, search notes, read note content, list trash metadata |
-| Write | Create note, create folder, append to note, rename note, move note, rename folder, delete note to trash, delete empty folder |
+| Write | Create note, create folder, append to note, rename note, move note, rename folder, delete note to trash, delete empty folder, push quick note, open document |
 
 Writes to existing items check the current revision before changing anything. Request IDs make retries safe after a timeout or failed save. An agent's changes show up in an open editor without moving your cursor or losing what you are typing. Agents cannot replace an entire note, read trashed note bodies, restore notes, or empty trash. Access applies to all connected local clients and to the collection currently open in Sodilaud, including what you typed moments ago.
 

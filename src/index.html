@@ -558,7 +558,7 @@ function hello() {
           <div class="shortcuts-section">
             <h4 class="shortcuts-heading">Connect an agent</h4>
             <p class="shortcuts-note">Open Quick Notes, turn <strong>Agent access</strong> On in its menu (or choose <strong>Sodilaud menu → Agent access…</strong> here), then open <strong>MCP Configuration</strong> to copy the command, argument, or generic JSON example into a local stdio MCP client. Configuration remains available while access is off. Keep Sodilaud open; Quick Notes may stay hidden. <strong>MCP listening</strong> appears beside its save status while the server is enabled, even if no client is connected.</p>
-            <p class="shortcuts-note">Every time access starts, all five Read functions are enabled and all eight Write functions are disabled. Select individual permissions or <strong>Select all</strong> within a section. Changes apply immediately to all connected clients. Disabling access disconnects clients and resets permissions; reconnect your client after enabling access again.</p>
+            <p class="shortcuts-note">On a new installation, all five Read functions are enabled and all ten Write functions are disabled. Select individual permissions or <strong>Select all</strong> within a section. Changes apply immediately to all connected clients and are remembered, along with whether access is on: access that was on at quit starts again at launch. Disabling access disconnects clients; reconnect your client after enabling access again.</p>
             <p class="shortcuts-note">Agents see the collection currently open, including what you typed moments ago, and may send returned content to their model provider. Only you can restore notes or empty trash. Agents cannot read trashed note bodies or replace an entire note.</p>
             <h4 class="shortcuts-heading">Read functions</h4>
             <div class="cheatsheet-grid mcp-functions-grid">
@@ -631,6 +631,16 @@ function hello() {
                 <div class="cheatsheet-card-title"><code>delete_folder</code></div>
                 <p class="mcp-function-description">Deletes an empty folder with revision checking. Move all assigned notes first, including pinned notes.</p>
                 <p class="mcp-function-parameters"><strong>Required:</strong> <code>collectionId</code>, <code>requestId</code>, <code>folderId</code>, <code>expectedRevision</code> from list_folders</p>
+              </div>
+              <div class="cheatsheet-card">
+                <div class="cheatsheet-card-title"><code>push_quick_note</code></div>
+                <p class="mcp-function-description">Puts a note into the <strong>From agents</strong> folder of the open collection and shows Quick Notes with it selected, without taking keyboard focus. Needs no collection ID.</p>
+                <p class="mcp-function-parameters"><strong>Required:</strong> <code>requestId</code>, <code>title</code><br><strong>Optional:</strong> <code>content</code>, <code>show</code> (default true)</p>
+              </div>
+              <div class="cheatsheet-card">
+                <div class="cheatsheet-card-title"><code>open_document</code></div>
+                <p class="mcp-function-description">Opens an existing <code>.md</code>, <code>.markdown</code> or <code>.txt</code> file in this window, or switches to it. Returns the path, name and size, never the content.</p>
+                <p class="mcp-function-parameters"><strong>Required:</strong> <code>path</code> (absolute)</p>
               </div>
             </div>
           </div>
