@@ -112,7 +112,7 @@ const READ_TOOLS: [&str; 5] = [
     "get_note",
     "list_trash",
 ];
-const WRITE_TOOLS: [&str; 8] = [
+const WRITE_TOOLS: [&str; 9] = [
     "create_note",
     "create_folder",
     "append_to_note",
@@ -121,6 +121,7 @@ const WRITE_TOOLS: [&str; 8] = [
     "rename_folder",
     "delete_note",
     "delete_folder",
+    "push_quick_note",
 ];
 
 fn permission_set(tools: Vec<String>) -> Result<HashSet<String>, String> {
@@ -345,6 +346,7 @@ async fn start(app: &tauri::AppHandle, state: &McpState) -> Result<McpConnection
         listener,
         registry,
         state.permissions.clone(),
+        Some(app.clone()),
         token,
         cancellation.clone(),
     ));
@@ -390,6 +392,7 @@ async fn serve_local_connections(
     listener: TcpListener,
     registry: SharedRegistry,
     permissions: Permissions,
+    app: Option<tauri::AppHandle>,
     token: String,
     cancellation: CancellationToken,
 ) {
@@ -425,6 +428,7 @@ async fn serve_local_connections(
                 };
                 let registry = registry.clone();
                 let permissions = permissions.clone();
+                let app = app.clone();
                 let token = token.clone();
                 let session_cancellation = cancellation.child_token();
                 sessions.spawn(async move {
@@ -443,7 +447,7 @@ async fn serve_local_connections(
                         _ = session_cancellation.cancelled() => return,
                     };
                     if !matches!(authenticated, Ok(Ok(()))) { return; }
-                    serve_mcp_connection(stream, SodilaudServer::new(registry, permissions), session_cancellation).await;
+                    serve_mcp_connection(stream, SodilaudServer::new(registry, permissions, app), session_cancellation).await;
                 });
             }
         }
@@ -863,6 +867,21 @@ struct CreateNoteArgs {
 
 #[derive(Debug, Serialize, serde::Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct PushQuickNoteArgs {
+    /// Unique retry key (1-128 characters). Reuse with identical arguments on retry.
+    request_id: String,
+    /// Explicit title (1-200 characters after trimming).
+    title: String,
+    /// Markdown content, at most 100000 UTF-8 bytes. Defaults to empty.
+    #[serde(default)]
+    content: String,
+    /// Show the Quick Notes panel with the note selected, without taking keyboard focus. Defaults to true.
+    #[serde(skip_serializing)]
+    show: Option<bool>,
+}
+
+#[derive(Debug, Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct CreateFolderArgs {
     /// Collection ID from a recent list_notes or list_folders result.
     collection_id: String,
@@ -1243,15 +1262,22 @@ fn tool_error(message: String) -> CallToolResult {
 struct SodilaudServer {
     registry: SharedRegistry,
     permissions: Permissions,
+    /// The running app, to show what agents push or open. Tests run without one.
+    app: Option<tauri::AppHandle>,
     #[allow(dead_code)]
     tool_router: ToolRouter<Self>,
 }
 
 impl SodilaudServer {
-    fn new(registry: SharedRegistry, permissions: Permissions) -> Self {
+    fn new(
+        registry: SharedRegistry,
+        permissions: Permissions,
+        app: Option<tauri::AppHandle>,
+    ) -> Self {
         Self {
             registry,
             permissions,
+            app,
             tool_router: Self::tool_router(),
         }
     }
@@ -1391,6 +1417,54 @@ impl SodilaudServer {
                 .map_err(|e| McpError::internal_error(e.to_string(), None))?,
         )
         .await
+    }
+
+    /// Put a note into Quick Notes for the user: a list of commands, the result of a chat with no project to save into. It goes into the "From agents" folder of the collection open now (created if missing), and by default the Quick Notes panel shows it without taking keyboard focus. Needs no collectionId. Retry identical arguments after a failure; a requestId is never applied twice. Follow up with append_to_note using the returned note ID and revision.
+    #[tool(annotations(
+        title = "Push quick note",
+        read_only_hint = false,
+        destructive_hint = false,
+        idempotent_hint = true,
+        open_world_hint = false
+    ))]
+    async fn push_quick_note(
+        &self,
+        Parameters(args): Parameters<PushQuickNoteArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        if !self.is_allowed("push_quick_note")? {
+            return Ok(tool_error(
+                "Permission for push_quick_note is disabled. Enable it in MCP Configuration."
+                    .into(),
+            ));
+        }
+        if args.request_id.trim().is_empty() || args.request_id.chars().count() > 128 {
+            return Err(McpError::invalid_params(
+                "requestId must contain 1-128 characters",
+                None,
+            ));
+        }
+        let title = args.title.trim();
+        if title.is_empty() || title.chars().count() > 200 || args.content.len() > 100_000 {
+            return Err(McpError::invalid_params(
+                "title must contain 1-200 characters and content at most 100000 UTF-8 bytes",
+                None,
+            ));
+        }
+        let show = args.show.unwrap_or(true);
+        let arguments = serde_json::to_value(&args)
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        let result = match self.registry.agent_write("push_quick_note", &arguments) {
+            Ok(result) => result,
+            Err(error) => return Ok(tool_error(error)),
+        };
+        if let (true, Some(app), Some(id)) = (show, &self.app, result["note"]["id"].as_str()) {
+            let handle = app.clone();
+            let focus = crate::quicknotes::window::Focus::Id(id.to_string());
+            let _ = app.run_on_main_thread(move || {
+                crate::quicknotes::window::reveal(&handle, focus);
+            });
+        }
+        successful_result(result)
     }
 
     /// Create a folder. Requires explicit write access. Retry using the same requestId.
@@ -1747,7 +1821,7 @@ mod tests {
         let (registry, path) = registry();
         let permissions = Arc::new(RwLock::new(read_permissions()));
         (
-            SodilaudServer::new(registry, permissions.clone()),
+            SodilaudServer::new(registry, permissions.clone(), None),
             permissions,
             path,
         )
@@ -1995,6 +2069,47 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn push_quick_note_is_gated_validated_and_lands_in_from_agents() {
+        let (server, permissions, path) = server();
+        let push = |args: serde_json::Value| {
+            server.push_quick_note(Parameters(serde_json::from_value(args).unwrap()))
+        };
+        let off = push(serde_json::json!({"requestId": "p", "title": "T"}))
+            .await
+            .unwrap();
+        assert_eq!(off.is_error, Some(true));
+        permissions
+            .write()
+            .unwrap()
+            .insert("push_quick_note".into());
+        for invalid in [
+            serde_json::json!({"requestId": "", "title": "T"}),
+            serde_json::json!({"requestId": "x".repeat(129), "title": "T"}),
+            serde_json::json!({"requestId": "p", "title": "  "}),
+            serde_json::json!({"requestId": "p", "title": "t".repeat(201)}),
+            serde_json::json!({"requestId": "p", "title": "T", "content": "x".repeat(100_001)}),
+        ] {
+            assert!(push(invalid).await.is_err());
+        }
+        let pushed = push(serde_json::json!({"requestId": "p", "title": "T", "show": false}))
+            .await
+            .unwrap();
+        assert_eq!(pushed.is_error, Some(false));
+        let result = pushed.structured_content.unwrap();
+        assert_eq!(result["collectionId"], "test-collection");
+        assert!(result["revision"].is_string());
+        let again = push(serde_json::json!({"requestId": "p", "title": "T", "show": true}))
+            .await
+            .unwrap();
+        assert_eq!(
+            again.structured_content.unwrap(),
+            result,
+            "show does not change the request"
+        );
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[tokio::test]
     async fn an_append_reaches_the_registry_once_per_request_id() {
         let (server, permissions, path) = server();
         permissions.write().unwrap().insert("append_to_note".into());
@@ -2178,7 +2293,7 @@ mod tests {
         .await;
         let tools = receive_json(&mut client).await;
         let tools = tools["result"]["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 13);
+        assert_eq!(tools.len(), 15);
         for forbidden in ["empty_trash", "purge_trash", "restore_note"] {
             assert!(!tools.iter().any(|tool| tool["name"] == forbidden));
         }
@@ -2267,6 +2382,16 @@ mod tests {
                 8,
                 "create_folder",
                 serde_json::json!({"collectionId":"test-collection", "requestId":"f1", "name":"New"}),
+            ),
+            (
+                13,
+                "push_quick_note",
+                serde_json::json!({"requestId":"p1", "title":"Build steps"}),
+            ),
+            (
+                14,
+                "open_document",
+                serde_json::json!({"path":"/tmp/notes.md"}),
             ),
         ] {
             send_json(
@@ -2408,7 +2533,7 @@ mod tests {
         )
         .await;
         let tools = receive_json(&mut client).await;
-        assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 13);
+        assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 15);
         cancellation.cancel();
         server.await.unwrap();
     }
@@ -2429,6 +2554,7 @@ mod tests {
             listener,
             registry.clone(),
             permissions.clone(),
+            None,
             "a".repeat(64),
             cancellation.clone(),
         ));

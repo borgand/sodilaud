@@ -226,7 +226,7 @@ let activeNotification = null;
 let previewHighlightsRendered = false;
 let isMcpEnabled = false;
 const MCP_READ_TOOLS = ["list_folders", "list_notes", "search_notes", "get_note", "list_trash"];
-const MCP_WRITE_TOOLS = ["create_note", "create_folder", "append_to_note", "rename_note", "move_note", "rename_folder", "delete_note", "delete_folder"];
+const MCP_WRITE_TOOLS = ["create_note", "create_folder", "append_to_note", "rename_note", "move_note", "rename_folder", "delete_note", "delete_folder", "push_quick_note"];
 const defaultMcpPermissions = () => Object.fromEntries([...MCP_READ_TOOLS.map(tool => [tool, true]), ...MCP_WRITE_TOOLS.map(tool => [tool, false])]);
 let mcpPermissions = defaultMcpPermissions();
 const mcpPermissionsFrom = tools => Object.fromEntries([...MCP_READ_TOOLS, ...MCP_WRITE_TOOLS].map(tool => [tool, tools.includes(tool)]));
