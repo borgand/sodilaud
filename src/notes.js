@@ -20,6 +20,8 @@ import { applyPlatformShortcutLabels, isMacLikePlatform } from "./platform-label
 import { compareNoteText, emptyNoteComparison } from "./note-compare.js";
 import { findTextMatches } from "./find.js";
 import { createMarkdownEditor } from "./editor-view.js";
+import { commentsExtension, startComment } from "./editor-comments.js";
+import { createComments } from "./comments-panel.js";
 import { markdownEditingCommands, runFormatAction } from "./editor-commands.js";
 import { createFormatToolbar } from "./format-toolbar.js";
 import { livePreview } from "./editor-live-preview.js";
@@ -143,6 +145,7 @@ const ctxInsertBtn = document.getElementById("ctx-insert");
 const ctxInsertMenu = document.getElementById("ctx-insert-menu");
 const ctxSelectAllBtn = document.getElementById("ctx-select-all");
 const ctxFindBtn = document.getElementById("ctx-find");
+const ctxCommentBtn = document.getElementById("ctx-comment");
 const ctxOpenSideBtn = document.getElementById("ctx-open-side");
 const ctxSidebarDivider = document.getElementById("ctx-sidebar-divider");
 const ctxPinBtn = document.getElementById("ctx-pin-note");
@@ -283,6 +286,7 @@ const noteSync = createNoteSync({
   collectionId: () => collectionId,
   ready: () => structureQueue,
   label: "quicknotes",
+  onRemote: remote => comments.remote(remote),
   onStatus: ({ failed }) => {
     textSyncFailed = failed;
     refreshSaveStatus();
@@ -439,6 +443,7 @@ function showNoteInPane(pane, editor, note) {
   paneStates[pane].delete(note.id);
   if (cached) editor.restoreState(cached);
   else editor.loadText(note.syncedContent ?? note.content, { extensions: noteSync.extension(note.id, note.version ?? 0) });
+  comments.shown();
 }
 
 const openNoteText = noteId => {
@@ -576,6 +581,8 @@ async function registerWorkspaceListeners() {
   await listen("notes-doc-updates", ({ payload }) => {
     applyDocUpdates(payload).catch(error => console.error("Could not apply a note change", error));
   });
+  await listen("comments-changed", ({ payload }) => comments.receive(payload));
+  await listen("coedit-state", ({ payload }) => comments.setState(payload));
 }
 
 const trashUi = createTrashUi({
@@ -591,6 +598,30 @@ const trashUi = createTrashUi({
 function refreshTrashUi() { trashUi.refresh(); }
 
 let mcpConnectionInfo = null;
+
+// Comments on the notes the panes show. The drawer follows the active pane.
+const paneDocs = () => {
+  const shown = [];
+  if (primaryEditor && activeNoteId) shown.push({ view: primaryEditor.view, doc: { collectionId, noteId: activeNoteId }, pane: "primary" });
+  if (secondaryEditor && isSplitNoteMode && secondaryNoteId) {
+    shown.push({ view: secondaryEditor.view, doc: { collectionId, noteId: secondaryNoteId }, pane: "secondary" });
+  }
+  return shown;
+};
+const comments = createComments({
+  document,
+  invoke,
+  root: document.getElementById("comments-panel"),
+  countButton: document.getElementById("comments-count-btn"),
+  editors: paneDocs,
+  active: () => {
+    if (currentLayoutMode === "reading" || !collectionId) return null;
+    const pane = isSplitNoteMode ? activePane : "primary";
+    return paneDocs().find(shown => shown.pane === pane) ?? null;
+  },
+  flush: () => noteSync.flush(),
+  notify: message => showNotification(message)
+});
 
 const WORD_COUNT_DEBOUNCE_MS = 150;
 let wordCountTimer = null;
@@ -615,7 +646,17 @@ function createAppEditor(host, { ariaLabel, pane }) {
     mode: editorModeFor(currentLayoutMode),
     syntaxHighlighting: appearance.syntaxHighlighting,
     lineNumbers: appearance.lineNumbers,
-    extensions: [markdownEditingCommands(), livePreview({ onOpenLink: openExternalHref })],
+    extensions: [
+      markdownEditingCommands(),
+      livePreview({ onOpenLink: openExternalHref }),
+      commentsExtension({
+        onSubmit: (view, comment) => comments.submit(view, comment),
+        onSelect: id => {
+          setActivePane(view === secondaryEditor?.view ? "secondary" : "primary");
+          comments.select(id);
+        }
+      })
+    ],
     onChange: pane === "primary" ? handleEditorInput : handleSecondaryEditorInput,
     onSelectionChange: () => {
       if (activePane !== pane) return;
@@ -723,6 +764,11 @@ async function init() {
   renderNoteList();
   loadActiveNote();
   await loadMcpState();
+  try {
+    comments.setState(await invoke("coedit_get_state"));
+  } catch (error) {
+    console.error("Could not read the comment mode", error);
+  }
 }
 
 // ----------------------------------------------------
@@ -1549,6 +1595,8 @@ function setLayoutMode(value, { persist = true } = {}) {
   primaryEditor.setMode(editorModeFor(mode));
   secondaryEditor.setMode(editorModeFor(mode));
   setFormatControlsEnabled(mode !== "reading");
+  document.getElementById("comment-btn").disabled = mode === "reading";
+  comments.render();
   if (mode === "reading") updateMarkdownPreview();
 
   if (persist) localStorage.setItem("sodilaud_layout_mode", mode);
@@ -2106,6 +2154,15 @@ function attachEventListeners() {
   });
   ctxSelectAllBtn.addEventListener("click", handleContextSelectAll);
   ctxFindBtn.addEventListener("click", handleContextFind);
+  ctxCommentBtn.addEventListener("click", () => {
+    const editor = contextMenuEditor;
+    hideContextMenu();
+    if (!editor) return;
+    setActivePane(editor === secondaryEditor ? "secondary" : "primary");
+    startComment(editor.view);
+  });
+  document.getElementById("comment-btn").addEventListener("click", () => comments.start());
+  document.getElementById("comments-count-btn").addEventListener("click", () => comments.toggle());
   ctxOpenSideBtn.addEventListener("click", () => {
     hideContextMenu();
     if (contextMenuNoteId) {
@@ -3028,6 +3085,7 @@ function showContextMenu(e, noteId = null, folderId = null) {
     ctxPasteBtn.style.display = "none";
     ctxSelectAllBtn.style.display = "none";
     ctxFindBtn.style.display = "none";
+    ctxCommentBtn.style.display = "none";
     ctxInsertDivider.style.display = "none";
     ctxInsertGroup.style.display = "none";
   } else if (folderId) {
@@ -3047,6 +3105,7 @@ function showContextMenu(e, noteId = null, folderId = null) {
     ctxPasteBtn.style.display = "none";
     ctxSelectAllBtn.style.display = "none";
     ctxFindBtn.style.display = "none";
+    ctxCommentBtn.style.display = "none";
     ctxInsertDivider.style.display = "none";
     ctxInsertGroup.style.display = "none";
   } else {
@@ -3092,6 +3151,7 @@ function showContextMenu(e, noteId = null, folderId = null) {
     
     ctxCutBtn.disabled = !hasSelection;
     ctxCopyBtn.disabled = !hasSelection;
+    ctxCommentBtn.style.display = contextMenuEditor && hasSelection && currentLayoutMode !== "reading" ? "flex" : "none";
   }
   
   const menuWidth = 180;
@@ -3545,7 +3605,9 @@ function updateSecondaryMarkdownPreview() {
 }
 
 function setActivePane(pane) {
+  const changed = activePane !== pane;
   activePane = pane;
+  if (changed) comments.render();
   if (pane === "secondary") {
     primaryPaneWrapper.classList.remove("active-pane");
     secondaryPaneWrapper.classList.add("active-pane");

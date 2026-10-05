@@ -50,7 +50,9 @@ async function bootPage({ page, script, label, storage = {}, handlers = {}, regi
     invocations.push({ command, args });
     const handler = handlers[command];
     if (typeof handler === "function") return handler(args);
-    const fake = registry.commands[command] ?? fileDocs.commands[command];
+    // Comment commands exist for notes and files alike; each window has its own.
+    const [first, second] = label === "main" ? [fileDocs, registry] : [registry, fileDocs];
+    const fake = first.commands[command] ?? second.commands[command];
     if (fake) return structuredClone(fake(structuredClone(args ?? {})) ?? null);
     return null;
   }

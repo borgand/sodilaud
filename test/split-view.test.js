@@ -158,7 +158,7 @@ test("compare shows a change rail for blank lines when line numbers are off", as
   document.getElementById("compare-notes-btn").click();
 
   assert.ok(secondary.querySelectorAll(".cm-lineNumbers").length > 0, "the gutter shows while comparing");
-  assert.deepEqual(texts(secondary, ".cm-gutterElement.cm-diff-line-added"), ["2"]);
+  assert.deepEqual(texts(secondary, ".cm-lineNumbers .cm-gutterElement.cm-diff-line-added"), ["2"]);
   assert.equal(document.getElementById("compare-notes-count").textContent, "1 changed line");
 
   document.getElementById("compare-notes-btn").click();
@@ -292,6 +292,6 @@ test("reverting an edit inside the compare debounce restores the diff marks", as
   assert.equal(count.textContent, "1 changed line");
   assert.ok(primary.querySelectorAll(".diff-line-removed").length > 0);
   assert.ok(secondary.querySelectorAll(".diff-line-added").length > 0);
-  assert.deepEqual(texts(primary, ".cm-gutterElement.cm-diff-line-removed"), ["2"]);
-  assert.deepEqual(texts(secondary, ".cm-gutterElement.cm-diff-line-added"), ["2"]);
+  assert.deepEqual(texts(primary, ".cm-lineNumbers .cm-gutterElement.cm-diff-line-removed"), ["2"]);
+  assert.deepEqual(texts(secondary, ".cm-lineNumbers .cm-gutterElement.cm-diff-line-added"), ["2"]);
 });
