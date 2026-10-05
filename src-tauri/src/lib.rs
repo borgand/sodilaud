@@ -14,6 +14,7 @@ mod clipboard;
 mod docs;
 mod files;
 mod hook;
+mod integration;
 mod mcp;
 mod mcp_config;
 mod platform;
@@ -415,6 +416,9 @@ pub fn run(context: tauri::Context<tauri::Wry>) {
             mcp::start_mcp_server,
             mcp::set_mcp_permissions,
             mcp::stop_mcp_server,
+            integration::coedit_integration_plan,
+            integration::coedit_integration_install,
+            integration::coedit_integration_remove,
             clipboard::commands::clip_list,
             clipboard::commands::clip_reveal,
             clipboard::commands::clip_select,

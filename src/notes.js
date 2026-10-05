@@ -175,6 +175,12 @@ const copyMcpCommandBtn = document.getElementById("copy-mcp-command-btn");
 const copyMcpArgsBtn = document.getElementById("copy-mcp-args-btn");
 const copyMcpExampleBtn = document.getElementById("copy-mcp-example-btn");
 const mcpConfigExampleCode = document.getElementById("mcp-config-example-code");
+const integrationSummary = document.getElementById("coedit-integration-summary");
+const integrationChanges = document.getElementById("coedit-integration-changes");
+const integrationBtn = document.getElementById("coedit-integration-btn");
+const integrationConfirmBtn = document.getElementById("coedit-integration-confirm-btn");
+const integrationCancelBtn = document.getElementById("coedit-integration-cancel-btn");
+const integrationRemoveBtn = document.getElementById("coedit-integration-remove-btn");
 
 const ACTIVE_NOTE_KEY = "sodilaud_quicknotes_active_note";
 const COLLAPSED_FOLDERS_KEY = "sodilaud_collapsed_folders";
@@ -1744,6 +1750,7 @@ async function openMcpConfigModal() {
   mcpConfigModalBackdrop.style.display = "flex";
   mcpConfigModalBackdrop.setAttribute("aria-hidden", "false");
   closeMcpConfigBtn.focus({ preventScroll: true });
+  runIntegration("coedit_integration_plan");
   const copyButtons = [copyMcpCommandBtn, copyMcpArgsBtn, copyMcpExampleBtn];
   copyButtons.forEach(button => { button.disabled = true; });
   try {
@@ -1760,6 +1767,37 @@ async function openMcpConfigModal() {
     copyButtons.forEach(button => { button.disabled = false; });
   } catch (error) {
     if (isMcpConfigModalOpen) mcpPermissionStatus.textContent = `Could not load MCP configuration: ${error.message || error}`;
+  }
+}
+
+// The Claude Code integration writes into the owner's home folder, so the
+// button first shows what would change and writes only once confirmed.
+function renderIntegration(plan, { previewing = false, message = null } = {}) {
+  const installed = Boolean(plan?.installed);
+  const present = Boolean(plan?.present);
+  const changes = Array.isArray(plan?.changes) ? plan.changes : [];
+  integrationSummary.textContent = message ?? (installed
+    ? "Installed."
+    : present ? "Installed, but out of date." : "Not installed.");
+  integrationChanges.replaceChildren(...(previewing ? changes : []).map(change => {
+    const item = document.createElement("li");
+    item.textContent = change;
+    return item;
+  }));
+  integrationChanges.hidden = !previewing;
+  integrationBtn.hidden = previewing || installed;
+  integrationBtn.textContent = present ? "Update Claude Code integration…" : "Install Claude Code integration…";
+  integrationConfirmBtn.hidden = !previewing;
+  integrationCancelBtn.hidden = !previewing;
+  integrationRemoveBtn.hidden = previewing || !present;
+}
+
+async function runIntegration(command, previewing = false) {
+  try {
+    renderIntegration(await invoke(command), { previewing });
+  } catch (error) {
+    renderIntegration(null, { message: `Claude Code integration: ${error.message || error}` });
+    integrationBtn.hidden = false;
   }
 }
 
@@ -1986,6 +2024,10 @@ function attachEventListeners() {
     openMcpConfigModal();
   });
   closeMcpConfigBtn.addEventListener("click", closeMcpConfigModal);
+  integrationBtn.addEventListener("click", () => runIntegration("coedit_integration_plan", true));
+  integrationConfirmBtn.addEventListener("click", () => runIntegration("coedit_integration_install"));
+  integrationCancelBtn.addEventListener("click", () => runIntegration("coedit_integration_plan"));
+  integrationRemoveBtn.addEventListener("click", () => runIntegration("coedit_integration_remove"));
   mcpConfigModalBackdrop.addEventListener("click", (e) => {
     if (e.target === mcpConfigModalBackdrop) closeMcpConfigModal();
   });

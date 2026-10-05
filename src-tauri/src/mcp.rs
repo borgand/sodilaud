@@ -247,9 +247,8 @@ pub(crate) struct McpConnectionInfo {
     args: Vec<String>,
 }
 
-// Reading client configuration never binds a socket or grants agent access.
-#[tauri::command]
-pub(crate) fn get_mcp_connection_info() -> Result<McpConnectionInfo, String> {
+/// The path an MCP client or a Claude Code hook launches Sodilaud by.
+pub(crate) fn executable() -> Result<String, String> {
     let executable = std::env::current_exe()
         .map_err(|error| format!("Could not locate the Sodilaud executable: {error}"))?;
     // An AppImage's inner binary lives in a temporary mount. Its outer path
@@ -259,12 +258,17 @@ pub(crate) fn get_mcp_connection_info() -> Result<McpConnectionInfo, String> {
         .map(std::path::PathBuf::from)
         .filter(|path| path.is_absolute() && path.is_file())
         .unwrap_or(executable);
-    let command = executable
+    executable
         .into_os_string()
         .into_string()
-        .map_err(|_| "The Sodilaud executable path is not valid Unicode".to_string())?;
+        .map_err(|_| "The Sodilaud executable path is not valid Unicode".to_string())
+}
+
+// Reading client configuration never binds a socket or grants agent access.
+#[tauri::command]
+pub(crate) fn get_mcp_connection_info() -> Result<McpConnectionInfo, String> {
     Ok(McpConnectionInfo {
-        command,
+        command: executable()?,
         args: vec!["--mcp-stdio".into()],
     })
 }

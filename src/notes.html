@@ -595,6 +595,19 @@
           <p id="mcp-permission-status" class="mcp-permission-status" role="status" aria-live="polite"></p>
         </section>
 
+        <section class="mcp-permissions coedit-integration" aria-labelledby="coedit-integration-heading">
+          <h4 id="coedit-integration-heading">Claude Code integration</h4>
+          <p class="mcp-permissions-description">Adds the <code>/sodilaud</code> command and the <code>sodilaud</code> skill to Claude Code, and a hook that sends Claude Code's own edits of files you co-edit here through Sodilaud. Name this server <code>sodilaud</code> in Claude Code. Nothing changes until you confirm.</p>
+          <p class="mcp-permissions-summary" id="coedit-integration-summary" role="status">Checking…</p>
+          <ul class="coedit-integration-changes" id="coedit-integration-changes" hidden></ul>
+          <div class="coedit-integration-actions">
+            <button class="mcp-config-copy-btn" id="coedit-integration-btn" type="button">Install Claude Code integration…</button>
+            <button class="mcp-config-copy-btn" id="coedit-integration-confirm-btn" type="button" hidden>Install</button>
+            <button class="mcp-config-copy-btn" id="coedit-integration-cancel-btn" type="button" hidden>Cancel</button>
+            <button class="mcp-config-copy-btn" id="coedit-integration-remove-btn" type="button" hidden>Remove</button>
+          </div>
+        </section>
+
         <div class="mcp-config-example">
           <div class="mcp-config-example-header">
             <div>

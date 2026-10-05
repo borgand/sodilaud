@@ -2882,6 +2882,15 @@ kbd {
   font-size: 0.76rem;
 }
 
+.coedit-integration-changes {
+  margin: 0 0 10px;
+  padding-left: 18px;
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+.coedit-integration-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
 @media (max-width: 560px) {
   .mcp-config-field {
     grid-template-columns: 1fr;
