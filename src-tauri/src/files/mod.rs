@@ -314,11 +314,9 @@ pub fn agent_document(path: &str) -> Result<(PathBuf, u64), FileError> {
     if resolved.is_file() && !is_text_file(&resolved) {
         return Err(FileError::not_text(requested));
     }
-    io::read(&resolved)?;
-    let bytes = std::fs::metadata(&resolved)
-        .map_err(|error| FileError::io(&resolved, &error))?
-        .len();
-    Ok((resolved, bytes))
+    let bytes = io::read_bytes(&resolved)?;
+    io::decode_normalized(&bytes)?;
+    Ok((resolved, bytes.len() as u64))
 }
 
 #[derive(Serialize, Clone, Debug, PartialEq, Eq)]
