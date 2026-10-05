@@ -273,7 +273,7 @@ export function createAgentAccess({ document, invoke, notify, menuSection, statu
       const writeCount = MCP_WRITE_TOOLS.filter(tool => permissions[tool]).length;
       notify(writeCount
         ? `Agent access enabled with ${writeCount} write ${writeCount === 1 ? "function" : "functions"} allowed`
-        : "Agent access enabled — reads only until you allow write functions in MCP Configuration");
+        : "Agent access enabled - reads only until you allow write functions in MCP Configuration");
     } catch (error) {
       if (disabling) permissions = previousPermissions;
       update();
