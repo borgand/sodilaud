@@ -7,7 +7,7 @@
 //! Every change is written to SQLite before it is committed in memory, so a
 //! failed write leaves both unchanged and the caller can simply retry.
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, RwLock};
@@ -16,27 +16,23 @@ use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 
 use super::changes;
+use super::collab::Collab;
+#[cfg(test)]
+use super::collab::HISTORY;
+pub(crate) use super::collab::{Pulled, Pushed, Update};
 use crate::store::workspace::{self as store, Folder, Note, TrashEntry};
 
-/// Updates kept per note for clients that fell behind. An older client reloads.
-pub(crate) const HISTORY: usize = 1000;
 pub(crate) const UNTITLED: &str = "Untitled Scratchpad";
 const TITLE_UNITS: usize = 30;
 const LOCAL_COLLECTION_NAME: &str = "Local notes";
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub(crate) struct Update {
-    #[serde(rename = "clientID")]
-    pub(crate) client_id: String,
-    pub(crate) changes: Value,
-}
-
+/// A note and its text. `note.content` mirrors `collab.text()`; only
+/// `Workspace::apply_updates` changes either.
 #[derive(Clone, Debug)]
 pub(crate) struct Entry {
     pub(crate) note: Note,
-    pub(crate) version: u64,
     pub(crate) rev: u64,
-    updates: VecDeque<Update>,
+    pub(crate) collab: Collab,
 }
 
 #[derive(Clone, Debug)]
@@ -105,20 +101,6 @@ pub(crate) struct DocUpdates {
     pub(crate) title: String,
     pub(crate) updated_at: i64,
     pub(crate) rev: u64,
-}
-
-#[derive(Clone, Debug, Serialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct Pushed {
-    pub(crate) accepted: bool,
-    pub(crate) version: u64,
-}
-
-#[derive(Clone, Debug, Serialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub(crate) enum Pulled {
-    Updates(Vec<Update>),
-    Reload { text: String, version: u64 },
 }
 
 /// Where registry changes go: every webview in the app, or a test recorder.
@@ -227,10 +209,9 @@ fn blank_note() -> Note {
 
 pub(crate) fn new_entry(note: Note, rev: u64) -> Entry {
     Entry {
+        collab: Collab::new(note.content.clone()),
         note,
-        version: 0,
         rev,
-        updates: VecDeque::new(),
     }
 }
 
@@ -348,7 +329,7 @@ impl Workspace {
                 .iter()
                 .map(|e| NoteState {
                     note: e.note.clone(),
-                    version: e.version,
+                    version: e.collab.version(),
                     rev: e.rev,
                 })
                 .collect(),
@@ -418,12 +399,9 @@ impl Workspace {
     ) -> Result<DocUpdates, String> {
         let index = self.position(note_id)?;
         let current = &self.notes[index];
-        let mut text = current.note.content.clone();
-        for update in &updates {
-            text = changes::apply(&text, &update.changes)?;
-        }
+        let text = current.collab.apply(&updates)?;
         let mut note = current.note.clone();
-        note.content = text;
+        note.content = text.clone();
         note.updated_at = now_ms().max(current.note.updated_at + 1);
         if !note.is_title_locked {
             note.title = auto_title(&note.content);
@@ -434,20 +412,15 @@ impl Workspace {
         self.next_rev += 1;
         let rev = self.next_rev;
         let entry = &mut self.notes[index];
-        let from = entry.version;
         entry.note = note;
-        entry.version += updates.len() as u64;
         entry.rev = rev;
-        entry.updates.extend(updates.iter().cloned());
-        while entry.updates.len() > HISTORY {
-            entry.updates.pop_front();
-        }
+        let from = entry.collab.commit(text, updates.clone());
         Ok(DocUpdates {
             collection_id: self.id.clone(),
             note_id: note_id.to_string(),
             from,
             updates,
-            version: entry.version,
+            version: entry.collab.version(),
             title: entry.note.title.clone(),
             updated_at: entry.note.updated_at,
             rev,
@@ -653,7 +626,9 @@ impl Registry {
         let mut guard = self.lock();
         let workspace = guard.as_mut().ok_or("No workspace is open")?;
         workspace.check(collection_id)?;
-        let current = workspace.notes[workspace.position(note_id)?].version;
+        let current = workspace.notes[workspace.position(note_id)?]
+            .collab
+            .version();
         if version != current {
             return Ok(Pushed {
                 accepted: false,
@@ -692,22 +667,9 @@ impl Registry {
     ) -> Result<Pulled, String> {
         self.with(|workspace| {
             workspace.check(collection_id)?;
-            let entry = &workspace.notes[workspace.position(note_id)?];
-            if since > entry.version {
-                return Err("The client is ahead of the registry; reload the note".into());
-            }
-            let behind = (entry.version - since) as usize;
-            if behind <= entry.updates.len() {
-                let skip = entry.updates.len() - behind;
-                Ok(Pulled::Updates(
-                    entry.updates.iter().skip(skip).cloned().collect(),
-                ))
-            } else {
-                Ok(Pulled::Reload {
-                    text: entry.note.content.clone(),
-                    version: entry.version,
-                })
-            }
+            workspace.notes[workspace.position(note_id)?]
+                .collab
+                .pull(since)
         })
     }
 

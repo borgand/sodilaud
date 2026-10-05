@@ -224,7 +224,7 @@ fn apply(
                     let addition = changes::normalize_newlines(text(args, "content"));
                     let update = Update {
                         client_id: AGENT_CLIENT.into(),
-                        changes: changes::append(&current.note.content, &addition),
+                        changes: changes::append(current.collab.text(), &addition),
                     };
                     let event = workspace.apply_updates(id, vec![update])?;
                     let entry = workspace
