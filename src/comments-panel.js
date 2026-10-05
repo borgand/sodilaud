@@ -92,7 +92,11 @@ export function createComments({ document, invoke, root, countButton, editors, a
     try {
       receive(await invoke("comments_get", { doc }));
     } catch (failure) {
-      console.error("Could not load comments", failure);
+      // A note the page just created reaches Rust a moment later; the next
+      // update asks again.
+      if (!/No note exists|not open|Collection changed/.test(String(failure?.message ?? failure))) {
+        console.error("Could not load comments", failure);
+      }
     } finally {
       asking.delete(key);
     }
