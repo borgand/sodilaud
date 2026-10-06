@@ -135,9 +135,9 @@ Decided 2026-09-28: open files and folders live in the main window's sidebar.
 
 ## 5. Agent co-editing with comments
 
-Status: built on `feat/agent-coedit` for files and notes (spec
+Status: done for files and notes, shipped in 0.11.0 (#20) (spec
 [`2026-10-05-agent-coedit-design.md`](docs/superpowers/specs/2026-10-05-agent-coedit-design.md),
-guide [`docs/coedit.md`](docs/coedit.md)); not yet released
+guide [`docs/coedit.md`](docs/coedit.md))
 
 You and an agent edit the same document at once, and you leave anchored comments that the
 agent picks up and acts on. The design is ported from Marginalia; the code is built separately.
@@ -190,9 +190,8 @@ Depends on: nothing.
 
 ## 7. Mermaid diagrams
 
-Status: built on `feat/mermaid-diagrams` (spec
-[`2026-10-06-mermaid-diagrams-design.md`](docs/superpowers/specs/2026-10-06-mermaid-diagrams-design.md));
-not yet released
+Status: done, shipped in 0.12.0 (#25) (spec
+[`2026-10-06-mermaid-diagrams-design.md`](docs/superpowers/specs/2026-10-06-mermaid-diagrams-design.md))
 
 Render fenced ` ```mermaid ` blocks as diagrams, the way tables render: a diagram widget in
 Live mode when the cursor is outside the block, the raw source when inside it, and the diagram
