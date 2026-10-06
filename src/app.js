@@ -13,6 +13,7 @@ import { applyPlatformShortcutLabels } from "./platform-labels.js";
 import { resolveLinkAction } from "./markdown.js";
 import { WELCOME_NOTE_TITLE } from "./welcome-note.js";
 import { createFileEditor } from "./file-editor.js";
+import { createMermaidRenderer, themeVariablesFrom } from "./mermaid.js";
 import { isMacLikePlatform } from "./platform-labels.js";
 import { createAgentAccess } from "./agent-access.js";
 
@@ -57,11 +58,15 @@ const appearance = createAppearance({
   onLineNumbers: (enabled) => fileEditor?.setLineNumbers(enabled),
   onSyntaxHighlighting: (enabled) => fileEditor?.setSyntaxHighlighting(enabled)
 });
+const mermaid = createMermaidRenderer({ document });
 const themes = createThemes({
   document,
   storage: localStorage,
   invoke,
-  onApplied: () => syncClipboardPopupTheme({ document, invoke, isMac: isMac && Boolean(window.__TAURI__) }),
+  onApplied: () => {
+    syncClipboardPopupTheme({ document, invoke, isMac: isMac && Boolean(window.__TAURI__) });
+    mermaid.setTheme(themeVariablesFrom(document));
+  },
   onChanged: () => broadcastPreference(window, "sodilaud_active_theme")
 });
 
@@ -88,7 +93,8 @@ const fileEditor = createFileEditor({
   broadcast: (key) => broadcastPreference(window, key),
   notify: showNotification,
   closeMenus: () => toggleActionsDropdown(false),
-  openExternal: openExternalHref
+  openExternal: openExternalHref,
+  mermaid
 });
 
 const agentAccess = createAgentAccess({

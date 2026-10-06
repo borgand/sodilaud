@@ -1641,6 +1641,47 @@ html:not(.editor-line-numbers-enabled) .app-container.compare-mode .editor-host 
   font-size: inherit;
 }
 
+.markdown-preview .mermaid-diagram,
+.cm-lp-mermaid {
+  margin-bottom: 1em;
+  overflow-x: auto;
+  text-align: center;
+}
+
+.mermaid-diagram svg,
+.cm-lp-mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.markdown-preview .mermaid-diagram.mermaid-error,
+.cm-lp-mermaid.mermaid-error {
+  text-align: left;
+}
+
+.mermaid-error {
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  background: rgba(239, 68, 68, 0.06);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-family: var(--font-sans);
+  font-size: 0.9rem;
+}
+
+.mermaid-error strong {
+  color: #ef4444;
+}
+
+.markdown-preview .mermaid-error pre,
+.mermaid-error pre {
+  background: none;
+  margin: 6px 0 0;
+  padding: 0;
+  white-space: pre-wrap;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+}
+
 /* Highlight.js token colors. Layout-affecting styles are intentionally omitted
    so highlighted code wraps and selects exactly like unhighlighted code. */
 .markdown-preview .hljs-comment,
@@ -3339,6 +3380,25 @@ kbd {
 
 .cm-mode-live .cm-lp-table.markdown-preview table {
   margin-bottom: 0;
+}
+
+.cm-mode-live .cm-lp-mermaid {
+  padding: 4px 0;
+  margin-bottom: 0;
+  cursor: text;
+}
+
+.cm-mode-live .cm-lp-mermaid-preview {
+  margin: 4px 0 8px;
+  border-top: 1px dashed var(--border-color);
+  padding-top: 8px;
+}
+
+.cm-lp-mermaid-pending {
+  min-height: 3em;
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
 }
 
 /* ----------------------------------------------------

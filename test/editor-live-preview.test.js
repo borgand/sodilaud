@@ -7,7 +7,7 @@ import { installEditorDom } from "./helpers/cm-dom.js";
 
 const settle = () => new Promise(resolve => setTimeout(resolve, 0));
 
-async function setup(text, { focused = true } = {}) {
+async function setup(text, { focused = true, mermaid } = {}) {
   const env = installEditorDom();
   env.window.marked = marked;
   const { createMarkdownEditor } = await import("../src/editor-view.js");
@@ -18,7 +18,7 @@ async function setup(text, { focused = true } = {}) {
     parent: env.document.getElementById("host"),
     ariaLabel: "t",
     onChange: value => changes.push(value),
-    extensions: [live.livePreview({ onOpenLink: href => opened.push(href) })]
+    extensions: [live.livePreview({ onOpenLink: href => opened.push(href), mermaid: mermaid?.(env.document) })]
   });
   let hasFocus = focused;
   Object.defineProperty(editor.view, "hasFocus", { get: () => hasFocus, configurable: true });
@@ -290,4 +290,141 @@ test("a 5,000-line note with 200 tables stays responsive and bounds the table ca
     }
     assert.equal(t.live.__tableCacheSize(), 200);
   } finally { t.done(); }
+});
+
+async function mermaidSetup(text, options = {}) {
+  const { createMermaidRenderer } = await import("../src/mermaid.js");
+  const renders = [];
+  let renderer;
+  const t = await setup(text, {
+    ...options,
+    mermaid: document => {
+      renderer = createMermaidRenderer({
+        document,
+        load: async () => ({
+          initialize() {},
+          async render(id, source) {
+            renders.push(source);
+            if (source.includes("oops")) throw new Error("Parse error on line 1");
+            return { svg: `<svg id="${id}"><text>${source.trim()}</text></svg>` };
+          }
+        })
+      });
+      return renderer;
+    }
+  });
+  return Object.assign(t, {
+    renders,
+    renderer: () => renderer,
+    diagrams: () => [...t.view.contentDOM.querySelectorAll(".cm-lp-mermaid")]
+  });
+}
+
+const flowchart = "```mermaid\ngraph TD\n  A-->B\n```";
+
+test("a mermaid block renders as a diagram widget while the caret is outside it", async () => {
+  const t = await mermaidSetup(`intro\n\n${flowchart}\n\nafter`);
+  try {
+    await t.caret(0);
+    await settle();
+    const [diagram] = t.diagrams();
+    assert.ok(diagram.classList.contains("cm-lp-mermaid-block"));
+    assert.equal(diagram.querySelector("svg text").textContent, "graph TD\n  A-->B");
+    assert.ok(t.lineTexts().every(text => !text.includes("```")));
+  } finally { t.done(); }
+});
+
+test("with the caret inside, the source stays editable and the diagram renders below it", async () => {
+  const t = await mermaidSetup(`intro\n\n${flowchart}\n\nafter`);
+  try {
+    await t.caret(t.editor.getText().indexOf("A-->B"));
+    await settle();
+    assert.ok(t.lineTexts().includes("  A-->B"));
+    const [diagram] = t.diagrams();
+    assert.ok(diagram.classList.contains("cm-lp-mermaid-preview"));
+    assert.ok(diagram.querySelector("svg"));
+    const closing = t.lines().find(line => line.textContent === "```");
+    assert.equal(closing.nextElementSibling, diagram);
+  } finally { t.done(); }
+});
+
+test("typing in the block keeps the last diagram until typing pauses", async () => {
+  const t = await mermaidSetup(`${flowchart}\n\nafter`);
+  try {
+    const at = t.editor.getText().indexOf("B");
+    await t.caret(at);
+    await settle();
+    const [before] = t.diagrams();
+    t.view.dispatch({ changes: { from: at + 1, insert: "C" } });
+    await settle();
+    const [during] = t.diagrams();
+    assert.equal(during, before);
+    assert.match(during.querySelector("svg text").textContent, /A-->B$/);
+    await new Promise(resolve => setTimeout(resolve, 350));
+    assert.match(t.diagrams()[0].querySelector("svg text").textContent, /A-->BC$/);
+    assert.deepEqual(t.renders, ["graph TD\n  A-->B", "graph TD\n  A-->BC"]);
+  } finally { t.done(); }
+});
+
+test("a syntax error shows Mermaid's message in place of the diagram", async () => {
+  const t = await mermaidSetup("```mermaid\noops\n```\n\nafter");
+  try {
+    await t.caret(t.editor.getText().length);
+    await settle();
+    const [diagram] = t.diagrams();
+    assert.ok(diagram.classList.contains("mermaid-error"));
+    assert.equal(diagram.querySelector("pre").textContent, "Parse error on line 1");
+  } finally { t.done(); }
+});
+
+test("clicking a diagram moves the caret into its block", async () => {
+  const t = await mermaidSetup(`intro\n\n${flowchart}`);
+  try {
+    await t.caret(0);
+    await settle();
+    t.mousedown(t.diagrams()[0]);
+    await settle();
+    assert.equal(t.editor.getSelection().start, 7);
+    assert.ok(t.diagrams()[0].classList.contains("cm-lp-mermaid-preview"));
+  } finally { t.done(); }
+});
+
+test("a known diagram renders without a placeholder and without re-rendering", async () => {
+  const t = await mermaidSetup(`intro\n\n${flowchart}`);
+  try {
+    await t.caret(0);
+    await settle();
+    await t.caret(t.editor.getText().indexOf("A-->"));
+    assert.equal(t.view.contentDOM.querySelector(".cm-lp-mermaid-pending"), null);
+    assert.equal(t.renders.length, 1);
+  } finally { t.done(); }
+});
+
+test("a theme change re-renders the diagrams", async () => {
+  const t = await mermaidSetup(`intro\n\n${flowchart}`);
+  try {
+    await t.caret(0);
+    await settle();
+    t.renderer().setTheme({ darkMode: true });
+    await settle();
+    await settle();
+    assert.equal(t.renders.length, 2);
+    assert.ok(t.diagrams()[0].querySelector("svg"));
+  } finally { t.done(); }
+});
+
+test("mermaid blocks stay code in source mode and without a renderer", async () => {
+  const t = await mermaidSetup(`intro\n\n${flowchart}`);
+  try {
+    t.editor.setMode("source");
+    await t.caret(0);
+    assert.deepEqual(t.diagrams(), []);
+    assert.ok(t.lineTexts().includes("```mermaid"));
+  } finally { t.done(); }
+  const plain = await setup(`intro\n\n${flowchart}`);
+  try {
+    await plain.caret(0);
+    assert.equal(plain.view.contentDOM.querySelector(".cm-lp-mermaid"), null);
+    assert.ok(plain.lineTexts().includes("```mermaid"));
+  } finally { plain.done(); }
 });

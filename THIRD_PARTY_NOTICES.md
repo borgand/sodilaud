@@ -160,3 +160,50 @@ Copyright (C) 2018-2021 by Marijn Haverbeke <marijn@haverbeke.berlin> and others
 > LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 > OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 > SOFTWARE.
+
+## Mermaid
+
+Sodilaud includes [Mermaid](https://github.com/mermaid-js/mermaid) 12.1, loaded only when a
+document has a Mermaid diagram. Mermaid is distributed under the MIT License:
+
+Copyright (c) 2014 - 2022 Knut Sveidqvist
+
+The MIT License text is reproduced in the CodeMirror and Lezer section above.
+
+Mermaid's prebuilt bundle incorporates the following libraries. Their copyright notices are
+kept in each package's license file in the Mermaid distribution.
+
+- MIT License: `@braintree/sanitize-url`, `@iconify/utils`, `@mermaid-js/parser`,
+  `@upsetjs/venn.js`, `cose-base`, `cytoscape`, `cytoscape-cose-bilkent`, `cytoscape-fcose`,
+  `dagre-d3-es`, `dayjs`, `es-toolkit`, `hachure-fill`, `katex`, `khroma`, `layout-base`,
+  `lodash-es`, `marked`, `path-data-parser`, `points-on-curve`, `points-on-path`, `roughjs`,
+  `stylis`, `ts-dedent`, `uuid`.
+- ISC License: `d3` and its modules (`d3-array`, `d3-axis`, `d3-brush`, `d3-chord`,
+  `d3-color`, `d3-contour`, `d3-delaunay`, `d3-dispatch`, `d3-drag`, `d3-dsv`, `d3-fetch`,
+  `d3-force`, `d3-format`, `d3-geo`, `d3-hierarchy`, `d3-interpolate`, `d3-path`,
+  `d3-polygon`, `d3-quadtree`, `d3-random`, `d3-scale`, `d3-scale-chromatic`, `d3-selection`,
+  `d3-shape`, `d3-time`, `d3-time-format`, `d3-timer`, `d3-transition`, `d3-zoom`),
+  `delaunator`, `internmap`.
+- BSD 3-Clause License: `d3-ease`, `d3-sankey`, and the older `d3-array`, `d3-path` and
+  `d3-shape` that `d3-sankey` uses.
+- Apache License 2.0: `chevrotain` and its `@chevrotain/*` packages.
+- DOMPurify, under the Apache License 2.0 (it is dual-licensed MPL-2.0 or Apache-2.0).
+- The Unlicense: `robust-predicates`.
+
+The ELK layout engine (`elkjs`, EPL-2.0) that Mermaid can use is not included.
+
+ISC License:
+
+> Permission to use, copy, modify, and/or distribute this software for any purpose with or
+> without fee is hereby granted, provided that the above copyright notice and this permission
+> notice appear in all copies.
+>
+> THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS
+> SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL
+> THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY
+> DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF
+> CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE
+> OR PERFORMANCE OF THIS SOFTWARE.
+
+The BSD 3-Clause License text is reproduced in the Highlight.js section above. The Apache
+License 2.0 is available at <https://www.apache.org/licenses/LICENSE-2.0>.
