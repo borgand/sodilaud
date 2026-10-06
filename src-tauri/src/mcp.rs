@@ -2508,9 +2508,7 @@ mod tests {
         permissions.write().unwrap().insert("open_document".into());
         assert!(message(open("notes/x.md").await.unwrap()).contains("full path"));
         let missing = std::env::temp_dir().join(format!("sodilaud-missing-{}.md", Uuid::new_v4()));
-        assert!(
-            message(open(missing.to_str().unwrap()).await.unwrap()).contains("no longer on disk")
-        );
+        assert!(message(open(missing.to_str().unwrap()).await.unwrap()).contains("does not exist"));
         std::fs::remove_file(path).unwrap();
     }
 
