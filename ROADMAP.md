@@ -210,3 +210,24 @@ in Reading mode, export and copy-as-HTML.
 Depends on: nothing.
 Open: whether a lighter renderer covers the diagrams actually used (flowchart, sequence)
 well enough to skip the full bundle.
+
+## 8. `sodilaud` command-line tool
+
+Status: planned
+
+Open files in Sodilaud from a terminal: `sodilaud notes.md`. The command starts Sodilaud if it
+is not running, opens the file (or files) in the main window, and returns at once.
+
+- `--wait`: block until every file it opened is closed in Sodilaud, so the command works as
+  `$EDITOR` / `git commit` editor. Exit non-zero if Sodilaud quits first.
+- Relative paths resolve against the terminal's working directory. A missing file is created
+  empty, like New.
+- Opens through the same path as Finder "Open With", so recents, the document registry and
+  outside-edit merging all apply.
+- Installed from a menu item (a symlink into `/usr/local/bin` or `~/.local/bin`), the way agent
+  integration is installed.
+
+Depends on: 4 (files in the registry).
+Open: how the command talks to a running app. `open -a Sodilaud` covers the no-wait case;
+`--wait` needs a reply when a file closes, likely over the local server MCP already runs, or the
+`tauri-plugin-single-instance` handoff.
