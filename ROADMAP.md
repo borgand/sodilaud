@@ -158,9 +158,8 @@ Decided 2026-10-05: comments on files are kept in app data, keyed by a hash of t
 
 ## 6. Table column widths that avoid wrapping short values
 
-Status: built on `feat/table-column-widths` (spec
-[`2026-10-06-table-column-widths-design.md`](docs/superpowers/specs/2026-10-06-table-column-widths-design.md));
-not yet released
+Status: done, shipped in 0.13.0 (#27) (spec
+[`2026-10-06-table-column-widths-design.md`](docs/superpowers/specs/2026-10-06-table-column-widths-design.md))
 
 Tables let long-text columns take the width and squeeze short ones until they wrap
 character by character. Seen 2026-10-05: in Live mode a `Date` column one character wide
@@ -217,9 +216,8 @@ layout (elkjs, EPL-2.0) is left out, so diagrams use dagre, the Mermaid 11 defau
 
 ## 8. `sodilaud` command-line tool
 
-Status: built on `feat/cli-command` (spec
-[`2026-10-06-cli-command-design.md`](docs/superpowers/specs/2026-10-06-cli-command-design.md));
-not yet released
+Status: done, shipped in 0.13.0 (#28) (spec
+[`2026-10-06-cli-command-design.md`](docs/superpowers/specs/2026-10-06-cli-command-design.md))
 
 Open files in Sodilaud from a terminal: `sodilaud notes.md`. The command starts Sodilaud if it
 is not running, opens the file (or files) in the main window, and returns at once.
