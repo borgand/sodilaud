@@ -115,6 +115,12 @@ test("only the main window can reach user files", async () => {
   }
 });
 
+test("only the main window can install the sodilaud command", async () => {
+  const caps = await capabilities();
+  const holders = caps.filter(cap => cap.permissions.includes(grant("cli_tool_offer"))).map(cap => cap.identifier);
+  assert.deepEqual(holders, ["default"]);
+});
+
 test("file contents are sent to the main window only", async () => {
   const commands = await readFile("src-tauri/src/docs/commands.rs", "utf8");
   for (const event of ["FILE_DOC_EVENT", "FILE_SAVED_EVENT", "FILE_EXTERNAL_EVENT"]) {

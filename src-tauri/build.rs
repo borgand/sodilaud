@@ -10,6 +10,7 @@ fn main() {
             "import_file_native",
             "select_db_file",
             "show_alert_dialog",
+            "cli_tool_offer",
             "notes_boot",
             "notes_import_local",
             "notes_connect",

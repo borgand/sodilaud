@@ -5,6 +5,11 @@ export function isMacLikePlatform(navigatorLike = globalThis.navigator) {
   return /mac|iphone|ipad|ipod/i.test(platform);
 }
 
+export function isWindowsPlatform(navigatorLike = globalThis.navigator) {
+  const platform = navigatorLike?.userAgentData?.platform || navigatorLike?.platform || navigatorLike?.userAgent || "";
+  return /^win|windows/i.test(platform);
+}
+
 // Shortcut labels are written for macOS; elsewhere Cmd reads Ctrl, and Ctrl+Cmd
 // chords use Ctrl+Alt.
 export function applyPlatformShortcutLabels(document, navigatorLike = globalThis.navigator) {

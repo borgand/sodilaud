@@ -6,10 +6,11 @@ use std::path::{Path, PathBuf};
 use tauri::Manager;
 #[cfg(target_os = "macos")]
 use tauri::{
-    menu::{Menu, MenuItem},
+    menu::{Menu, MenuItem, PredefinedMenuItem},
     AppHandle, Emitter, Wry,
 };
 
+mod cli;
 mod clipboard;
 mod docs;
 mod files;
@@ -29,6 +30,8 @@ pub(crate) const PREFERENCES_FILE_NAME: &str = "sodilaud-preferences.json";
 
 #[cfg(target_os = "macos")]
 const NATIVE_ABOUT_MENU_ID: &str = "sodilaud-native-about";
+#[cfg(target_os = "macos")]
+const NATIVE_CLI_MENU_ID: &str = "sodilaud-native-cli";
 #[cfg(target_os = "macos")]
 const NATIVE_QUIT_MENU_ID: &str = "sodilaud-native-quit";
 #[cfg(target_os = "macos")]
@@ -292,6 +295,15 @@ fn macos_menu(app: &AppHandle<Wry>) -> tauri::Result<Menu<Wry>> {
         None::<&str>,
     )?;
     app_menu.insert(&about, 0)?;
+    let cli = MenuItem::with_id(
+        app,
+        NATIVE_CLI_MENU_ID,
+        "Command Line Tool\u{2026}",
+        true,
+        None::<&str>,
+    )?;
+    app_menu.insert(&PredefinedMenuItem::separator(app)?, 1)?;
+    app_menu.insert(&cli, 2)?;
 
     let quit_position = app_menu.items()?.iter().position(|item| {
         matches!(item, tauri::menu::MenuItemKind::Predefined(predefined)
@@ -324,6 +336,11 @@ fn handle_macos_menu_event(app: &AppHandle<Wry>, event: tauri::menu::MenuEvent) 
         } else {
             quit::request(app);
         }
+        return;
+    }
+
+    if event.id() == NATIVE_CLI_MENU_ID {
+        cli::offer(app);
         return;
     }
 
@@ -400,6 +417,7 @@ pub fn run(context: tauri::Context<tauri::Wry>) {
             import_file_native,
             select_db_file,
             show_alert_dialog,
+            cli::cli_tool_offer,
             docs::commands::notes_boot,
             docs::commands::notes_import_local,
             docs::commands::notes_connect,

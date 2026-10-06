@@ -14,7 +14,7 @@ import { resolveLinkAction } from "./markdown.js";
 import { WELCOME_NOTE_TITLE } from "./welcome-note.js";
 import { createFileEditor } from "./file-editor.js";
 import { createMermaidRenderer, themeVariablesFrom } from "./mermaid.js";
-import { isMacLikePlatform } from "./platform-labels.js";
+import { isMacLikePlatform, isWindowsPlatform } from "./platform-labels.js";
 import { createAgentAccess } from "./agent-access.js";
 
 const HOTKEY_MESSAGES = {
@@ -338,6 +338,12 @@ function attachListeners() {
     setQuickNotesHotkey(isMac ? DEFAULT_QUICK_NOTES_HOTKEY_MAC : DEFAULT_QUICK_NOTES_HOTKEY_OTHER);
   });
   $("open-quicknotes-menu-btn").addEventListener("click", closeMenuThen(() => showQuickNotes()));
+  // The sodilaud command is a shell script; Windows has no install for it.
+  const cliToolBtn = $("menu-cli-tool-btn");
+  cliToolBtn.hidden = isWindowsPlatform(navigator);
+  cliToolBtn.addEventListener("click", closeMenuThen(() => {
+    invoke("cli_tool_offer").catch((error) => console.error("Could not open the command line tool dialog", error));
+  }));
   agentAccess.attach();
 
   $("open-quicknotes-btn").addEventListener("click", () => {
