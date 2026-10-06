@@ -18,7 +18,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::docs::commands::SharedRegistry;
-use crate::docs::files::Disk;
+use crate::docs::files::{Disk, Due};
 use grants::Grants;
 use store::FileLists;
 use watch::Watcher;
@@ -259,11 +259,19 @@ pub fn start(app: &AppHandle) {
             watched.file_changed_on_disk(Path::new(&change.path), removed, &*files);
         }
     });
+    if let Ok(directory) = app.path().app_data_dir() {
+        registry.set_comment_dir(directory.join(crate::store::comments::DIRECTORY));
+        registry.set_coedit_mirror(directory.join(crate::docs::coedit::FILE_NAME));
+    }
     let saving = app.clone();
     thread::spawn(move || loop {
-        let path = registry.file_next_due();
-        // A failure reaches the page as a `file-doc-saved` event.
-        let _ = registry.file_save(&path, &*saving.state::<Files>());
+        match registry.file_next_due() {
+            // A failure reaches the page as a `file-doc-saved` event.
+            Due::Save(path) => {
+                let _ = registry.file_save(&path, &*saving.state::<Files>());
+            }
+            Due::Comments(path) => registry.file_save_comments(&path),
+        }
     });
 }
 

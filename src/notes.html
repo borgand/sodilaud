@@ -96,11 +96,14 @@
             <button class="format-btn" id="format-horizontal-rule" data-format="horizontal-rule" type="button" title="Horizontal rule" aria-label="Horizontal rule"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h18" /><path d="M7 6h10M7 18h10" stroke-width="1.5" opacity="0.45" /></svg></button>
             <button class="format-btn format-more-btn" id="format-more-btn" type="button" title="More formatting" aria-label="More formatting" aria-haspopup="menu" aria-expanded="false" aria-controls="format-more-menu" hidden><span class="format-glyph" aria-hidden="true">&raquo;</span></button>
           </div>
-          <!-- Mode Selectors -->
+<!-- Mode Selectors -->
           <div class="layout-controls">
             <button class="layout-btn active" id="mode-live" data-mode="live" title="Live: editing with inline formatting" aria-label="Live mode" aria-pressed="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" /></svg></button>
             <button class="layout-btn" id="mode-source" data-mode="source" title="Source: plain Markdown" aria-label="Source mode" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 8l-4 4 4 4M16 8l4 4-4 4M13.5 5l-3 14" /></svg></button>
             <button class="layout-btn" id="mode-reading" data-mode="reading" title="Reading: read-only rendered view" aria-label="Reading mode" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 5h6a4 4 0 0 1 4 4v11a3 3 0 0 0-3-3H2zM22 5h-6a4 4 0 0 0-4 4v11a3 3 0 0 1 3-3h7z" /></svg></button>
+          </div>
+          <div class="comment-controls">
+            <button class="layout-btn" id="comment-btn" type="button" title="Comment on the selection (Cmd+Alt+M)" aria-label="Comment on the selection"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /><path d="M12 7v6M9 10h6" /></svg></button>
           </div>
           <div class="format-menu format-heading-menu" id="format-heading-menu" role="menu" aria-label="Heading level" hidden>
             <button class="dropdown-item format-heading-item" id="format-heading-1" data-format="heading-1" type="button" role="menuitem" tabindex="-1" title="Heading 1 (Cmd+Alt+1)"><span class="format-heading-sample format-heading-sample-1">Heading 1</span></button>
@@ -317,6 +320,8 @@
           </div>
         </div>
 
+        <aside class="comments-panel" id="comments-panel" aria-label="Comments" hidden></aside>
+
         <!-- Split Drop Overlay -->
         <div class="split-drop-overlay" id="split-drop-overlay" style="display: none;">
           <div class="split-drop-badge">
@@ -338,6 +343,7 @@
         <div class="statusbar-right">
           <span id="selection-count" class="selection-count-text"></span>
           <span id="mcp-status" role="status" aria-live="polite" title="MCP agent access is enabled and listening for connections" hidden>MCP listening</span>
+          <button class="comments-count" id="comments-count-btn" type="button" aria-controls="comments-panel" aria-expanded="false" hidden>No comments</button>
           <span id="save-status" role="status" aria-live="polite">Saved</span>
           <button id="trash-btn" class="trash-status-btn" type="button" aria-label="Trash" title="Trash — click to restore, right-click to empty" aria-haspopup="dialog">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" width="16" height="16" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7" stroke-linecap="round" stroke-linejoin="round" /></svg>
@@ -406,6 +412,10 @@
     <button class="context-menu-item" id="ctx-find" role="menuitem">
       <span>Find in Note</span>
       <span class="shortcut-hint">Cmd+F</span>
+    </button>
+    <button class="context-menu-item" id="ctx-comment" role="menuitem" style="display: none;">
+      <span>Comment</span>
+      <span class="shortcut-hint">Cmd+Alt+M</span>
     </button>
     <button class="context-menu-item" id="ctx-open-side" role="menuitem" style="display: none;">
       <span>Open to the Side</span>
@@ -522,6 +532,18 @@
                 <input type="checkbox" id="mcp-permission-list_trash" data-mcp-tool="list_trash" checked />
                 <span><strong>List trash</strong><code>list_trash</code><small>Deleted-note titles, original folders, and deletion times.</small></span>
               </label>
+              <label class="mcp-permission-option" for="mcp-permission-list_documents">
+                <input type="checkbox" id="mcp-permission-list_documents" data-mcp-tool="list_documents" checked />
+                <span><strong>List documents</strong><code>list_documents</code><small>Open files and commented notes, with pending comment counts.</small></span>
+              </label>
+              <label class="mcp-permission-option" for="mcp-permission-read_document">
+                <input type="checkbox" id="mcp-permission-read_document" data-mcp-tool="read_document" checked />
+                <span><strong>Read document</strong><code>read_document</code><small>Live text of an open file or a note; marks it co-edited.</small></span>
+              </label>
+              <label class="mcp-permission-option" for="mcp-permission-get_pending_comments">
+                <input type="checkbox" id="mcp-permission-get_pending_comments" data-mcp-tool="get_pending_comments" checked />
+                <span><strong>Get pending comments</strong><code>get_pending_comments</code><small>Take your comments that wait for an agent, waiting up to 30 minutes.</small></span>
+              </label>
             </fieldset>
             <fieldset class="mcp-permission-group">
               <legend>Write</legend>
@@ -566,9 +588,34 @@
                 <input type="checkbox" id="mcp-permission-open_document" data-mcp-tool="open_document" />
                 <span><strong>Open document</strong><code>open_document</code><small>Open a Markdown or text file in the main window. Returns no content.</small></span>
               </label>
+              <label class="mcp-permission-option" for="mcp-permission-apply_edit">
+                <input type="checkbox" id="mcp-permission-apply_edit" data-mcp-tool="apply_edit" />
+                <span><strong>Apply edit</strong><code>apply_edit</code><small>Merge edits into a co-edited file or note around your typing.</small></span>
+              </label>
+              <label class="mcp-permission-option" for="mcp-permission-add_comment">
+                <input type="checkbox" id="mcp-permission-add_comment" data-mcp-tool="add_comment" />
+                <span><strong>Add comment</strong><code>add_comment</code><small>Leave a question on a passage for you to answer.</small></span>
+              </label>
+              <label class="mcp-permission-option" for="mcp-permission-resolve_comment">
+                <input type="checkbox" id="mcp-permission-resolve_comment" data-mcp-tool="resolve_comment" />
+                <span><strong>Resolve comment</strong><code>resolve_comment</code><small>Mark a comment addressed with a one-line note.</small></span>
+              </label>
             </fieldset>
           </div>
           <p id="mcp-permission-status" class="mcp-permission-status" role="status" aria-live="polite"></p>
+        </section>
+
+        <section class="mcp-permissions coedit-integration" aria-labelledby="coedit-integration-heading">
+          <h4 id="coedit-integration-heading">Claude Code integration</h4>
+          <p class="mcp-permissions-description">Adds the <code>/sodilaud</code> command and the <code>sodilaud</code> skill to Claude Code, and a hook that sends Claude Code's own edits of files you co-edit here through Sodilaud. Name this server <code>sodilaud</code> in Claude Code. Nothing changes until you confirm.</p>
+          <p class="mcp-permissions-summary" id="coedit-integration-summary" role="status">Checking…</p>
+          <ul class="coedit-integration-changes" id="coedit-integration-changes" hidden></ul>
+          <div class="coedit-integration-actions">
+            <button class="mcp-config-copy-btn" id="coedit-integration-btn" type="button">Install Claude Code integration…</button>
+            <button class="mcp-config-copy-btn" id="coedit-integration-confirm-btn" type="button" hidden>Install</button>
+            <button class="mcp-config-copy-btn" id="coedit-integration-cancel-btn" type="button" hidden>Cancel</button>
+            <button class="mcp-config-copy-btn" id="coedit-integration-remove-btn" type="button" hidden>Remove</button>
+          </div>
         </section>
 
         <div class="mcp-config-example">

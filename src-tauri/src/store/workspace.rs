@@ -3,8 +3,10 @@
 //! SQLite storage for a notes workspace. The registry in `docs` owns the live
 //! collection; this module only reads and writes rows.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use crate::docs::comments::Comment;
 use crate::restrict_to_owner;
 
 /// Created in the app data directory and used whenever no other workspace is
@@ -113,7 +115,13 @@ fn ensure_schema(conn: &rusqlite::Connection) -> Result<(), String> {
             name TEXT NOT NULL,
             sortOrder INTEGER NOT NULL DEFAULT 0
          );
-         CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);",
+         CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+         CREATE TABLE IF NOT EXISTS comments (
+            id TEXT PRIMARY KEY,
+            noteId TEXT NOT NULL,
+            data TEXT NOT NULL
+         );
+         CREATE INDEX IF NOT EXISTS comments_note ON comments (noteId);",
     )
     .map_err(|e| e.to_string())?;
     for (column, definition) in [
@@ -289,6 +297,62 @@ pub(crate) fn save_note(
     insert_note(&mut statement, note, sort_order)
 }
 
+/// Every note's comments, by note ID. A row that cannot be read is skipped.
+pub(crate) fn load_comments(
+    conn: &rusqlite::Connection,
+    note_id: Option<&str>,
+) -> Result<HashMap<String, Vec<Comment>>, String> {
+    let mut statement = conn
+        .prepare("SELECT noteId, data FROM comments WHERE ?1 IS NULL OR noteId = ?1 ORDER BY rowid")
+        .map_err(|e| e.to_string())?;
+    let rows = statement
+        .query_map([note_id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(|e| e.to_string())?;
+    let mut found: HashMap<String, Vec<Comment>> = HashMap::new();
+    for row in rows {
+        let (note, data) = row.map_err(|e| e.to_string())?;
+        if let Ok(comment) = serde_json::from_str(&data) {
+            found.entry(note).or_default().push(comment);
+        }
+    }
+    Ok(found)
+}
+
+/// Replaces one note's comments.
+pub(crate) fn save_note_comments(
+    conn: &mut rusqlite::Connection,
+    note_id: &str,
+    comments: &[Comment],
+) -> Result<(), String> {
+    let transaction = conn.transaction().map_err(|e| e.to_string())?;
+    transaction
+        .execute("DELETE FROM comments WHERE noteId = ?1", [note_id])
+        .map_err(|e| e.to_string())?;
+    for comment in comments {
+        let data = serde_json::to_string(comment).map_err(|e| e.to_string())?;
+        transaction
+            .execute(
+                "INSERT INTO comments (id, noteId, data) VALUES (?1, ?2, ?3)",
+                rusqlite::params![comment.id, note_id, data],
+            )
+            .map_err(|e| e.to_string())?;
+    }
+    transaction.commit().map_err(|e| e.to_string())
+}
+
+pub(crate) fn delete_note_comments(
+    conn: &rusqlite::Connection,
+    note_ids: &[String],
+) -> Result<(), String> {
+    for note_id in note_ids {
+        conn.execute("DELETE FROM comments WHERE noteId = ?1", [note_id])
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 pub(crate) fn meta(conn: &rusqlite::Connection, key: &str) -> Result<Option<String>, String> {
     match conn.query_row("SELECT value FROM meta WHERE key = ?1", [key], |row| {
         row.get(0)
@@ -389,6 +453,36 @@ pub(crate) mod tests {
             .permissions()
             .mode()
             & 0o777
+    }
+
+    #[test]
+    fn comments_round_trip_per_note_and_survive_a_full_save() {
+        use crate::docs::comments::{Author, State};
+        let path = temporary_db_path("comments");
+        save(&path, &[note("a", "text", 1)], &[], &[]).unwrap();
+        let mut conn = open(&path).unwrap();
+        let comment = Comment::new(
+            Author::Agent,
+            State::Open,
+            "text",
+            (0, 2),
+            "q".into(),
+            None,
+            1,
+        );
+        save_note_comments(&mut conn, "a", std::slice::from_ref(&comment)).unwrap();
+        let refs = [note("a", "text!", 2)];
+        let refs: Vec<&Note> = refs.iter().collect();
+        save_all(&mut conn, &refs, &[], &[]).unwrap();
+        assert_eq!(
+            load_comments(&conn, None).unwrap()["a"],
+            vec![comment.clone()]
+        );
+        assert_eq!(load_comments(&conn, Some("a")).unwrap().len(), 1);
+        assert!(load_comments(&conn, Some("b")).unwrap().is_empty());
+        delete_note_comments(&conn, &["a".into()]).unwrap();
+        assert!(load_comments(&conn, None).unwrap().is_empty());
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]

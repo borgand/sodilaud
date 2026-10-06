@@ -15,6 +15,8 @@ import { highlightPreviewCode } from "./syntax-highlighting.js";
 import { normalizeLayoutMode } from "./view-preferences.js";
 import { createDocSync } from "./doc-sync.js";
 import { createFilesModel, isDirty, needsPrompt } from "./files.js";
+import { commentsExtension } from "./editor-comments.js";
+import { createComments } from "./comments-panel.js";
 
 const LAYOUT_KEY = "sodilaud_layout_mode";
 
@@ -64,7 +66,14 @@ export function createFileEditor({
     mode: editorModeFor(layoutMode),
     syntaxHighlighting: appearance.syntaxHighlighting,
     lineNumbers: appearance.lineNumbers,
-    extensions: [markdownEditingCommands(), livePreview({ onOpenLink: openExternal })],
+    extensions: [
+      markdownEditingCommands(),
+      livePreview({ onOpenLink: openExternal }),
+      commentsExtension({
+        onSubmit: (view, comment) => comments.submit(view, comment),
+        onSelect: id => comments.select(id)
+      })
+    ],
     onChange: handleEditorChange
   });
 
@@ -85,7 +94,30 @@ export function createFileEditor({
       if (shownId === buffer.id) loadBuffer(buffer);
       render();
     },
+    onRemote: remote => comments.remote(remote),
     label: "main"
+  });
+
+  // Comments need a file Rust holds: an untitled buffer has none yet.
+  const shownDoc = () => {
+    const buffer = showingStartPage ? null : model.get(shownId);
+    return buffer?.path ? { path: buffer.path, docId: buffer.docId } : null;
+  };
+  const comments = createComments({
+    document,
+    invoke,
+    root: $("comments-panel"),
+    countButton: $("comments-count-btn"),
+    editors: () => {
+      const doc = shownDoc();
+      return doc ? [{ view: editor.view, doc }] : [];
+    },
+    active: () => {
+      const doc = shownDoc();
+      return doc && layoutMode !== "reading" ? { view: editor.view, doc } : null;
+    },
+    flush: () => sync.flush(),
+    notify
   });
 
   const unsent = (buffer) => buffer.path !== null && sync.pending((doc) => doc.docId === buffer.docId);
@@ -229,6 +261,7 @@ export function createFileEditor({
       renderPreview();
     }
     if (showEditor) formatToolbar.layout();
+    comments.shown();
     renderTitle();
     renderSidebar();
     renderBanner();
@@ -515,6 +548,8 @@ export function createFileEditor({
     }
     editor.setMode(editorModeFor(layoutMode));
     formatToolbar.setEnabled(layoutMode !== "reading");
+    $("comment-btn").disabled = layoutMode === "reading";
+    comments.render();
     renderPreview();
     if (persist) {
       storage.setItem(LAYOUT_KEY, layoutMode);
@@ -604,6 +639,8 @@ export function createFileEditor({
     $("menu-save-as-btn").addEventListener("click", () => { closeMenus(); saveAs(); });
     $("menu-close-file-btn").addEventListener("click", () => { closeMenus(); closeFile(); });
     $("menu-start-page-btn").addEventListener("click", () => { closeMenus(); showStartPage(); });
+    $("comment-btn").addEventListener("click", () => comments.start());
+    $("comments-count-btn").addEventListener("click", () => comments.toggle());
     $("start-actions").hidden = false;
     $("recent-files").hidden = false;
     setLayoutMode(layoutMode, { persist: false });
@@ -635,6 +672,8 @@ export function createFileEditor({
     receiveUpdates,
     handleSaved,
     handleExternal,
+    receiveComments: event => comments.receive(event),
+    setCoeditState: state => comments.setState(state),
     handleShortcut,
     toggleSidebar,
     setLayoutMode,

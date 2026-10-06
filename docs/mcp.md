@@ -80,11 +80,15 @@ packaging task; this implementation does not generate a bundle.
 | `search_notes` | Literal, case-insensitive title and Markdown search |
 | `get_note` | One character-addressed chunk of a note's Markdown content |
 | `list_trash` | Deleted-note IDs, titles, original folder metadata, and deletion times |
+| `list_documents` | Files open in the main window and notes with comments, with versions and waiting comments |
+| `read_document` | The live text of an open file or a note, with its version, headings and comments |
+| `get_pending_comments` | Your comments that wait for an agent, optionally waiting up to 30 minutes for one |
 
 List and search calls accept `limit` and `offset` and return `nextOffset` when
 another page exists. `get_note` returns at most 20,000 characters by default;
 follow its `nextOffset` until `truncated` is false. These offsets count Unicode
-characters, not UTF-8 bytes. `list_notes` and `search_notes` also accept an
+characters, not UTF-8 bytes. The three co-editing reads are described in
+[Co-editing documents](#co-editing-documents). `list_notes` and `search_notes` also accept an
 optional `folderId`. Omit `folderId` to include every folder, pass a folder ID
 to filter to that folder, or pass `null` to include only top-level notes.
 
@@ -98,7 +102,7 @@ Open Configuration to choose individual functions in the **Read** and **Write**
 sections. Each section has a **Select all** checkbox; a partially selected
 section shows a mixed state.
 
-On a new installation, all five read functions are enabled and all ten write
+On a new installation, all eight read functions are enabled and all thirteen write
 functions are disabled. Select specific write functions or **Select all write
 functions** to allow them. Read functions can also be disabled individually.
 Changes apply immediately to connected clients without reconnecting. Disabled
@@ -372,7 +376,103 @@ not contain the file's text. The resolved path follows symbolic links (on macOS,
 `/tmp/x.md` comes back as `/private/tmp/x.md`); use it in later calls.
 
 Opening a file grants the main window access to that one file, like opening it
-yourself. No MCP tool lists folders or reads a file's content.
+yourself, and makes it co-edited (see below). No MCP tool lists folders. Reading
+the file's text needs the separate **Read document** permission.
+
+## Co-editing documents
+
+You and an agent can edit the same document at once: a file open in the main
+window, or a note in Quick Notes. You select text and leave a comment; the
+agent picks it up, edits the document while you keep typing, and resolves the
+comment with a one-line note. See [Co-editing with an agent](coedit.md) for
+the editor side.
+
+Every co-editing tool names its document with exactly one of `path` (the
+absolute path of a file open in Sodilaud) or `noteId` (a note in the open
+collection). A file must be open: `open_document` is the way in.
+
+| Tool | Kind | Arguments | Result |
+| --- | --- | --- | --- |
+| `list_documents` | read | none | `{ documents[{ path or noteId, name, version, coEdited, pendingComments }] }` |
+| `read_document` | read | document, `offset`, `limit` (1-200,000 characters, default 200,000) | `{ version, content, totalLength, nextOffset, headings[{ level, text, offset }], comments[] }` |
+| `apply_edit` | write | document, `baseVersion`, `requestId`, `edits[{ oldText, newText }]` (1-50) | `{ applied[index], conflicts[{ index, reason, currentText, matches?, hint }], version }` |
+| `get_pending_comments` | read | document (optional), `waitSeconds` (0-1,800, default 0) | `{ comments[], timedOut }` |
+| `add_comment` | write | document, `anchorText`, `occurrence` (from 1), `body` (1-2,000 characters), `requestId` | `{ comment }` |
+| `resolve_comment` | write | `id`, `note` (1-500 characters) | `{ comment }` |
+
+**Reading.** `read_document` returns the text as the editor shows it, including
+typing from moments ago, and its `version`. Offsets count characters. It also
+remembers that text (the last eight versions per document) as the base for
+`apply_edit`, and makes the document co-edited. `comments` lists the comments
+an agent may act on, with `id`, `author`, `state`, `anchoredText`,
+`headingPath`, `offset`, `body` and the resolve `note`.
+
+**Editing.** `apply_edit` takes replacements written against the text read at
+`baseVersion`. Sodilaud finds each `oldText` in that text (exactly and once;
+else ignoring how whitespace is laid out; else a window of lines at least 90%
+alike), carries its place through everything typed since, and applies every edit
+it can as one change, which open editors show with a short highlight. You win:
+an edit whose text you changed since `baseVersion` is not applied. Each one that
+did not apply comes back in `conflicts` with a `reason`:
+
+| Reason | Meaning |
+| --- | --- |
+| `not_found` | `oldText` is not in the base text; `currentText` holds the closest lines in the document, or is empty when nothing is close |
+| `ambiguous` | `oldText` matches more than one place; `matches` says how many when it is an exact repeat |
+| `edited_by_owner` | The text was changed after `baseVersion`; `currentText` holds it as it is now |
+| `overlaps_edit` | It overlaps an earlier edit in the same call |
+
+Every conflict also has a `hint`, one sentence on how to retry. Partial success
+is normal: reread and retry what conflicted. A `baseVersion`
+Sodilaud no longer keeps fails with `STALE_BASE`; call `read_document` again.
+Retrying with the same `requestId` and arguments returns the first result.
+
+**Comments.** `get_pending_comments` returns your comments that are waiting,
+oldest first, and marks them sent. Each has `id`, `doc` (`{ path }` or
+`{ noteId }`), `headingPath`, `anchoredText`, two lines of `contextBefore` and
+`contextAfter`, `body` and `createdAt`; an answer to an agent's question also has
+`replyTo: { id, body }`. With `waitSeconds` the call waits until a comment
+arrives or the time is up (`timedOut: true`). While it waits, an **Agent
+listening** dot shows in the editors. A client that disconnects while waiting
+takes nothing. The agent's own comments never come back from this tool.
+
+`add_comment` puts an agent comment on `anchorText`, which must occur exactly
+once in the current text unless `occurrence` picks one. Use it to open a review:
+you answer in place, and the answers arrive through `get_pending_comments`.
+`resolve_comment` marks a comment addressed with a note shown in the comments
+panel; resolving an answer also resolves the question.
+
+Some clients stop a tool call after a fixed time. A client that cuts off a
+30-minute wait earlier simply calls again; set its MCP tool timeout higher (in
+Claude Code, the `MCP_TOOL_TIMEOUT` environment variable, in milliseconds) to
+avoid the extra calls.
+
+### Claude Code integration
+
+**MCP Configuration → Claude Code integration → Install Claude Code
+integration…** lists what it will change and writes nothing until you choose
+**Install**:
+
+- `~/.claude/commands/sodilaud.md`: the `/sodilaud [path]` command. It opens the
+  file, then waits for your comments and handles each one: read, edit through
+  `apply_edit`, reread the whole document to fix every other place the change
+  affects, and resolve with a note. It stops after three empty 30-minute waits.
+- `~/.claude/skills/sodilaud/SKILL.md`: when to present a file, push a quick
+  note, open a review with questions, or co-edit.
+- A PreToolUse hook in `~/.claude/settings.json` for `Edit|Write|MultiEdit`,
+  added after copying the file to `settings.json.bak`. Other settings and hooks
+  are kept. The hook runs `sodilaud --pretooluse-hook`, which refuses a native
+  edit of a co-edited file and tells Claude Code to use `read_document` and
+  `apply_edit`. Any error lets the edit through.
+
+Name the MCP server `sodilaud` in Claude Code, since the command and the hook
+refer to its tools as `mcp__sodilaud__...`. Installing again updates the files
+in place; **Remove** takes out exactly what was installed.
+
+A file is co-edited from the moment an agent opens, reads or comments on it
+until you close it; Sodilaud lists those files in `coedit.json` in its app data
+folder for the hook, and empties the list when it quits. A note is co-edited
+until it is trashed or the collection changes.
 
 ## Live data and privacy boundary
 
@@ -397,7 +497,10 @@ connect can send tool results—including note contents—to its model provider.
 Enable access only when needed and under a client's privacy terms you accept.
 
 With **Open document** selected, an agent can make Sodilaud open any text file
-you can read and learn its size, but not its content.
+you can read and learn its size. With **Read document** also on (it is a read
+function, so it starts on), it can then read that file's text. Comments on files
+are kept in Sodilaud's app data folder, not beside the file; comments on notes are
+kept in the workspace file.
 
 Agents can search the full text of every note in the open collection, so do not keep
 tokens, passwords or other secrets in a collection you expose to them. The optional macOS

@@ -135,7 +135,9 @@ Decided 2026-09-28: open files and folders live in the main window's sidebar.
 
 ## 5. Agent co-editing with comments
 
-Status: planned
+Status: built on `feat/agent-coedit` for files and notes (spec
+[`2026-10-05-agent-coedit-design.md`](docs/superpowers/specs/2026-10-05-agent-coedit-design.md),
+guide [`docs/coedit.md`](docs/coedit.md)); not yet released
 
 You and an agent edit the same document at once, and you leave anchored comments that the
 agent picks up and acts on. The design is ported from Marginalia; the code is built separately.
@@ -144,14 +146,15 @@ agent picks up and acts on. The design is ported from Marginalia; the code is bu
   then fuzzy. User wins. Conflicts are returned to the agent.
 - Comments anchored to text ranges, mapped through every change. Orphans are flagged, never
   dropped.
-- MCP: `read_document`, `apply_edit`, `get_pending_comments` (long-poll), `resolve_comment`.
+- MCP: `list_documents`, `read_document`, `apply_edit`, `get_pending_comments` (long-poll),
+  `add_comment`, `resolve_comment`.
 - Agent integration installed from a menu: `/sodilaud` command, skill, and a PreToolUse hook
   that sends native Edit/Write on co-edited files through `apply_edit`.
 
 Depends on: 1, 2. Item 4 for files; notes work without it.
 First step: hand-test item 2's live agent edits (an append landing in an open note while typing),
 which 0.11 covers only with automated tests.
-Open: comment storage for external files (app data keyed by path, or a sidecar file).
+Decided 2026-10-05: comments on files are kept in app data, keyed by a hash of the path.
 
 ## 6. Table column widths that avoid wrapping short values
 

@@ -20,6 +20,8 @@ import { applyPlatformShortcutLabels, isMacLikePlatform } from "./platform-label
 import { compareNoteText, emptyNoteComparison } from "./note-compare.js";
 import { findTextMatches } from "./find.js";
 import { createMarkdownEditor } from "./editor-view.js";
+import { commentsExtension, startComment } from "./editor-comments.js";
+import { createComments } from "./comments-panel.js";
 import { markdownEditingCommands, runFormatAction } from "./editor-commands.js";
 import { createFormatToolbar } from "./format-toolbar.js";
 import { livePreview } from "./editor-live-preview.js";
@@ -143,6 +145,7 @@ const ctxInsertBtn = document.getElementById("ctx-insert");
 const ctxInsertMenu = document.getElementById("ctx-insert-menu");
 const ctxSelectAllBtn = document.getElementById("ctx-select-all");
 const ctxFindBtn = document.getElementById("ctx-find");
+const ctxCommentBtn = document.getElementById("ctx-comment");
 const ctxOpenSideBtn = document.getElementById("ctx-open-side");
 const ctxSidebarDivider = document.getElementById("ctx-sidebar-divider");
 const ctxPinBtn = document.getElementById("ctx-pin-note");
@@ -175,6 +178,12 @@ const copyMcpCommandBtn = document.getElementById("copy-mcp-command-btn");
 const copyMcpArgsBtn = document.getElementById("copy-mcp-args-btn");
 const copyMcpExampleBtn = document.getElementById("copy-mcp-example-btn");
 const mcpConfigExampleCode = document.getElementById("mcp-config-example-code");
+const integrationSummary = document.getElementById("coedit-integration-summary");
+const integrationChanges = document.getElementById("coedit-integration-changes");
+const integrationBtn = document.getElementById("coedit-integration-btn");
+const integrationConfirmBtn = document.getElementById("coedit-integration-confirm-btn");
+const integrationCancelBtn = document.getElementById("coedit-integration-cancel-btn");
+const integrationRemoveBtn = document.getElementById("coedit-integration-remove-btn");
 
 const ACTIVE_NOTE_KEY = "sodilaud_quicknotes_active_note";
 const COLLAPSED_FOLDERS_KEY = "sodilaud_collapsed_folders";
@@ -225,8 +234,8 @@ let notificationSequence = 0;
 let activeNotification = null;
 let previewHighlightsRendered = false;
 let isMcpEnabled = false;
-const MCP_READ_TOOLS = ["list_folders", "list_notes", "search_notes", "get_note", "list_trash"];
-const MCP_WRITE_TOOLS = ["create_note", "create_folder", "append_to_note", "rename_note", "move_note", "rename_folder", "delete_note", "delete_folder", "push_quick_note", "open_document"];
+const MCP_READ_TOOLS = ["list_folders", "list_notes", "search_notes", "get_note", "list_trash", "list_documents", "read_document", "get_pending_comments"];
+const MCP_WRITE_TOOLS = ["create_note", "create_folder", "append_to_note", "rename_note", "move_note", "rename_folder", "delete_note", "delete_folder", "push_quick_note", "open_document", "apply_edit", "add_comment", "resolve_comment"];
 const defaultMcpPermissions = () => Object.fromEntries([...MCP_READ_TOOLS.map(tool => [tool, true]), ...MCP_WRITE_TOOLS.map(tool => [tool, false])]);
 let mcpPermissions = defaultMcpPermissions();
 const mcpPermissionsFrom = tools => Object.fromEntries([...MCP_READ_TOOLS, ...MCP_WRITE_TOOLS].map(tool => [tool, tools.includes(tool)]));
@@ -277,6 +286,7 @@ const noteSync = createNoteSync({
   collectionId: () => collectionId,
   ready: () => structureQueue,
   label: "quicknotes",
+  onRemote: remote => comments.remote(remote),
   onStatus: ({ failed }) => {
     textSyncFailed = failed;
     refreshSaveStatus();
@@ -433,6 +443,7 @@ function showNoteInPane(pane, editor, note) {
   paneStates[pane].delete(note.id);
   if (cached) editor.restoreState(cached);
   else editor.loadText(note.syncedContent ?? note.content, { extensions: noteSync.extension(note.id, note.version ?? 0) });
+  comments.shown();
 }
 
 const openNoteText = noteId => {
@@ -570,6 +581,8 @@ async function registerWorkspaceListeners() {
   await listen("notes-doc-updates", ({ payload }) => {
     applyDocUpdates(payload).catch(error => console.error("Could not apply a note change", error));
   });
+  await listen("comments-changed", ({ payload }) => comments.receive(payload));
+  await listen("coedit-state", ({ payload }) => comments.setState(payload));
 }
 
 const trashUi = createTrashUi({
@@ -585,6 +598,30 @@ const trashUi = createTrashUi({
 function refreshTrashUi() { trashUi.refresh(); }
 
 let mcpConnectionInfo = null;
+
+// Comments on the notes the panes show. The drawer follows the active pane.
+const paneDocs = () => {
+  const shown = [];
+  if (primaryEditor && activeNoteId) shown.push({ view: primaryEditor.view, doc: { collectionId, noteId: activeNoteId }, pane: "primary" });
+  if (secondaryEditor && isSplitNoteMode && secondaryNoteId) {
+    shown.push({ view: secondaryEditor.view, doc: { collectionId, noteId: secondaryNoteId }, pane: "secondary" });
+  }
+  return shown;
+};
+const comments = createComments({
+  document,
+  invoke,
+  root: document.getElementById("comments-panel"),
+  countButton: document.getElementById("comments-count-btn"),
+  editors: paneDocs,
+  active: () => {
+    if (currentLayoutMode === "reading" || !collectionId) return null;
+    const pane = isSplitNoteMode ? activePane : "primary";
+    return paneDocs().find(shown => shown.pane === pane) ?? null;
+  },
+  flush: () => noteSync.flush(),
+  notify: message => showNotification(message)
+});
 
 const WORD_COUNT_DEBOUNCE_MS = 150;
 let wordCountTimer = null;
@@ -609,7 +646,17 @@ function createAppEditor(host, { ariaLabel, pane }) {
     mode: editorModeFor(currentLayoutMode),
     syntaxHighlighting: appearance.syntaxHighlighting,
     lineNumbers: appearance.lineNumbers,
-    extensions: [markdownEditingCommands(), livePreview({ onOpenLink: openExternalHref })],
+    extensions: [
+      markdownEditingCommands(),
+      livePreview({ onOpenLink: openExternalHref }),
+      commentsExtension({
+        onSubmit: (view, comment) => comments.submit(view, comment),
+        onSelect: id => {
+          setActivePane(view === secondaryEditor?.view ? "secondary" : "primary");
+          comments.select(id);
+        }
+      })
+    ],
     onChange: pane === "primary" ? handleEditorInput : handleSecondaryEditorInput,
     onSelectionChange: () => {
       if (activePane !== pane) return;
@@ -717,6 +764,11 @@ async function init() {
   renderNoteList();
   loadActiveNote();
   await loadMcpState();
+  try {
+    comments.setState(await invoke("coedit_get_state"));
+  } catch (error) {
+    console.error("Could not read the comment mode", error);
+  }
 }
 
 // ----------------------------------------------------
@@ -1543,6 +1595,8 @@ function setLayoutMode(value, { persist = true } = {}) {
   primaryEditor.setMode(editorModeFor(mode));
   secondaryEditor.setMode(editorModeFor(mode));
   setFormatControlsEnabled(mode !== "reading");
+  document.getElementById("comment-btn").disabled = mode === "reading";
+  comments.render();
   if (mode === "reading") updateMarkdownPreview();
 
   if (persist) localStorage.setItem("sodilaud_layout_mode", mode);
@@ -1744,6 +1798,7 @@ async function openMcpConfigModal() {
   mcpConfigModalBackdrop.style.display = "flex";
   mcpConfigModalBackdrop.setAttribute("aria-hidden", "false");
   closeMcpConfigBtn.focus({ preventScroll: true });
+  runIntegration("coedit_integration_plan");
   const copyButtons = [copyMcpCommandBtn, copyMcpArgsBtn, copyMcpExampleBtn];
   copyButtons.forEach(button => { button.disabled = true; });
   try {
@@ -1760,6 +1815,37 @@ async function openMcpConfigModal() {
     copyButtons.forEach(button => { button.disabled = false; });
   } catch (error) {
     if (isMcpConfigModalOpen) mcpPermissionStatus.textContent = `Could not load MCP configuration: ${error.message || error}`;
+  }
+}
+
+// The Claude Code integration writes into the owner's home folder, so the
+// button first shows what would change and writes only once confirmed.
+function renderIntegration(plan, { previewing = false, message = null } = {}) {
+  const installed = Boolean(plan?.installed);
+  const present = Boolean(plan?.present);
+  const changes = Array.isArray(plan?.changes) ? plan.changes : [];
+  integrationSummary.textContent = message ?? (installed
+    ? "Installed."
+    : present ? "Installed, but out of date." : "Not installed.");
+  integrationChanges.replaceChildren(...(previewing ? changes : []).map(change => {
+    const item = document.createElement("li");
+    item.textContent = change;
+    return item;
+  }));
+  integrationChanges.hidden = !previewing;
+  integrationBtn.hidden = previewing || installed;
+  integrationBtn.textContent = present ? "Update Claude Code integration…" : "Install Claude Code integration…";
+  integrationConfirmBtn.hidden = !previewing;
+  integrationCancelBtn.hidden = !previewing;
+  integrationRemoveBtn.hidden = previewing || !present;
+}
+
+async function runIntegration(command, previewing = false) {
+  try {
+    renderIntegration(await invoke(command), { previewing });
+  } catch (error) {
+    renderIntegration(null, { message: `Claude Code integration: ${error.message || error}` });
+    integrationBtn.hidden = false;
   }
 }
 
@@ -1986,6 +2072,10 @@ function attachEventListeners() {
     openMcpConfigModal();
   });
   closeMcpConfigBtn.addEventListener("click", closeMcpConfigModal);
+  integrationBtn.addEventListener("click", () => runIntegration("coedit_integration_plan", true));
+  integrationConfirmBtn.addEventListener("click", () => runIntegration("coedit_integration_install"));
+  integrationCancelBtn.addEventListener("click", () => runIntegration("coedit_integration_plan"));
+  integrationRemoveBtn.addEventListener("click", () => runIntegration("coedit_integration_remove"));
   mcpConfigModalBackdrop.addEventListener("click", (e) => {
     if (e.target === mcpConfigModalBackdrop) closeMcpConfigModal();
   });
@@ -2064,6 +2154,15 @@ function attachEventListeners() {
   });
   ctxSelectAllBtn.addEventListener("click", handleContextSelectAll);
   ctxFindBtn.addEventListener("click", handleContextFind);
+  ctxCommentBtn.addEventListener("click", () => {
+    const editor = contextMenuEditor;
+    hideContextMenu();
+    if (!editor) return;
+    setActivePane(editor === secondaryEditor ? "secondary" : "primary");
+    startComment(editor.view);
+  });
+  document.getElementById("comment-btn").addEventListener("click", () => comments.start());
+  document.getElementById("comments-count-btn").addEventListener("click", () => comments.toggle());
   ctxOpenSideBtn.addEventListener("click", () => {
     hideContextMenu();
     if (contextMenuNoteId) {
@@ -2986,6 +3085,7 @@ function showContextMenu(e, noteId = null, folderId = null) {
     ctxPasteBtn.style.display = "none";
     ctxSelectAllBtn.style.display = "none";
     ctxFindBtn.style.display = "none";
+    ctxCommentBtn.style.display = "none";
     ctxInsertDivider.style.display = "none";
     ctxInsertGroup.style.display = "none";
   } else if (folderId) {
@@ -3005,6 +3105,7 @@ function showContextMenu(e, noteId = null, folderId = null) {
     ctxPasteBtn.style.display = "none";
     ctxSelectAllBtn.style.display = "none";
     ctxFindBtn.style.display = "none";
+    ctxCommentBtn.style.display = "none";
     ctxInsertDivider.style.display = "none";
     ctxInsertGroup.style.display = "none";
   } else {
@@ -3050,6 +3151,7 @@ function showContextMenu(e, noteId = null, folderId = null) {
     
     ctxCutBtn.disabled = !hasSelection;
     ctxCopyBtn.disabled = !hasSelection;
+    ctxCommentBtn.style.display = contextMenuEditor && hasSelection && currentLayoutMode !== "reading" ? "flex" : "none";
   }
   
   const menuWidth = 180;
@@ -3503,7 +3605,9 @@ function updateSecondaryMarkdownPreview() {
 }
 
 function setActivePane(pane) {
+  const changed = activePane !== pane;
   activePane = pane;
+  if (changed) comments.render();
   if (pane === "secondary") {
     primaryPaneWrapper.classList.remove("active-pane");
     secondaryPaneWrapper.classList.add("active-pane");

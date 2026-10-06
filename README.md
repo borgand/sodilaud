@@ -104,8 +104,9 @@ desktop executable and is off by default. While enabled, it can read the collect
 in Sodilaud, including edits that have not been saved yet. Individually enabled
 write functions can create notes and folders, append text, rename notes and
 folders, move notes between folders, move notes to recoverable trash, delete
-empty folders, push a note into Quick Notes, and open a text file in the main
-window without reading it. Agents can list trash metadata; restoring and permanently
+empty folders, push a note into Quick Notes, open a text file in the main
+window, and co-edit an open file or note with you through anchored comments
+([co-editing](docs/coedit.md)). Agents can list trash metadata; restoring and permanently
 emptying trash are available only in the UI. Existing-item edits require revision
 checks and support safe retries. A connected agent
 may send returned note contents to its model provider.
@@ -122,14 +123,16 @@ manual test checklist.
 
 Agents work with your Quick Notes, so access is set there: open Quick Notes, open its menu (top right), and turn **Agent access** **On**. The main window's **Sodilaud menu → Agent access…** takes you there. Choose **MCP Configuration** to copy the executable path, `--mcp-stdio` argument, or generic JSON example into a client that supports local stdio MCP servers. Configuration stays available while access is off. Sodilaud must remain open, but the Quick Notes panel does not need to be visible; the accent-colored **MCP listening** indicator appears beside its save status while access is enabled.
 
-On a new installation, all five read permissions are on and all ten write permissions are off. Use the **Read** and **Write** checkboxes to choose individual functions or select all in a section. Changes apply to connected clients immediately. Sodilaud remembers them, and whether access is on: if access was on when you quit, it starts again at launch with the same permissions.
+On a new installation, all eight read permissions are on and all thirteen write permissions are off. Use the **Read** and **Write** checkboxes to choose individual functions or select all in a section. Changes apply to connected clients immediately. Sodilaud remembers them, and whether access is on: if access was on when you quit, it starts again at launch with the same permissions.
 
 | Permission group | Functions |
 | --- | --- |
-| Read | List folders, list notes, search notes, read note content, list trash metadata |
-| Write | Create note, create folder, append to note, rename note, move note, rename folder, delete note to trash, delete empty folder, push quick note, open document |
+| Read | List folders, list notes, search notes, read note content, list trash metadata, list documents, read document, get pending comments |
+| Write | Create note, create folder, append to note, rename note, move note, rename folder, delete note to trash, delete empty folder, push quick note, open document, apply edit, add comment, resolve comment |
 
 Writes to existing items check the current revision before changing anything. Request IDs make retries safe after a timeout or failed save. An agent's changes show up in an open editor without moving your cursor or losing what you are typing. Agents cannot replace an entire note, read trashed note bodies, restore notes, or empty trash. Access applies to all connected local clients and to the collection currently open in Sodilaud, including what you typed moments ago.
+
+To work on a document together, select text and press `Cmd+Option+M` (`Ctrl+Alt+M` on Windows and Linux) to leave a comment; an agent running `/sodilaud` picks it up, edits the document while you keep typing, and resolves the comment. See [co-editing with an agent](docs/coedit.md).
 
 See the [MCP reference](docs/mcp.md) for client setup, tool arguments, limits, retry behavior, and the privacy boundary.
 

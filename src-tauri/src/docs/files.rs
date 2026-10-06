@@ -7,17 +7,19 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Condvar, Mutex, MutexGuard, PoisonError};
+use std::sync::{Condvar, Mutex, MutexGuard, PoisonError, RwLock};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
 use super::collab::{Collab, Pulled, Pushed, Update};
+use super::comments::CommentsEvent;
 use super::registry::Registry;
 use crate::files::io::{self, LineEnding};
 use crate::files::{FileError, FileErrorCode};
 
 pub(crate) const SAVE_DELAY: Duration = Duration::from_millis(400);
+pub(crate) const COMMENTS_DELAY: Duration = Duration::from_millis(500);
 /// The client ID of changes that came from the file on disk.
 pub(crate) const DISK_CLIENT: &str = "disk";
 
@@ -74,9 +76,24 @@ pub(crate) struct FileDoc {
     disk_hash: String,
     save: SaveState,
     external: Option<External>,
+    /// The comments changed and are written to app data at this time.
+    comments_due: Option<Instant>,
+    /// `collab.comments_rev` when the page was last told about the comments.
+    comments_shown: u64,
 }
 
 impl FileDoc {
+    fn comments_event(&self, path: &Path) -> CommentsEvent {
+        CommentsEvent {
+            collection_id: None,
+            note_id: None,
+            path: Some(path.to_string_lossy().into_owned()),
+            doc_id: Some(self.id.clone()),
+            version: self.collab.version(),
+            comments: self.collab.comments.clone(),
+        }
+    }
+
     fn opened(&self, path: &Path) -> FileOpened {
         FileOpened {
             doc_id: self.id.clone(),
@@ -105,6 +122,8 @@ impl FileDoc {
 #[derive(Default)]
 pub(crate) struct FileDocs {
     docs: Mutex<HashMap<PathBuf, FileDoc>>,
+    /// Where file comments are kept; none in tests that do not need them.
+    comment_dir: RwLock<Option<PathBuf>>,
     /// Held for every write and every look at the disk, so one file is never
     /// written twice at once and an outside edit is never read mid-write.
     writing: Mutex<()>,
@@ -183,13 +202,25 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-/// The earliest autosave that may run, skipping files that changed on disk.
-fn earliest_due(docs: &HashMap<PathBuf, FileDoc>) -> Option<(Instant, PathBuf)> {
-    docs.iter()
+/// Work the autosave thread does for one file.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Due {
+    Save(PathBuf),
+    Comments(PathBuf),
+}
+
+/// The earliest autosave or comment write that may run, skipping saves of
+/// files that changed on disk.
+fn earliest_due(docs: &HashMap<PathBuf, FileDoc>) -> Option<(Instant, Due)> {
+    let saves = docs
+        .iter()
         .filter(|(_, doc)| doc.external.is_none())
-        .filter_map(|(path, doc)| doc.save.due.map(|due| (due, path)))
-        .min_by_key(|(due, _)| *due)
-        .map(|(due, path)| (due, path.clone()))
+        .filter_map(|(path, doc)| doc.save.due.map(|due| (due, Due::Save(path.clone()))));
+    let comments = docs.iter().filter_map(|(path, doc)| {
+        doc.comments_due
+            .map(|due| (due, Due::Comments(path.clone())))
+    });
+    saves.chain(comments).min_by_key(|(due, _)| *due)
 }
 
 impl Registry {
@@ -209,6 +240,97 @@ impl Registry {
         }
     }
 
+    pub(crate) fn set_comment_dir(&self, directory: PathBuf) {
+        *self
+            .files
+            .comment_dir
+            .write()
+            .unwrap_or_else(PoisonError::into_inner) = Some(directory);
+    }
+
+    fn comment_dir(&self) -> Option<PathBuf> {
+        self.files
+            .comment_dir
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    /// After anything changed a file's comments: show them and write them soon.
+    pub(super) fn file_comments_changed(&self, path: &Path, doc: &mut FileDoc) {
+        if doc.collab.comments_rev == doc.comments_shown {
+            return;
+        }
+        doc.comments_shown = doc.collab.comments_rev;
+        if doc.comments_due.is_none() {
+            doc.comments_due = Some(Instant::now() + COMMENTS_DELAY);
+            self.files.wake.notify_all();
+        }
+        if let Some(sink) = self.sink() {
+            sink.comments(&doc.comments_event(path));
+        }
+    }
+
+    /// Writes a file's comments if a write is pending.
+    pub(crate) fn file_save_comments(&self, path: &Path) {
+        let comments = {
+            let mut docs = self.file_docs();
+            let Some(doc) = docs.get_mut(path) else {
+                return;
+            };
+            if doc.comments_due.take().is_none() {
+                return;
+            }
+            doc.collab.comments.clone()
+        };
+        let Some(directory) = self.comment_dir() else {
+            return;
+        };
+        if let Err(error) = crate::store::comments::save(&directory, path, &comments) {
+            eprintln!("{error}");
+        }
+    }
+
+    /// Runs `action` on an open file's text and comments. Updates it commits
+    /// are broadcast and autosaved; changed comments are shown and stored.
+    pub(crate) fn with_file_doc<T>(
+        &self,
+        path: &Path,
+        action: impl FnOnce(&mut Collab) -> Result<T, String>,
+    ) -> Result<T, String> {
+        let mut docs = self.file_docs();
+        let doc = docs
+            .get_mut(path)
+            .ok_or_else(|| FileError::not_open(path).message)?;
+        let before = doc.collab.version();
+        let result = action(&mut doc.collab);
+        if doc.collab.version() > before {
+            let updates = doc.collab.since(before).unwrap_or_default();
+            self.emit_file_update(path, doc, before, updates);
+        }
+        self.file_comments_changed(path, doc);
+        result
+    }
+
+    pub(crate) fn file_doc_ids(&self) -> Vec<(PathBuf, String)> {
+        self.file_docs()
+            .iter()
+            .map(|(path, doc)| (path.clone(), doc.id.clone()))
+            .collect()
+    }
+
+    pub(super) fn emit_file_update(
+        &self,
+        path: &Path,
+        doc: &mut FileDoc,
+        from: u64,
+        updates: Vec<Update>,
+    ) {
+        doc.save.due = Some(Instant::now() + SAVE_DELAY);
+        self.emit_file_doc(path, doc, from, updates);
+        self.files.wake.notify_all();
+    }
+
     fn emit_saved(&self, saved: &FileSaved) {
         if let Some(sink) = self.sink() {
             sink.file_saved(saved);
@@ -223,6 +345,10 @@ impl Registry {
         let _writing = lock(&self.files.writing);
         let bytes = disk.read(path)?;
         let (text, line_ending, bom) = io::decode_normalized(&bytes)?;
+        let stored = self
+            .comment_dir()
+            .map(|directory| crate::store::comments::load(&directory, path))
+            .unwrap_or_default();
         let mut docs = self.file_docs();
         let doc = docs.entry(path.to_path_buf()).or_insert_with(|| FileDoc {
             id: uuid::Uuid::new_v4().to_string(),
@@ -237,7 +363,13 @@ impl Registry {
                 error: None,
             },
             external: None,
+            comments_due: None,
+            comments_shown: 0,
         });
+        if doc.collab.comments.is_empty() && !stored.is_empty() {
+            doc.collab.load_comments(stored);
+            doc.comments_shown = doc.collab.comments_rev;
+        }
         Ok(doc.opened(path))
     }
 
@@ -269,6 +401,7 @@ impl Registry {
         doc.save.due = Some(Instant::now() + SAVE_DELAY);
         self.emit_file_doc(path, doc, from, updates);
         self.files.wake.notify_all();
+        self.file_comments_changed(path, doc);
         Ok(Pushed {
             accepted: true,
             version,
@@ -344,7 +477,9 @@ impl Registry {
             Err(error) if error.code != FileErrorCode::NotOpen => return Err(error),
             _ => {}
         }
+        self.file_save_comments(path);
         self.file_docs().remove(path);
+        self.coedit_forget_file(path);
         Ok(())
     }
 
@@ -352,6 +487,7 @@ impl Registry {
     /// by Save As from another document.
     pub(crate) fn file_discard(&self, path: &Path) {
         self.file_docs().remove(path);
+        self.coedit_forget_file(path);
     }
 
     fn emit_external(&self, path: &Path, doc: &FileDoc, kind: ExternalKind) {
@@ -369,6 +505,7 @@ impl Registry {
     fn take_disk(&self, path: &Path, doc: &mut FileDoc, bytes: &[u8], text: String) {
         if let Some((from, updates)) = doc.collab.replace(DISK_CLIENT, &text) {
             self.emit_file_doc(path, doc, from, updates);
+            self.file_comments_changed(path, doc);
         }
         doc.synced = text;
         doc.disk_hash = io::hash(bytes);
@@ -431,6 +568,7 @@ impl Registry {
             Some(merged) => {
                 if let Some((from, updates)) = doc.collab.replace(DISK_CLIENT, &merged) {
                     self.emit_file_doc(path, doc, from, updates);
+                    self.file_comments_changed(path, doc);
                 }
                 doc.synced = theirs;
                 doc.disk_hash = io::hash(&bytes);
@@ -487,6 +625,9 @@ impl Registry {
     /// Writes every pending save, as a quit does. Returns the failures.
     pub(crate) fn file_flush_all(&self, disk: &dyn Disk) -> Vec<FileError> {
         let paths: Vec<PathBuf> = self.file_docs().keys().cloned().collect();
+        for path in &paths {
+            self.file_save_comments(path);
+        }
         paths
             .iter()
             .filter_map(|path| self.file_save(path, disk).err())
@@ -494,13 +635,13 @@ impl Registry {
             .collect()
     }
 
-    /// Blocks until an autosave is due and returns its document.
-    pub(crate) fn file_next_due(&self) -> PathBuf {
+    /// Blocks until an autosave or a comment write is due and returns it.
+    pub(crate) fn file_next_due(&self) -> Due {
         let mut docs = self.file_docs();
         loop {
             let now = Instant::now();
             docs = match earliest_due(&docs) {
-                Some((due, path)) if due <= now => return path,
+                Some((due, work)) if due <= now => return work,
                 Some((due, _)) => {
                     self.files
                         .wake
@@ -521,12 +662,15 @@ impl Registry {
     fn file_due(&self, now: Instant) -> Option<PathBuf> {
         earliest_due(&self.file_docs())
             .filter(|(due, _)| *due <= now)
-            .map(|(_, path)| path)
+            .and_then(|(_, work)| match work {
+                Due::Save(path) => Some(path),
+                Due::Comments(_) => None,
+            })
     }
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::docs::registry::tests::Recorder;
     use serde_json::json;
@@ -808,8 +952,56 @@ mod tests {
                 vec![update(json!([[0, "z"]]))],
             )
             .unwrap();
-        assert_eq!(waiting.join().unwrap(), path);
+        assert_eq!(waiting.join().unwrap(), Due::Save(path));
         assert!(pushed_at.elapsed() >= SAVE_DELAY);
+    }
+
+    #[test]
+    fn file_comments_are_written_after_a_delay_and_on_close() {
+        use crate::docs::comments::{Author, Comment, State};
+        let path = scratch("comments", b"hello world");
+        let directory = path.parent().unwrap().join("comment-store");
+        let (registry, recorder) = registry();
+        registry.set_comment_dir(directory.clone());
+        let doc_id = id(&registry, &path);
+        registry
+            .with_file_doc(&path, |collab| {
+                let comment = Comment::new(
+                    Author::Owner,
+                    State::Held,
+                    collab.text(),
+                    (0, 5),
+                    "b".into(),
+                    None,
+                    1,
+                );
+                collab.comments.push(comment);
+                collab.comments_changed();
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(recorder.comments.lock().unwrap().len(), 1);
+        assert_eq!(
+            registry.file_due(Instant::now() + COMMENTS_DELAY * 2),
+            None,
+            "a comment write is not a save"
+        );
+        assert!(matches!(
+            earliest_due(&registry.file_docs()),
+            Some((_, Due::Comments(_)))
+        ));
+        registry
+            .file_push(&path, &doc_id, 0, vec![update(json!([[0, "> "], 11]))])
+            .unwrap();
+        registry.file_close(&path, &TestDisk).unwrap();
+        let stored = crate::store::comments::load(&directory, &path);
+        assert_eq!((stored[0].from, stored[0].to), (2, 7));
+        let reopened = registry.file_open(&path, &TestDisk).unwrap();
+        assert_eq!(reopened.text, "> hello world");
+        let comments = registry
+            .with_file_doc(&path, |collab| Ok(collab.comments.clone()))
+            .unwrap();
+        assert_eq!(comments[0].anchored_text, "hello");
     }
 
     fn text(registry: &Registry, path: &Path) -> String {

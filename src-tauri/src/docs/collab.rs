@@ -11,9 +11,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::changes;
+use super::comments::{self, Comment};
 
 /// Updates kept per document for clients that fell behind. An older client reloads.
 pub(crate) const HISTORY: usize = 1000;
+/// Texts kept per document for agents' edits to be merged against.
+pub(crate) const BASES: usize = 8;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub(crate) struct Update {
@@ -41,6 +44,14 @@ pub(crate) struct Collab {
     text: String,
     version: u64,
     updates: VecDeque<Update>,
+    /// Comments on this text, mapped through every update.
+    pub(crate) comments: Vec<Comment>,
+    /// Grows whenever a comment changes, so the owner knows to save and show them.
+    pub(crate) comments_rev: u64,
+    /// Texts an agent read, by version: what its edits are written against.
+    bases: VecDeque<(u64, String)>,
+    /// An agent read or commented on this document since it was opened.
+    pub(crate) co_edited: bool,
 }
 
 impl Collab {
@@ -49,6 +60,51 @@ impl Collab {
             text,
             version: 0,
             updates: VecDeque::new(),
+            comments: Vec::new(),
+            comments_rev: 0,
+            bases: VecDeque::new(),
+            co_edited: false,
+        }
+    }
+
+    /// Takes stored comments and places each in the current text.
+    pub(crate) fn load_comments(&mut self, mut loaded: Vec<Comment>) {
+        for comment in &mut loaded {
+            if !comment.is_resolved() {
+                comments::reanchor(comment, &self.text);
+            }
+        }
+        self.comments = loaded;
+        self.comments_rev += 1;
+    }
+
+    pub(crate) fn comments_changed(&mut self) {
+        self.comments_rev += 1;
+    }
+
+    /// Remembers the current text as a merge base and returns its version.
+    pub(crate) fn snapshot_base(&mut self) -> u64 {
+        if self.bases.back().map(|(version, _)| *version) != Some(self.version) {
+            self.bases.push_back((self.version, self.text.clone()));
+            while self.bases.len() > BASES {
+                self.bases.pop_front();
+            }
+        }
+        self.version
+    }
+
+    pub(crate) fn base(&self, version: u64) -> Option<&str> {
+        self.bases
+            .iter()
+            .find(|(found, _)| *found == version)
+            .map(|(_, text)| text.as_str())
+    }
+
+    /// The updates since `version`, or `None` when they are no longer kept.
+    pub(crate) fn since(&self, version: u64) -> Option<Vec<Update>> {
+        match self.pull(version) {
+            Ok(Pulled::Updates(updates)) => Some(updates),
+            _ => None,
         }
     }
 
@@ -74,6 +130,15 @@ impl Collab {
     /// version the first update applies to.
     pub(crate) fn commit(&mut self, text: String, updates: Vec<Update>) -> u64 {
         let from = self.version;
+        if !self.comments.is_empty() {
+            let sections: Vec<_> = updates
+                .iter()
+                .filter_map(|update| changes::sections(&update.changes).ok())
+                .collect();
+            if comments::map_through(&mut self.comments, &sections, &text) {
+                self.comments_rev += 1;
+            }
+        }
         self.text = text;
         self.version += updates.len() as u64;
         self.updates.extend(updates);
@@ -153,6 +218,39 @@ mod tests {
         assert_eq!(from, 0);
         assert_eq!(updates, vec![update("disk", json!([4, [3, "2"], 1]))]);
         assert_eq!((collab.text(), collab.version()), ("one\n2\n", 1));
+    }
+
+    #[test]
+    fn keeps_eight_bases_and_maps_comments_on_every_commit() {
+        use crate::docs::comments::{Author, Comment, State};
+        let mut collab = Collab::new("hello world".into());
+        let comment = Comment::new(
+            Author::Owner,
+            State::Queued,
+            collab.text(),
+            (6, 11),
+            "b".into(),
+            None,
+            0,
+        );
+        collab.load_comments(vec![comment]);
+        assert_eq!(collab.snapshot_base(), 0);
+        let rev = collab.comments_rev;
+        let updates = vec![update("c", json!([[0, ">> "], 11]))];
+        let text = collab.apply(&updates).unwrap();
+        collab.commit(text, updates);
+        assert!(collab.comments_rev > rev);
+        assert_eq!((collab.comments[0].from, collab.comments[0].to), (9, 14));
+        assert_eq!(collab.base(0), Some("hello world"));
+        assert_eq!(collab.since(0).unwrap().len(), 1);
+        for _ in 0..10 {
+            let updates = vec![update("c", changes::append(collab.text(), "!"))];
+            let text = collab.apply(&updates).unwrap();
+            collab.commit(text, updates);
+            collab.snapshot_base();
+        }
+        assert_eq!(collab.base(0), None, "only the last eight are kept");
+        assert!(collab.base(collab.version()).is_some());
     }
 
     #[test]

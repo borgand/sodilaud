@@ -13,6 +13,8 @@ use tauri::{
 mod clipboard;
 mod docs;
 mod files;
+mod hook;
+mod integration;
 mod mcp;
 mod mcp_config;
 mod platform;
@@ -20,6 +22,7 @@ mod quicknotes;
 mod quit;
 mod store;
 mod workspace;
+pub use hook::{run_pretooluse_hook, FLAG as PRETOOLUSE_HOOK_FLAG};
 pub use mcp::run_mcp_stdio;
 
 pub(crate) const PREFERENCES_FILE_NAME: &str = "sodilaud-preferences.json";
@@ -408,11 +411,24 @@ pub fn run(context: tauri::Context<tauri::Wry>) {
             docs::commands::notes_vacuum,
             docs::commands::doc_push,
             docs::commands::doc_pull,
+            docs::commands::comments_get,
+            docs::commands::comment_add,
+            docs::commands::comment_edit,
+            docs::commands::comment_delete,
+            docs::commands::comment_resolve,
+            docs::commands::comment_resend,
+            docs::commands::comments_send_review,
+            docs::commands::comments_clear_resolved,
+            docs::commands::coedit_get_state,
+            mcp::coedit_set_hold,
             mcp::get_mcp_connection_info,
             mcp::get_mcp_state,
             mcp::start_mcp_server,
             mcp::set_mcp_permissions,
             mcp::stop_mcp_server,
+            integration::coedit_integration_plan,
+            integration::coedit_integration_install,
+            integration::coedit_integration_remove,
             clipboard::commands::clip_list,
             clipboard::commands::clip_reveal,
             clipboard::commands::clip_select,

@@ -34,6 +34,20 @@ export function createFakeRegistry({ emit, seed = {}, files = {}, open = DEFAULT
   let seq = 0;
   const failing = new Set();
   const current = () => stores.get(path);
+  // Comments by note ID, in the simplest form the page can tell from Rust's.
+  const comments = new Map();
+  let commentCounter = 0;
+  const commentsOf = noteId => comments.get(noteId) ?? [];
+  const commentsEvent = noteId => ({ collectionId: id, noteId, version: note(noteId).version, comments: structuredClone(commentsOf(noteId)) });
+  const changedComments = noteId => emit("comments-changed", commentsEvent(noteId));
+  function addComment(noteId, fields) {
+    const target = note(noteId);
+    commentCounter += 1;
+    const comment = { id: `c_${commentCounter}`, orphaned: false, headingPath: [], note: null, replyTo: null, createdAt: commentCounter, updatedAt: commentCounter, anchoredText: target.content.slice(fields.from, fields.to), ...fields };
+    comments.set(noteId, [...commentsOf(noteId), comment]);
+    changedComments(noteId);
+    return comment;
+  }
 
   const state = () => ({
     collectionId: id,
@@ -214,7 +228,27 @@ export function createFakeRegistry({ emit, seed = {}, files = {}, open = DEFAULT
       check(collectionId);
       const target = note(noteId);
       return { updates: target.updates.slice(since) };
-    }
+    },
+    comments_get: ({ doc }) => {
+      check(doc.collectionId);
+      return commentsEvent(doc.noteId);
+    },
+    comment_add: ({ doc, comment: { version, from, to, body, replyTo } }) => {
+      check(doc.collectionId);
+      if (replyTo) {
+        const parent = commentsOf(doc.noteId).find(c => c.id === replyTo);
+        return addComment(doc.noteId, { author: "owner", state: "queued", from: parent.from, to: parent.to, body, replyTo });
+      }
+      if (version !== note(doc.noteId).version) throw new Error("The selected text changed; select it again");
+      return addComment(doc.noteId, { author: "owner", state: "queued", from, to, body });
+    },
+    comment_resolve: ({ doc, id: commentId }) => {
+      check(doc.collectionId);
+      const comment = commentsOf(doc.noteId).find(c => c.id === commentId);
+      comment.state = "resolved";
+      changedComments(doc.noteId);
+    },
+    coedit_get_state: () => ({ holdForReview: false, listening: false })
   };
 
   return {
@@ -237,6 +271,11 @@ export function createFakeRegistry({ emit, seed = {}, files = {}, open = DEFAULT
       current().notes.push({ isTitleLocked: true, isPinned: false, folderId: null, updatedAt: Date.now(), ...noteData, version: 0, rev: ++nextRev, updates: [] });
       current().notes = pinnedFirst(current().notes);
       changed();
+    },
+    comments: commentsOf,
+    agentComment(noteId, anchor, body) {
+      const from = note(noteId).content.indexOf(anchor);
+      return addComment(noteId, { author: "agent", state: "open", from, to: from + anchor.length, body });
     },
     agentTrash(noteId) {
       trashNote(noteId);

@@ -86,6 +86,133 @@ pub(crate) fn apply(text: &str, changes: &Value) -> Result<String, String> {
     Ok(result)
 }
 
+/// A changed run of a change set, in UTF-16 units of the document before it:
+/// `from..to` was replaced by `insert` units of new text.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Section {
+    pub(crate) from: usize,
+    pub(crate) to: usize,
+    pub(crate) insert: usize,
+}
+
+/// The changed runs of a change set, in order. Kept runs are left out.
+pub(crate) fn sections(changes: &Value) -> Result<Vec<Section>, String> {
+    let parts = changes.as_array().ok_or("A change set must be an array")?;
+    let mut sections: Vec<Section> = Vec::new();
+    let mut position = 0;
+    for part in parts {
+        match part {
+            Value::Number(length) => {
+                position += length
+                    .as_u64()
+                    .ok_or("A change set length must be a number")?
+                    as usize;
+            }
+            Value::Array(items) => {
+                let length = items
+                    .first()
+                    .and_then(Value::as_u64)
+                    .ok_or("A change set length must be a number")?
+                    as usize;
+                let lines = &items[1.min(items.len())..];
+                let insert = if lines.is_empty() {
+                    0
+                } else {
+                    lines
+                        .iter()
+                        .map(|line| line.as_str().map(utf16_len).unwrap_or(0))
+                        .sum::<usize>()
+                        + lines.len()
+                        - 1
+                };
+                let section = Section {
+                    from: position,
+                    to: position + length,
+                    insert,
+                };
+                match sections.last_mut() {
+                    Some(last) if last.to == section.from => {
+                        last.to = section.to;
+                        last.insert += section.insert;
+                    }
+                    _ => sections.push(section),
+                }
+                position += length;
+            }
+            _ => return Err("A change set part must be a number or an array".into()),
+        }
+    }
+    Ok(sections)
+}
+
+/// Where `pos` lands after `changes`, as CodeMirror's `ChangeDesc.mapPos`
+/// puts it, so Rust and the editor agree on every comment anchor. A position
+/// at the start of a replaced run stays at the start of its replacement; one
+/// inside goes to its start (`assoc < 0`) or past it; a position where text
+/// was only inserted goes past it unless `assoc < 0`.
+#[cfg(test)]
+pub(crate) fn map_pos(changes: &Value, pos: usize, assoc: i8) -> Result<usize, String> {
+    map_pos_in(&sections(changes)?, pos, assoc)
+}
+
+pub(crate) fn map_pos_in(sections: &[Section], pos: usize, assoc: i8) -> Result<usize, String> {
+    let (mut pos_a, mut pos_b) = (0, 0);
+    for section in sections {
+        if pos < section.from {
+            return Ok(pos_b + (pos - pos_a));
+        }
+        pos_b += section.from - pos_a;
+        pos_a = section.from;
+        let length = section.to - section.from;
+        if section.to > pos || (section.to == pos && assoc < 0 && length == 0) {
+            return Ok(if pos == pos_a || assoc < 0 {
+                pos_b
+            } else {
+                pos_b + section.insert
+            });
+        }
+        pos_b += section.insert;
+        pos_a = section.to;
+    }
+    Ok(pos_b + (pos - pos_a))
+}
+
+/// Whether `changes` deleted any of `from..to` or inserted text strictly
+/// inside it. Text inserted right at either end leaves the range alone.
+#[cfg(test)]
+pub(crate) fn touches(changes: &Value, from: usize, to: usize) -> Result<bool, String> {
+    Ok(touches_in(&sections(changes)?, from, to))
+}
+
+pub(crate) fn touches_in(sections: &[Section], from: usize, to: usize) -> bool {
+    sections.iter().any(|section| {
+        if section.from == section.to {
+            from < section.from && section.from < to
+        } else {
+            section.from < to && section.to > from
+        }
+    })
+}
+
+/// The UTF-16 offset of byte index `byte`, which must be a character boundary.
+pub(crate) fn utf16_of_byte(text: &str, byte: usize) -> usize {
+    utf16_len(&text[..byte])
+}
+
+/// The number of characters before UTF-16 offset `units`.
+pub(crate) fn utf16_to_char(text: &str, units: usize) -> usize {
+    let mut seen = 0;
+    let mut count = 0;
+    for character in text.chars() {
+        if seen >= units {
+            break;
+        }
+        seen += character.len_utf16();
+        count += 1;
+    }
+    count
+}
+
 fn lines(text: &str) -> Vec<Value> {
     text.split('\n').map(Value::from).collect()
 }
@@ -200,6 +327,28 @@ pub(crate) fn diff(old: &str, new: &str) -> Value {
     builder.finish()
 }
 
+/// A change set over a document of `length` UTF-16 units that replaces each
+/// `from..to` with its text. The ranges must be sorted and must not overlap.
+pub(crate) fn from_replacements(length: usize, replacements: &[(usize, usize, &str)]) -> Value {
+    let mut parts = Vec::new();
+    let mut position = 0;
+    for &(from, to, text) in replacements {
+        if from > position {
+            parts.push(Value::from(from - position));
+        }
+        let mut part = vec![Value::from(to - from)];
+        if !text.is_empty() {
+            part.extend(lines(text));
+        }
+        parts.push(Value::Array(part));
+        position = to;
+    }
+    if length > position {
+        parts.push(Value::from(length - position));
+    }
+    Value::Array(parts)
+}
+
 /// Replaces the whole of `document` with `replacement`.
 #[cfg(test)]
 pub(crate) fn replace_all(document: &str, replacement: &str) -> Value {
@@ -271,6 +420,123 @@ mod tests {
         assert_eq!(diff("same", "same"), json!([4]));
         assert_eq!(apply("", &diff("", "a\nb")).unwrap(), "a\nb");
         assert_eq!(apply("a\nb", &diff("a\nb", "")).unwrap(), "");
+    }
+
+    #[test]
+    fn maps_positions_as_codemirror_does() {
+        // "abcdef": replace "cd" (2..4) with "XYZ".
+        let replace = json!([2, [2, "XYZ"], 2]);
+        assert_eq!(map_pos(&replace, 1, 1).unwrap(), 1);
+        assert_eq!(
+            map_pos(&replace, 2, 1).unwrap(),
+            2,
+            "start of a replacement stays"
+        );
+        assert_eq!(map_pos(&replace, 2, -1).unwrap(), 2);
+        assert_eq!(
+            map_pos(&replace, 3, -1).unwrap(),
+            2,
+            "inside goes to the start"
+        );
+        assert_eq!(map_pos(&replace, 3, 1).unwrap(), 5, "or past the insertion");
+        assert_eq!(map_pos(&replace, 4, -1).unwrap(), 5, "the end is past it");
+        assert_eq!(map_pos(&replace, 6, 1).unwrap(), 7);
+        // Insert "XY" at 3.
+        let insert = json!([3, [0, "XY"], 3]);
+        assert_eq!(map_pos(&insert, 3, -1).unwrap(), 3);
+        assert_eq!(map_pos(&insert, 3, 1).unwrap(), 5);
+        assert_eq!(map_pos(&insert, 2, 1).unwrap(), 2);
+        // An insertion over a line break counts the break.
+        assert_eq!(map_pos(&json!([[0, "a", "b"], 2]), 0, 1).unwrap(), 3);
+        // A deletion collapses everything inside it.
+        let delete = json!([1, [3], 2]);
+        assert_eq!(map_pos(&delete, 2, 1).unwrap(), 1);
+        assert_eq!(map_pos(&delete, 4, 1).unwrap(), 1);
+        assert_eq!(map_pos(&delete, 5, 1).unwrap(), 2);
+    }
+
+    #[test]
+    fn neighbouring_runs_form_one_section() {
+        assert_eq!(
+            sections(&json!([1, [2], [0, "xy"], 3])).unwrap(),
+            vec![Section {
+                from: 1,
+                to: 3,
+                insert: 2
+            }]
+        );
+    }
+
+    #[test]
+    fn touching_means_deleting_inside_or_inserting_strictly_inside() {
+        let insert_at = |at: usize| json!([at, [0, "x"], 10 - at]);
+        assert!(!touches(&insert_at(2), 2, 5).unwrap(), "at the start");
+        assert!(!touches(&insert_at(5), 2, 5).unwrap(), "at the end");
+        assert!(touches(&insert_at(3), 2, 5).unwrap());
+        assert!(
+            touches(&json!([4, [2], 4]), 2, 5).unwrap(),
+            "overlapping deletion"
+        );
+        assert!(
+            touches(&json!([2, [3, "abc"], 5]), 2, 5).unwrap(),
+            "exact replacement"
+        );
+        assert!(!touches(&json!([5, [2], 3]), 2, 5).unwrap(), "after");
+        assert!(!touches(&json!([[2], 8]), 2, 5).unwrap(), "before");
+    }
+
+    #[test]
+    fn converts_between_bytes_characters_and_utf16() {
+        let text = "a😀õb";
+        assert_eq!(utf16_of_byte(text, 5), 3);
+        assert_eq!(utf16_to_char(text, 3), 2);
+        assert_eq!(utf16_to_char(text, 99), 4);
+    }
+
+    #[test]
+    fn mapped_kept_characters_stay_on_the_same_character() {
+        let alphabet = ['a', 'õ', '😀', '\n', ' '];
+        let mut random = Lcg(23);
+        for _ in 0..1000 {
+            let old: String = (0..random.next(20))
+                .map(|_| alphabet[random.next(alphabet.len())])
+                .collect();
+            let mut new: Vec<char> = old.chars().collect();
+            for _ in 0..random.next(4) {
+                let at = random.next(new.len() + 1);
+                if random.next(2) == 0 && at < new.len() {
+                    new.remove(at);
+                } else {
+                    new.insert(at, alphabet[random.next(alphabet.len())]);
+                }
+            }
+            let new: String = new.into_iter().collect();
+            let set = diff(&old, &new);
+            let kept: Vec<(usize, usize)> = {
+                let sections = sections(&set).unwrap();
+                let mut units = 0;
+                old.chars()
+                    .filter_map(|character| {
+                        let start = units;
+                        units += character.len_utf16();
+                        let changed = sections
+                            .iter()
+                            .any(|s| s.from < start + character.len_utf16() && s.to > start);
+                        (!changed).then_some((start, character.len_utf16()))
+                    })
+                    .collect()
+            };
+            let new_units: Vec<u16> = new.encode_utf16().collect();
+            let old_units: Vec<u16> = old.encode_utf16().collect();
+            for (start, length) in kept {
+                let mapped = map_pos(&set, start, 1).unwrap();
+                assert_eq!(
+                    &new_units[mapped..mapped + length],
+                    &old_units[start..start + length],
+                    "{old:?} -> {new:?} at {start}"
+                );
+            }
+        }
     }
 
     #[test]

@@ -9,6 +9,13 @@ fn main() {
     // Dispatch before Tauri creates a webview or touches editor persistence.
     // The MCP host supplies stdin/stdout pipes, including for the Windows GUI
     // subsystem build; diagnostics must only go to stderr in this mode.
+    // Claude Code runs the hook for every Edit and Write: it must answer
+    // fast, never open a window, and allow the edit on any failure.
+    if std::env::args_os().any(|argument| argument == sodilaud_lib::PRETOOLUSE_HOOK_FLAG) {
+        std::process::exit(sodilaud_lib::run_pretooluse_hook(
+            &context.config().identifier,
+        ));
+    }
     if std::env::args_os().any(|argument| argument == "--mcp-stdio") {
         if std::env::args_os().count() != 2 {
             eprintln!("Usage: sodilaud --mcp-stdio");

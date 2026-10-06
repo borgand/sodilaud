@@ -42,8 +42,10 @@ const fromWire = update => ({ clientID: update.clientID, changes: ChangeSet.from
  * @param {(doc: object, text: string, version: number) => void} [options.onReload] the registry no longer has
  *   the history this client needs; reload the document
  * @param {string} [options.label] names this page in client IDs
+ * @param {(remote: {doc: object, view: object, transaction: object, clientID: string}) => void} [options.onRemote]
+ *   another client's updates reached an editor showing `doc`, one client at a time
  */
-export function createDocSync({ push: send, pull: fetchUpdates, same, isGone, ready = async () => {}, onStatus = () => {}, onReload = () => {}, label = "page", pushDelay = PUSH_DELAY_MS }) {
+export function createDocSync({ push: send, pull: fetchUpdates, same, isGone, ready = async () => {}, onStatus = () => {}, onReload = () => {}, onRemote = () => {}, label = "page", pushDelay = PUSH_DELAY_MS }) {
   const clients = new Set();
   let counter = 0;
 
@@ -84,7 +86,22 @@ export function createDocSync({ push: send, pull: fetchUpdates, same, isGone, re
       return;
     }
     const fresh = updates.slice(synced - from);
-    if (fresh.length) dispatch(client, receiveUpdates(stateOf(client), fresh.map(fromWire)));
+    // One client's run at a time, so an agent's edit can be told from the owner's.
+    let start = 0;
+    while (start < fresh.length) {
+      let end = start + 1;
+      while (end < fresh.length && fresh[end].clientID === fresh[start].clientID) end += 1;
+      const transaction = receiveUpdates(stateOf(client), fresh.slice(start, end).map(fromWire));
+      dispatch(client, transaction);
+      if (client.attached) {
+        try {
+          onRemote({ doc: client.doc, view: client.view, transaction, clientID: fresh[start].clientID });
+        } catch (error) {
+          console.error("Could not show a remote change", error);
+        }
+      }
+      start = end;
+    }
   }
 
   function catchUp(client) {

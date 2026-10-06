@@ -28,11 +28,24 @@
     "allow-start-mcp-server",
     "allow-set-mcp-permissions",
     "allow-stop-mcp-server",
+    "allow-coedit-integration-plan",
+    "allow-coedit-integration-install",
+    "allow-coedit-integration-remove",
     "allow-quit-handler-ready",
     "allow-quit-window-done",
     "allow-qn-close",
     "allow-qn-start-drag",
     "allow-qn-get-config",
-    "allow-show-main-window"
+    "allow-show-main-window",
+    "allow-comments-get",
+    "allow-comment-add",
+    "allow-comment-edit",
+    "allow-comment-delete",
+    "allow-comment-resolve",
+    "allow-comment-resend",
+    "allow-comments-send-review",
+    "allow-comments-clear-resolved",
+    "allow-coedit-get-state",
+    "allow-coedit-set-hold"
   ]
 }
