@@ -4,6 +4,7 @@ import {
   Decoration,
   EditorSelection,
   EditorView,
+  Facet,
   StateEffect,
   StateField,
   ViewPlugin,
@@ -115,6 +116,86 @@ class ImageWidget extends WidgetType {
     img.alt = this.alt;
     img.src = this.src;
     return img;
+  }
+}
+
+const MERMAID_TYPING_PAUSE_MS = 300;
+
+const mermaidFacet = Facet.define({ combine: values => values.find(Boolean) ?? null });
+
+function showMermaid(wrapper, view, widget) {
+  const { renderer, source } = widget;
+  wrapper.dataset.source = source;
+  const hit = renderer.cached(source);
+  if (hit) {
+    renderer.fill(wrapper, hit);
+    return;
+  }
+  renderer.render(source).then(result => {
+    if (wrapper.dataset.source !== source || !wrapper.isConnected) return;
+    renderer.fill(wrapper, result);
+    view.requestMeasure();
+  });
+}
+
+// "block" replaces the fenced block; "preview" sits under its revealed source.
+class MermaidWidget extends WidgetType {
+  constructor(source, renderer, kind) {
+    super();
+    this.source = source;
+    this.renderer = renderer;
+    this.kind = kind;
+    this.generation = renderer.generation;
+  }
+
+  eq(other) {
+    return other.source === this.source && other.kind === this.kind &&
+      other.renderer === this.renderer && other.generation === this.generation;
+  }
+
+  toDOM(view) {
+    const wrapper = document.createElement("div");
+    wrapper.className = `cm-lp-mermaid cm-lp-mermaid-${this.kind}`;
+    wrapper.dataset.generation = String(this.generation);
+    if (!this.renderer.cached(this.source)) {
+      const placeholder = document.createElement("div");
+      placeholder.className = "cm-lp-mermaid-pending";
+      placeholder.textContent = "Rendering diagram…";
+      wrapper.append(placeholder);
+    }
+    showMermaid(wrapper, view, this);
+    if (this.kind === "block") {
+      wrapper.addEventListener("mousedown", event => {
+        if (!isPrimaryClick(event, view)) return;
+        event.preventDefault();
+        view.dispatch({ selection: EditorSelection.cursor(view.posAtDOM(wrapper)) });
+        view.focus();
+      });
+    }
+    return wrapper;
+  }
+
+  // While typing in the block, keep the last diagram on screen and render once typing pauses.
+  updateDOM(dom, view) {
+    if (!dom.classList.contains(`cm-lp-mermaid-${this.kind}`)) return false;
+    clearTimeout(dom.mermaidTimer);
+    const themeChanged = dom.dataset.generation !== String(this.generation);
+    dom.dataset.generation = String(this.generation);
+    if (themeChanged || this.renderer.cached(this.source)) {
+      showMermaid(dom, view, this);
+    } else {
+      dom.dataset.source = this.source;
+      dom.mermaidTimer = setTimeout(() => showMermaid(dom, view, this), MERMAID_TYPING_PAUSE_MS);
+    }
+    return true;
+  }
+
+  destroy(dom) {
+    clearTimeout(dom.mermaidTimer);
+  }
+
+  ignoreEvent() {
+    return true;
   }
 }
 
@@ -358,58 +439,97 @@ const inlinePreview = ViewPlugin.fromClass(class {
 }, { decorations: plugin => plugin.decorations });
 
 const setTableFocus = StateEffect.define();
+const refreshMermaid = StateEffect.define();
 
 const TABLE_CONTAINERS = new Set(["Document", "BulletList", "OrderedList", "ListItem"]);
 
-function buildTables(state, focused) {
+function isMermaidFence(state, node) {
+  const info = node.getChild("CodeInfo");
+  return info !== null && state.doc.sliceString(info.from, info.to).trim().toLowerCase() === "mermaid";
+}
+
+function mermaidSource(state, node) {
+  const text = node.getChild("CodeText");
+  return text ? state.doc.sliceString(text.from, text.to) : "";
+}
+
+function buildBlocks(state, focused) {
   if (!isLive(state)) return Decoration.none;
   const { doc } = state;
+  const mermaid = state.facet(mermaidFacet);
   const revealed = revealedLines(state, focused);
   const ranges = [];
   syntaxTree(state).iterate({
     enter: ref => {
       if (TABLE_CONTAINERS.has(ref.name)) return true;
-      if (ref.name !== "Table") return false;
+      const isTable = ref.name === "Table";
+      const isMermaid = mermaid && ref.name === "FencedCode" && isMermaidFence(state, ref.node);
+      if (!isTable && !isMermaid) return false;
       const start = doc.lineAt(ref.from);
       const end = doc.lineAt(ref.to);
       const prefix = doc.sliceString(start.from, ref.from);
-      if (/^\s*$/.test(prefix) && ref.to === end.to && !touchesRevealed(state, revealed, ref.from, ref.to)) {
-        const source = doc.sliceString(ref.from, ref.to);
-        ranges.push(Decoration.replace({ widget: new TableWidget(source), block: true }).range(start.from, end.to));
+      if (!/^\s*$/.test(prefix) || ref.to !== end.to) return false;
+      const inside = touchesRevealed(state, revealed, ref.from, ref.to);
+      if (isTable) {
+        if (!inside) {
+          const source = doc.sliceString(ref.from, ref.to);
+          ranges.push(Decoration.replace({ widget: new TableWidget(source), block: true }).range(start.from, end.to));
+        }
+        return false;
+      }
+      const source = mermaidSource(state, ref.node);
+      if (inside) {
+        ranges.push(Decoration.widget({ widget: new MermaidWidget(source, mermaid, "preview"), block: true, side: 1 }).range(end.to));
+      } else {
+        ranges.push(Decoration.replace({ widget: new MermaidWidget(source, mermaid, "block"), block: true }).range(start.from, end.to));
       }
       return false;
     }
   });
-  return Decoration.set(ranges);
+  return Decoration.set(ranges, true);
 }
 
-const tableField = StateField.define({
-  create: state => ({ focused: false, decorations: buildTables(state, false) }),
+const blockField = StateField.define({
+  create: state => ({ focused: false, decorations: buildBlocks(state, false) }),
   update(value, tr) {
     let { focused } = value;
+    let refreshed = false;
     for (const effect of tr.effects) {
       if (effect.is(setTableFocus)) focused = effect.value;
+      if (effect.is(refreshMermaid)) refreshed = true;
     }
     const changed = focused !== value.focused ||
+      refreshed ||
       tr.docChanged ||
       tr.selection !== undefined ||
       tr.startState.facet(modeFacet) !== tr.state.facet(modeFacet) ||
       syntaxTree(tr.startState) !== syntaxTree(tr.state);
     if (!changed) return value;
-    return { focused, decorations: buildTables(tr.state, focused) };
+    return { focused, decorations: buildBlocks(tr.state, focused) };
   },
   provide: field => EditorView.decorations.from(field, value => value.decorations)
 });
 
-const tableFocusSync = EditorView.updateListener.of(update => {
+const blockFocusSync = EditorView.updateListener.of(update => {
   const { view } = update;
-  if (update.state.field(tableField).focused === view.hasFocus) return;
+  if (update.state.field(blockField).focused === view.hasFocus) return;
   queueMicrotask(() => {
-    const field = view.state.field(tableField, false);
+    const field = view.state.field(blockField, false);
     if (field && field.focused !== view.hasFocus) {
       view.dispatch({ effects: setTableFocus.of(view.hasFocus) });
     }
   });
+});
+
+const mermaidThemeSync = ViewPlugin.fromClass(class {
+  constructor(view) {
+    const renderer = view.state.facet(mermaidFacet);
+    this.unsubscribe = renderer?.onChange(() => view.dispatch({ effects: refreshMermaid.of(null) }));
+  }
+
+  destroy() {
+    this.unsubscribe?.();
+  }
 });
 
 function eventElement(event) {
@@ -442,8 +562,10 @@ function isPrimaryClick(event, view) {
  *
  * @param {object} [options]
  * @param {(href: string) => void} [options.onOpenLink] called on Cmd-click (Ctrl-click off macOS) of a link
+ * @param {object} [options.mermaid] a renderer from createMermaidRenderer; without one,
+ *   mermaid blocks stay code blocks
  */
-export function livePreview({ onOpenLink } = {}) {
+export function livePreview({ onOpenLink, mermaid } = {}) {
   const handlers = EditorView.domEventHandlers({
     mousedown(event, view) {
       if (!isLive(view.state)) return false;
@@ -478,5 +600,5 @@ export function livePreview({ onOpenLink } = {}) {
     }
   });
 
-  return [tableField, tableFocusSync, inlinePreview, handlers];
+  return [mermaidFacet.of(mermaid ?? null), blockField, blockFocusSync, mermaidThemeSync, inlinePreview, handlers];
 }

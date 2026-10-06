@@ -30,7 +30,8 @@ export function createFileEditor({
   broadcast = () => {},
   notify = () => {},
   closeMenus = () => {},
-  openExternal = () => {}
+  openExternal = () => {},
+  mermaid = null
 }) {
   const $ = (id) => document.getElementById(id);
   const startPage = $("start-page");
@@ -68,7 +69,7 @@ export function createFileEditor({
     lineNumbers: appearance.lineNumbers,
     extensions: [
       markdownEditingCommands(),
-      livePreview({ onOpenLink: openExternal }),
+      livePreview({ onOpenLink: openExternal, mermaid }),
       commentsExtension({
         onSubmit: (view, comment) => comments.submit(view, comment),
         onSelect: id => comments.select(id)
@@ -76,6 +77,7 @@ export function createFileEditor({
     ],
     onChange: handleEditorChange
   });
+  mermaid?.onChange(renderPreview);
 
   const sync = createDocSync({
     push: ({ path, docId }, version, updates) => invoke("file_doc_push", { path, docId, version, updates }),
@@ -232,6 +234,7 @@ export function createFileEditor({
     try {
       preview.innerHTML = renderMarkdown(editor.getText(), "*Empty file*");
       highlightPreviewCode(preview, document.defaultView.hljs, appearance.syntaxHighlighting);
+      mermaid?.renderBlocks(preview);
     } catch (error) {
       console.error("Could not render the file", error);
       preview.textContent = editor.getText();

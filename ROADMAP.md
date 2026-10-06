@@ -190,7 +190,9 @@ Depends on: nothing.
 
 ## 7. Mermaid diagrams
 
-Status: planned
+Status: built on `feat/mermaid-diagrams` (spec
+[`2026-10-06-mermaid-diagrams-design.md`](docs/superpowers/specs/2026-10-06-mermaid-diagrams-design.md));
+not yet released
 
 Render fenced ` ```mermaid ` blocks as diagrams, the way tables render: a diagram widget in
 Live mode when the cursor is outside the block, the raw source when inside it, and the diagram
@@ -208,8 +210,9 @@ in Reading mode, export and copy-as-HTML.
   re-render every diagram.
 
 Depends on: nothing.
-Open: whether a lighter renderer covers the diagrams actually used (flowchart, sequence)
-well enough to skip the full bundle.
+Decided 2026-10-06: the full Mermaid (12.1), lazy-loaded. While the cursor is inside a block, the
+source stays editable with the diagram below it. Copy-as-HTML carries inline SVG. The ELK
+layout (elkjs, EPL-2.0) is left out, so diagrams use dagre, the Mermaid 11 default.
 
 ## 8. `sodilaud` command-line tool
 

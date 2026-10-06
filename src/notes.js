@@ -51,6 +51,7 @@ import {
   validFolderId
 } from "./folders.js";
 import { normalizeLayoutMode } from "./view-preferences.js";
+import { createMermaidRenderer, themeVariablesFrom } from "./mermaid.js";
 
 // ----------------------------------------------------
 // Sodilaud - Core Application Logic
@@ -227,8 +228,18 @@ const appearance = createAppearance({
     updateSecondaryMarkdownPreview();
   }
 });
+const mermaid = createMermaidRenderer({ document });
+mermaid.onChange(() => {
+  updateMarkdownPreview();
+  updateSecondaryMarkdownPreview();
+});
 // The theme is chosen in the main window; this page only follows it.
-const themes = createThemes({ document, storage: localStorage, invoke });
+const themes = createThemes({
+  document,
+  storage: localStorage,
+  invoke,
+  onApplied: () => mermaid.setTheme(themeVariablesFrom(document))
+});
 
 // ----------------------------------------------------
 // Rust-owned collection
@@ -627,7 +638,7 @@ function createAppEditor(host, { ariaLabel, pane }) {
     lineNumbers: appearance.lineNumbers,
     extensions: [
       markdownEditingCommands(),
-      livePreview({ onOpenLink: openExternalHref }),
+      livePreview({ onOpenLink: openExternalHref, mermaid }),
       commentsExtension({
         onSubmit: (view, comment) => comments.submit(view, comment),
         onSelect: id => {
@@ -1540,6 +1551,7 @@ function updateMarkdownPreview() {
       }
       markdownPreview.innerHTML = html;
       highlightPreviewCode(markdownPreview, window.hljs, appearance.syntaxHighlighting);
+      mermaid.renderBlocks(markdownPreview);
     } catch (e) {
       console.error("Marked parser error:", e);
       markdownPreview.innerHTML = `<div style="color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.2); background: rgba(239, 68, 68, 0.05); padding: 12px; border-radius: 8px; margin-bottom: 16px; font-size: 0.9rem;">
@@ -1663,12 +1675,19 @@ function copyMarkdownToClipboard() {
   });
 }
 
+async function renderedHtmlForCopy() {
+  if (currentLayoutMode === "reading") {
+    await mermaid.renderBlocks(markdownPreview);
+    return markdownPreview.innerHTML;
+  }
+  const container = document.createElement("div");
+  container.innerHTML = renderMarkdown(primaryEditor.getText());
+  await mermaid.renderBlocks(container);
+  return container.innerHTML;
+}
+
 function copyHtmlToClipboard() {
-  const html = currentLayoutMode === "reading"
-    ? markdownPreview.innerHTML
-    : renderMarkdown(primaryEditor.getText());
-  
-  navigator.clipboard.writeText(html).then(() => {
+  renderedHtmlForCopy().then(html => navigator.clipboard.writeText(html)).then(() => {
     showNotification("HTML preview copied to clipboard!");
   }).catch(err => {
     console.error("Failed to copy", err);
@@ -3347,6 +3366,7 @@ function updateSecondaryMarkdownPreview() {
   if (window.marked) {
     secondaryMarkdownPreview.innerHTML = renderMarkdown(secondaryEditor.getText());
     highlightPreviewCode(secondaryMarkdownPreview, window.hljs, appearance.syntaxHighlighting);
+    mermaid.renderBlocks(secondaryMarkdownPreview);
   }
 }
 
