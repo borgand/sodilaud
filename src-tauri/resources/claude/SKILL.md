@@ -27,8 +27,13 @@ needs its permission in Sodilaud's MCP Configuration (write functions start off)
   as a conflict with its `currentText`. Partial success is normal.
 - Never use Edit, Write or MultiEdit on a co-edited file. A hook refuses them and points
   here.
+- Text the user changed since your last read is intentional: keep it unless the comment asks
+  otherwise, and name any of their changes you undo in the resolve note.
 - After addressing a comment, reread the whole document and fix every other place the change
   affects, then `resolve_comment` with a one-line note that names those places.
+- Conflicts carry a `hint`. `ambiguous` reports how many `matches`; add surrounding text.
+  `not_found` returns the closest text as `currentText` when there is one.
+- Reuse paths exactly as Sodilaud returns them (`/tmp` comes back as `/private/tmp`).
 - Your own comments never come back from `get_pending_comments`; the user's answers do, with
   `replyTo` holding your question.
 - Retries: reuse the same `requestId` with identical arguments.

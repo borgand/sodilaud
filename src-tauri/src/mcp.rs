@@ -1798,7 +1798,7 @@ impl SodilaudServer {
         )
     }
 
-    /// Edit a co-edited document while the user keeps typing in it. Each edit replaces oldText, copied from the text read_document returned at baseVersion, with newText. Sodilaud finds each oldText (exactly, then ignoring whitespace layout, then a close match), carries it through what the user typed since, and applies all edits that the user did not touch as one change. The user wins: an edit whose text the user changed comes back as a conflict with its currentText. Partial success is normal; reread and retry conflicts. STALE_BASE means baseVersion is too old: call read_document again. Retry identical arguments with the same requestId after a failure.
+    /// Edit a co-edited document while the user keeps typing in it. Each edit replaces oldText, copied from the text read_document returned at baseVersion, with newText. Sodilaud finds each oldText (exactly, then ignoring whitespace layout, then a close match), carries it through what the user typed since, and applies all edits that the user did not touch as one change. The user wins: an edit whose text the user changed comes back as a conflict with its currentText. Every conflict has a hint; ambiguous reports how many matches, and not_found returns the closest text as currentText when there is one. Keep text the user changed unless asked otherwise. Partial success is normal; reread and retry conflicts. STALE_BASE means baseVersion is too old: call read_document again. Retry identical arguments with the same requestId after a failure.
     #[tool(annotations(
         title = "Apply edit",
         read_only_hint = false,
