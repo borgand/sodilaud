@@ -216,21 +216,26 @@ layout (elkjs, EPL-2.0) is left out, so diagrams use dagre, the Mermaid 11 defau
 
 ## 8. `sodilaud` command-line tool
 
-Status: planned
+Status: built on `feat/cli-command` (spec
+[`2026-10-06-cli-command-design.md`](docs/superpowers/specs/2026-10-06-cli-command-design.md));
+not yet released
 
 Open files in Sodilaud from a terminal: `sodilaud notes.md`. The command starts Sodilaud if it
 is not running, opens the file (or files) in the main window, and returns at once.
 
-- `--wait`: block until every file it opened is closed in Sodilaud, so the command works as
-  `$EDITOR` / `git commit` editor. Exit non-zero if Sodilaud quits first.
 - Relative paths resolve against the terminal's working directory. A missing file is created
-  empty, like New.
+  empty, like New, only for `.md`, `.markdown` and `.txt`, and only in a folder that exists.
 - Opens through the same path as Finder "Open With", so recents, the document registry and
   outside-edit merging all apply.
-- Installed from a menu item (a symlink into `/usr/local/bin` or `~/.local/bin`), the way agent
-  integration is installed.
+- Installed from a menu item (**Command Line Tool...**) as a script in `~/.local/bin`, with no
+  administrator prompt and a PATH hint when needed. macOS and Linux only.
 
 Depends on: 4 (files in the registry).
-Open: how the command talks to a running app. `open -a Sodilaud` covers the no-wait case;
-`--wait` needs a reply when a file closes, likely over the local server MCP already runs, or the
-`tauri-plugin-single-instance` handoff.
+Decided 2026-10-06: fire-and-forget only, with no new IPC. On macOS the script runs
+`open -a <Sodilaud.app>`; on Linux it runs the executable, whose single-instance handoff reaches
+the running app. A script, not a symbolic link: a link to the binary on macOS would start a
+second process instead of going through Launch Services.
+Later: `--wait` (block until the opened files are closed, so the command works as `$EDITOR` and
+as the editor for commit messages; exit non-zero if Sodilaud quits first). That reply is the
+only reason VS Code and Zed run their own IPC, so it waits until there is demand. It would
+likely use the local server MCP already runs.

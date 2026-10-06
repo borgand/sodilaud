@@ -28,6 +28,30 @@ default app for Markdown, by double-clicking it. On Windows and Linux, opening a
 Sodilaud while it is already running hands the file to the running app instead of starting a
 second one.
 
+## Open from a terminal
+
+On macOS and Linux, the `sodilaud` command opens files from a terminal:
+
+```sh
+sodilaud notes.md
+sodilaud README.md docs/plan.md
+```
+
+It starts Sodilaud if it is not running, opens the files in the main window, and returns at
+once. Relative paths are taken from the terminal's current folder. A file that does not exist
+yet is created empty, but only in a folder that exists. Only `.md`, `.markdown` and `.txt`
+files are accepted; anything else is refused with a message and nothing is opened.
+
+To install it, choose **Command Line Tool…** in the **Sodilaud menu** (on macOS also in the
+application menu, under **About Sodilaud**). It writes a small script to
+`~/.local/bin/sodilaud`; no administrator password is needed. If `~/.local/bin` is not on your
+`PATH`, the dialog shows the line to add to your shell's startup file. Choose the same item
+again to remove the command, or to update it after Sodilaud moved. A `~/.local/bin/sodilaud`
+that Sodilaud did not write is never changed or removed.
+
+On macOS, install it from Sodilaud in the Applications folder: the script opens that copy, the
+same way Finder's **Open With** does. The command is not available on Windows.
+
 Open files are listed in the sidebar; click one to switch to it, or its **×** to close it.
 Each file keeps its own undo history while it is open. The files that were open when you quit
 reopen at the next launch.
