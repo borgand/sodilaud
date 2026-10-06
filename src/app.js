@@ -14,6 +14,7 @@ import { resolveLinkAction } from "./markdown.js";
 import { WELCOME_NOTE_TITLE } from "./welcome-note.js";
 import { createFileEditor } from "./file-editor.js";
 import { isMacLikePlatform } from "./platform-labels.js";
+import { createAgentAccess } from "./agent-access.js";
 
 const HOTKEY_MESSAGES = {
   HotkeyInvalid: "That shortcut is not supported. The previous hotkey is still active.",
@@ -88,6 +89,18 @@ const fileEditor = createFileEditor({
   notify: showNotification,
   closeMenus: () => toggleActionsDropdown(false),
   openExternal: openExternalHref
+});
+
+const agentAccess = createAgentAccess({
+  document,
+  invoke,
+  notify: showNotification,
+  menuSection: $("agent-access-menu-section"),
+  statusAnchor: $("comments-count-btn"),
+  closeMenu: () => {
+    toggleActionsDropdown(false);
+    actionsBtn.focus({ preventScroll: true });
+  }
 });
 
 function showNotification(message) {
@@ -319,11 +332,7 @@ function attachListeners() {
     setQuickNotesHotkey(isMac ? DEFAULT_QUICK_NOTES_HOTKEY_MAC : DEFAULT_QUICK_NOTES_HOTKEY_OTHER);
   });
   $("open-quicknotes-menu-btn").addEventListener("click", closeMenuThen(() => showQuickNotes()));
-  $("agent-access-menu-btn").addEventListener("click", closeMenuThen(async () => {
-    await showQuickNotes();
-    window.__TAURI__?.event?.emitTo?.("quicknotes", "quicknotes-open-menu")
-      ?.catch?.((error) => console.error("Could not open the Quick Notes menu", error));
-  }));
+  agentAccess.attach();
 
   $("open-quicknotes-btn").addEventListener("click", () => {
     dismissUpgradeIntro();
@@ -366,6 +375,7 @@ function handleKeydown(event) {
   const isMeta = event.metaKey || event.ctrlKey;
   const plainTab = event.key === "Tab" && !isMeta && !event.altKey;
 
+  if (agentAccess.handleKeydown(event)) return;
   if (themes.isModalOpen() && plainTab) {
     trapModalFocus(event, themes.modal);
     return;
@@ -462,6 +472,7 @@ async function registerNativeHandlers() {
     await listen("file-open-request", () => fileEditor.takePending());
     await listen("comments-changed", ({ payload }) => fileEditor.receiveComments(payload));
     await listen("coedit-state", ({ payload }) => fileEditor.setCoeditState(payload));
+    await agentAccess.listen(listen);
   } catch (error) {
     console.error("Failed to register the main window's native handlers", error);
   }
@@ -487,6 +498,7 @@ async function startApp() {
     console.error("Failed to set up clipboard history", error);
   }
   await loadQuickNotesConfig();
+  await agentAccess.load();
   await fileEditor.restore();
   try {
     fileEditor.setCoeditState(await invoke("coedit_get_state"));

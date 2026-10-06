@@ -42,7 +42,7 @@ test("MCP status follows confirmed access and survives workspace switches", asyn
   finishStarting({ command: "/Applications/Sodilaud.app/Contents/MacOS/sodilaud", args: ["--mcp-stdio"] });
   await settle();
   assert.equal(status.hidden, false);
-  assert.equal(saveStatus.textContent, "Agent access enabled — reads only until you allow write functions in MCP Configuration");
+  assert.equal(saveStatus.textContent, "Agent access enabled - reads only until you allow write functions in MCP Configuration");
   await settle(2100); // The existing status notification restores the save label.
   assert.equal(saveStatus.textContent, "Saved");
 

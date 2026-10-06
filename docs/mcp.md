@@ -1,11 +1,12 @@
 # MCP agent access
 
 Sodilaud includes an MCP stdio mode in the desktop executable. There is
-no separate server executable or runtime to install. Open Quick Notes, then its menu
-(top right) **→ Agent access → On** while the app is running. The main window's
-**Sodilaud menu → Agent access…** opens it for you. Choose **MCP Configuration** to
-copy connection values and select function permissions. Configuration is also
-available while access is off; copying it does not start the server.
+no separate server executable or runtime to install. While the app is running,
+turn **Agent access** **On** in the **Sodilaud menu** of the main window or in the
+Quick Notes menu (top right); both have the same section. Choose **MCP
+Configuration…** to copy connection values and select function permissions.
+Configuration is also available while access is off; copying it does not start
+the server. A change in one window shows in the other at once.
 
 Sodilaud remembers whether access is on. If it was on when Sodilaud quit, it
 starts again at launch, before any window opens, with the same function
@@ -14,8 +15,9 @@ access stays off and MCP Configuration shows why. Access is off on a new
 installation. Disabling it stops access and disconnects active MCP sessions.
 Enable it before starting or reconnecting the client; clients do not all retry
 a server that was unavailable at startup.
-The accent-colored **MCP listening** indicator appears beside the save status
-while access is enabled. It indicates that the server is listening, even when no
+The accent-colored **MCP listening** indicator appears in the status bar of
+both windows (beside the save status in Quick Notes, and beside the file status
+in the main window while a file is open) while access is enabled. It indicates that the server is listening, even when no
 client is connected. Hover it to see the enabled read and write counts.
 
 ## Client compatibility
@@ -94,8 +96,9 @@ to filter to that folder, or pass `null` to include only top-level notes.
 
 ### Function permissions
 
-The Agent access section of the Quick Notes menu contains only the global
-**Agent access On/Off** toggle and **MCP Configuration**. Configuration
+The Agent access section of the main window's Sodilaud menu and of the Quick
+Notes menu contains only the global **Agent access On/Off** toggle and **MCP
+Configuration…**. Configuration
 is always available: while access is off, you can copy connection details without
 starting the server. Permission controls become available when access is enabled.
 Open Configuration to choose individual functions in the **Read** and **Write**

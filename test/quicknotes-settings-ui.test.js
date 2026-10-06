@@ -69,14 +69,10 @@ test("the hotkey is recorded from the keyboard and a taken one shows an inline e
   assert.deepEqual(app.invocations.findLast(call => call.command === "qn_set_hotkey").args, { hotkey: "super+shift+KeyN" });
 });
 
-test("the panel can open help or settings here, and Agent access opens the panel's menu", async () => {
-  const opened = [];
+test("the panel can open help or settings here", async () => {
   const app = await bootMainWindow({
     instance: 4,
-    handlers: { qn_get_config: () => status() },
-    beforeBoot: (dom) => {
-      dom.window.__TAURI__.event.emitTo = async (target, name) => { opened.push([target, name]); };
-    }
+    handlers: { qn_get_config: () => status() }
   });
   const { document } = app.dom.window;
   await app.emit("sodilaud-open-section", "help");
@@ -84,11 +80,6 @@ test("the panel can open help or settings here, and Agent access opens the panel
   document.getElementById("close-help-btn").click();
   await app.emit("sodilaud-open-section", "settings");
   assert.equal(document.getElementById("actions-dropdown-content").classList.contains("show"), true);
-
-  app.click("agent-access-menu-btn");
-  await app.settle();
-  assert.ok(app.invocations.some(call => call.command === "qn_show"));
-  assert.deepEqual(opened, [["quicknotes", "quicknotes-open-menu"]]);
 });
 
 test("the main window answers a quit request", async () => {

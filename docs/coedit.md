@@ -59,7 +59,8 @@ document again.
 
 ## Claude Code
 
-In Quick Notes, open **MCP Configuration** and choose **Install Claude Code integration…**.
+In the **Sodilaud menu** of the main window, or the Quick Notes menu, open **MCP Configuration…**
+and choose **Install Claude Code integration…**.
 It lists what it will add and changes nothing until you choose **Install**:
 
 - the `/sodilaud` command,

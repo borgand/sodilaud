@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window: the start page, settings (including importing a theme file), and the file editor, which reaches only files the user chose. It cannot read or write notes; the Quick Notes window owns them.",
+  "description": "Capability for the main window: the start page, settings (including importing a theme file), and the file editor, which reaches only files the user chose. It cannot read or write notes; the Quick Notes window owns them. It can turn agent access on and off and set its permissions, as Quick Notes can.",
   "windows": [
     "main"
   ],
@@ -41,6 +41,14 @@
     "allow-comments-send-review",
     "allow-comments-clear-resolved",
     "allow-coedit-get-state",
-    "allow-coedit-set-hold"
+    "allow-coedit-set-hold",
+    "allow-get-mcp-connection-info",
+    "allow-get-mcp-state",
+    "allow-start-mcp-server",
+    "allow-set-mcp-permissions",
+    "allow-stop-mcp-server",
+    "allow-coedit-integration-plan",
+    "allow-coedit-integration-install",
+    "allow-coedit-integration-remove"
   ]
 }

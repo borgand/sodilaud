@@ -99,7 +99,7 @@ test("Quick Notes applies the shared settings and keeps its own preview lines", 
   assert.equal(document.getElementById("db-connect-btn").textContent, "Open workspace");
   assert.equal(document.getElementById("mcp-permissions-summary").textContent, "Off");
   assert.equal(document.getElementById("agent-access-toggle-btn").textContent, "Off");
-  assert.equal(document.getElementById("agent-access-config-btn").textContent, "MCP Configuration");
+  assert.equal(document.getElementById("agent-access-config-btn").textContent, "MCP Configuration…");
   assert.equal(document.getElementById("settings-menu-btn").textContent, "Settings…");
   assert.equal(document.getElementById("theme-picker-btn"), null, "themes are chosen in the main window");
   assert.equal(document.getElementById("zoom-in-btn"), null, "zoom is set in the main window");

@@ -192,14 +192,7 @@
                 </div>
               </div>
               <div class="dropdown-divider"></div>
-              <div class="dropdown-section" id="agent-access-menu-section">
-                <div class="dropdown-section-title">Agent access</div>
-                <div class="view-setting-row">
-                  <span class="view-setting-label">Agent access</span>
-                  <button class="view-setting-toggle" id="agent-access-toggle-btn" type="button" aria-label="Toggle agent access" aria-pressed="false">Off</button>
-                </div>
-                <button class="dropdown-item" id="agent-access-config-btn" aria-haspopup="dialog">MCP Configuration</button>
-              </div>
+              <div class="dropdown-section" id="agent-access-menu-section"></div>
               <div class="dropdown-divider"></div>
               <div class="dropdown-section" id="settings-menu-section">
                 <div class="dropdown-section-title">Sodilaud</div>
@@ -342,7 +335,6 @@
         </div>
         <div class="statusbar-right">
           <span id="selection-count" class="selection-count-text"></span>
-          <span id="mcp-status" role="status" aria-live="polite" title="MCP agent access is enabled and listening for connections" hidden>MCP listening</span>
           <button class="comments-count" id="comments-count-btn" type="button" aria-controls="comments-panel" aria-expanded="false" hidden>No comments</button>
           <span id="save-status" role="status" aria-live="polite">Saved</span>
           <button id="trash-btn" class="trash-status-btn" type="button" aria-label="Trash" title="Trash — click to restore, right-click to empty" aria-haspopup="dialog">
@@ -460,178 +452,6 @@
     <button class="context-menu-item danger" id="ctx-folder-delete" role="menuitem" style="display: none;">
       <span>Delete Folder</span>
     </button>
-  </div>
-
-  <!-- MCP Configuration Modal -->
-  <div class="help-modal-backdrop" id="mcp-config-modal-backdrop" style="display: none;" aria-hidden="true">
-    <div class="help-modal mcp-config-modal" id="mcp-config-modal" role="dialog" aria-modal="true" aria-labelledby="mcp-config-modal-heading">
-      <div class="help-modal-header">
-        <div class="mcp-config-modal-title">
-          <svg class="mcp-config-modal-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-            <circle cx="12" cy="12" r="3" />
-            <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v6m0 6v6M3 12h6m6 0h6" />
-          </svg>
-          <h3 id="mcp-config-modal-heading">MCP Configuration</h3>
-        </div>
-        <button class="close-help-btn" id="close-mcp-config-btn" title="Close (Escape)" aria-label="Close MCP configuration">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
-      </div>
-
-      <div class="help-modal-body mcp-config-modal-body">
-        <p class="mcp-config-description">Use these values in an MCP client that supports local stdio servers. Sodilaud must remain open with agent access enabled. Choose which functions agents can use below.</p>
-
-        <div class="mcp-config-fields" aria-label="MCP connection values">
-          <div class="mcp-config-field">
-            <span class="mcp-config-label">Transport</span>
-            <code class="mcp-config-value">stdio</code>
-          </div>
-          <div class="mcp-config-field">
-            <label class="mcp-config-label" for="mcp-config-command">Command</label>
-            <div class="mcp-config-value-row">
-              <input class="mcp-config-input" id="mcp-config-command" type="text" readonly spellcheck="false" aria-label="Sodilaud executable path" />
-              <button class="mcp-config-copy-btn" id="copy-mcp-command-btn" type="button">Copy command</button>
-            </div>
-          </div>
-          <div class="mcp-config-field">
-            <label class="mcp-config-label" for="mcp-config-args">Argument</label>
-            <div class="mcp-config-value-row">
-              <input class="mcp-config-input" id="mcp-config-args" type="text" readonly spellcheck="false" aria-label="MCP command argument" />
-              <button class="mcp-config-copy-btn" id="copy-mcp-args-btn" type="button">Copy argument</button>
-            </div>
-          </div>
-        </div>
-
-        <section class="mcp-permissions" aria-labelledby="mcp-permissions-heading">
-          <h4 id="mcp-permissions-heading">Function permissions</h4>
-          <p class="mcp-permissions-description">Changes apply immediately. Sodilaud remembers these choices, and whether access is on, across restarts. A new function starts enabled if it reads and off if it writes.</p>
-          <p class="mcp-permissions-summary" id="mcp-permissions-summary" role="status">Off</p>
-          <div class="mcp-permission-groups">
-            <fieldset class="mcp-permission-group">
-              <legend>Read</legend>
-              <label class="mcp-permission-all"><input type="checkbox" id="mcp-select-all-read" data-mcp-select-all="read" /> Select all read functions</label>
-              <label class="mcp-permission-option" for="mcp-permission-list_folders">
-                <input type="checkbox" id="mcp-permission-list_folders" data-mcp-tool="list_folders" checked />
-                <span><strong>List folders</strong><code>list_folders</code><small>Folder names, IDs, and note counts.</small></span>
-              </label>
-              <label class="mcp-permission-option" for="mcp-permission-list_notes">
-                <input type="checkbox" id="mcp-permission-list_notes" data-mcp-tool="list_notes" checked />
-                <span><strong>List notes</strong><code>list_notes</code><small>Note metadata and short previews.</small></span>
-              </label>
-              <label class="mcp-permission-option" for="mcp-permission-search_notes">
-                <input type="checkbox" id="mcp-permission-search_notes" data-mcp-tool="search_notes" checked />
-                <span><strong>Search notes</strong><code>search_notes</code><small>Search titles and note content.</small></span>
-              </label>
-              <label class="mcp-permission-option" for="mcp-permission-get_note">
-                <input type="checkbox" id="mcp-permission-get_note" data-mcp-tool="get_note" checked />
-                <span><strong>Get note</strong><code>get_note</code><small>Read content and its current revision.</small></span>
-              </label>
-              <label class="mcp-permission-option" for="mcp-permission-list_trash">
-                <input type="checkbox" id="mcp-permission-list_trash" data-mcp-tool="list_trash" checked />
-                <span><strong>List trash</strong><code>list_trash</code><small>Deleted-note titles, original folders, and deletion times.</small></span>
-              </label>
-              <label class="mcp-permission-option" for="mcp-permission-list_documents">
-                <input type="checkbox" id="mcp-permission-list_documents" data-mcp-tool="list_documents" checked />
-                <span><strong>List documents</strong><code>list_documents</code><small>Open files and commented notes, with pending comment counts.</small></span>
-              </label>
-              <label class="mcp-permission-option" for="mcp-permission-read_document">
-                <input type="checkbox" id="mcp-permission-read_document" data-mcp-tool="read_document" checked />
-                <span><strong>Read document</strong><code>read_document</code><small>Live text of an open file or a note; marks it co-edited.</small></span>
-              </label>
-              <label class="mcp-permission-option" for="mcp-permission-get_pending_comments">
-                <input type="checkbox" id="mcp-permission-get_pending_comments" data-mcp-tool="get_pending_comments" checked />
-                <span><strong>Get pending comments</strong><code>get_pending_comments</code><small>Take your comments that wait for an agent, waiting up to 30 minutes.</small></span>
-              </label>
-            </fieldset>
-            <fieldset class="mcp-permission-group">
-              <legend>Write</legend>
-              <label class="mcp-permission-all"><input type="checkbox" id="mcp-select-all-write" data-mcp-select-all="write" /> Select all write functions</label>
-              <label class="mcp-permission-option" for="mcp-permission-create_note">
-                <input type="checkbox" id="mcp-permission-create_note" data-mcp-tool="create_note" />
-                <span><strong>Create note</strong><code>create_note</code><small>Add a note to the current collection.</small></span>
-              </label>
-              <label class="mcp-permission-option" for="mcp-permission-create_folder">
-                <input type="checkbox" id="mcp-permission-create_folder" data-mcp-tool="create_folder" />
-                <span><strong>Create folder</strong><code>create_folder</code><small>Add a folder to the current collection.</small></span>
-              </label>
-              <label class="mcp-permission-option" for="mcp-permission-append_to_note">
-                <input type="checkbox" id="mcp-permission-append_to_note" data-mcp-tool="append_to_note" />
-                <span><strong>Append to note</strong><code>append_to_note</code><small>Add text to an existing note with revision checking.</small></span>
-              </label>
-              <label class="mcp-permission-option" for="mcp-permission-rename_note">
-                <input type="checkbox" id="mcp-permission-rename_note" data-mcp-tool="rename_note" />
-                <span><strong>Rename note</strong><code>rename_note</code><small>Set and lock a note title with revision checking.</small></span>
-              </label>
-              <label class="mcp-permission-option" for="mcp-permission-move_note">
-                <input type="checkbox" id="mcp-permission-move_note" data-mcp-tool="move_note" />
-                <span><strong>Move note</strong><code>move_note</code><small>Move a note to a folder or the top level.</small></span>
-              </label>
-              <label class="mcp-permission-option" for="mcp-permission-rename_folder">
-                <input type="checkbox" id="mcp-permission-rename_folder" data-mcp-tool="rename_folder" />
-                <span><strong>Rename folder</strong><code>rename_folder</code><small>Rename a folder with revision checking.</small></span>
-              </label>
-              <label class="mcp-permission-option" for="mcp-permission-delete_note">
-                <input type="checkbox" id="mcp-permission-delete_note" data-mcp-tool="delete_note" />
-                <span><strong>Delete note</strong><code>delete_note</code><small>Move a note into recoverable trash.</small></span>
-              </label>
-              <label class="mcp-permission-option" for="mcp-permission-delete_folder">
-                <input type="checkbox" id="mcp-permission-delete_folder" data-mcp-tool="delete_folder" />
-                <span><strong>Delete empty folder</strong><code>delete_folder</code><small>Delete a folder only when it has no notes.</small></span>
-              </label>
-              <label class="mcp-permission-option" for="mcp-permission-push_quick_note">
-                <input type="checkbox" id="mcp-permission-push_quick_note" data-mcp-tool="push_quick_note" />
-                <span><strong>Push quick note</strong><code>push_quick_note</code><small>Add a note to From agents and show the panel without taking focus.</small></span>
-              </label>
-              <label class="mcp-permission-option" for="mcp-permission-open_document">
-                <input type="checkbox" id="mcp-permission-open_document" data-mcp-tool="open_document" />
-                <span><strong>Open document</strong><code>open_document</code><small>Open a Markdown or text file in the main window. Returns no content.</small></span>
-              </label>
-              <label class="mcp-permission-option" for="mcp-permission-apply_edit">
-                <input type="checkbox" id="mcp-permission-apply_edit" data-mcp-tool="apply_edit" />
-                <span><strong>Apply edit</strong><code>apply_edit</code><small>Merge edits into a co-edited file or note around your typing.</small></span>
-              </label>
-              <label class="mcp-permission-option" for="mcp-permission-add_comment">
-                <input type="checkbox" id="mcp-permission-add_comment" data-mcp-tool="add_comment" />
-                <span><strong>Add comment</strong><code>add_comment</code><small>Leave a question on a passage for you to answer.</small></span>
-              </label>
-              <label class="mcp-permission-option" for="mcp-permission-resolve_comment">
-                <input type="checkbox" id="mcp-permission-resolve_comment" data-mcp-tool="resolve_comment" />
-                <span><strong>Resolve comment</strong><code>resolve_comment</code><small>Mark a comment addressed with a one-line note.</small></span>
-              </label>
-            </fieldset>
-          </div>
-          <p id="mcp-permission-status" class="mcp-permission-status" role="status" aria-live="polite"></p>
-        </section>
-
-        <section class="mcp-permissions coedit-integration" aria-labelledby="coedit-integration-heading">
-          <h4 id="coedit-integration-heading">Claude Code integration</h4>
-          <p class="mcp-permissions-description">Adds the <code>/sodilaud</code> command and the <code>sodilaud</code> skill to Claude Code, and a hook that sends Claude Code's own edits of files you co-edit here through Sodilaud. Name this server <code>sodilaud</code> in Claude Code. Nothing changes until you confirm.</p>
-          <p class="mcp-permissions-summary" id="coedit-integration-summary" role="status">Checking…</p>
-          <ul class="coedit-integration-changes" id="coedit-integration-changes" hidden></ul>
-          <div class="coedit-integration-actions">
-            <button class="mcp-config-copy-btn" id="coedit-integration-btn" type="button">Install Claude Code integration…</button>
-            <button class="mcp-config-copy-btn" id="coedit-integration-confirm-btn" type="button" hidden>Install</button>
-            <button class="mcp-config-copy-btn" id="coedit-integration-cancel-btn" type="button" hidden>Cancel</button>
-            <button class="mcp-config-copy-btn" id="coedit-integration-remove-btn" type="button" hidden>Remove</button>
-          </div>
-        </section>
-
-        <div class="mcp-config-example">
-          <div class="mcp-config-example-header">
-            <div>
-              <h4>Generic configuration example</h4>
-              <p>Property names can vary by client, but this shows the connection values and their intended structure.</p>
-            </div>
-            <button class="mcp-config-copy-btn" id="copy-mcp-example-btn" type="button">Copy example</button>
-          </div>
-          <pre class="mcp-config-example-code" id="mcp-config-example-code" aria-label="Generic MCP configuration example"></pre>
-        </div>
-
-        <p class="mcp-config-security-note">Connected agents can read the current collection, including what you typed moments ago, and may send note contents to their model provider.</p>
-      </div>
-    </div>
   </div>
 
 </body>

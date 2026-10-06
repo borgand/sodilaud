@@ -121,7 +121,7 @@ manual test checklist.
 
 ## Agent access (MCP)
 
-Agents work with your Quick Notes, so access is set there: open Quick Notes, open its menu (top right), and turn **Agent access** **On**. The main window's **Sodilaud menu → Agent access…** takes you there. Choose **MCP Configuration** to copy the executable path, `--mcp-stdio` argument, or generic JSON example into a client that supports local stdio MCP servers. Configuration stays available while access is off. Sodilaud must remain open, but the Quick Notes panel does not need to be visible; the accent-colored **MCP listening** indicator appears beside its save status while access is enabled.
+Turn **Agent access** **On** in the main window's **Sodilaud menu**, or in the Quick Notes menu (top right); both have the same section and a change in one shows in the other. Choose **MCP Configuration…** to copy the executable path, `--mcp-stdio` argument, or generic JSON example into a client that supports local stdio MCP servers. Configuration stays available while access is off. Sodilaud must remain open, but the Quick Notes panel does not need to be visible; the accent-colored **MCP listening** indicator appears in the status bar of both windows while access is enabled.
 
 On a new installation, all eight read permissions are on and all thirteen write permissions are off. Use the **Read** and **Write** checkboxes to choose individual functions or select all in a section. Changes apply to connected clients immediately. Sodilaud remembers them, and whether access is on: if access was on when you quit, it starts again at launch with the same permissions.
 
