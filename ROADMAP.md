@@ -68,7 +68,7 @@ Depends on: 1. Unblocks everything below.
 
 ## 3. Quick Notes popover and agent push
 
-Status: panel done in 0.10; agent push not started
+Status: done. Panel in 0.10; agent push (`push_quick_note`) built on `feat/mcp-push-open`
 
 Design: [`docs/superpowers/specs/2026-09-28-quick-notes-and-files-design.md`](docs/superpowers/specs/2026-09-28-quick-notes-and-files-design.md)
 
@@ -80,8 +80,9 @@ it, then put build instructions for me in a Sodilaud quick note").
 - New MCP tool `push_quick_note`, creating a note and optionally showing the panel.
 
 Depends on: nothing (the panel shipped without item 2).
-Open: whether `push_quick_note` is on by default, given that write tools reset to off at every start
-(needs a security review).
+Decided 2026-10-05: `push_quick_note` is a write tool, off until selected. Access and permissions
+are now remembered across restarts (see
+[`docs/superpowers/specs/2026-10-05-agent-push-and-open-design.md`](docs/superpowers/specs/2026-10-05-agent-push-and-open-design.md)).
 
 ## 4. External files and folders
 
@@ -97,7 +98,7 @@ changed the same lines). Still to do, in this order:
 
 - Open Folder and the Folders section below
 - `.csv` and `.tsv`
-- MCP `open_document` and drafts
+- MCP drafts (`open_document` for files is built on `feat/mcp-push-open`)
 - Find and replace, split view and compare for files
 
 The original plan follows.
@@ -151,3 +152,58 @@ Depends on: 1, 2. Item 4 for files; notes work without it.
 First step: hand-test item 2's live agent edits (an append landing in an open note while typing),
 which 0.11 covers only with automated tests.
 Open: comment storage for external files (app data keyed by path, or a sidecar file).
+
+## 6. Table column widths that avoid wrapping short values
+
+Status: planned
+
+Tables let long-text columns take the width and squeeze short ones until they wrap
+character by character. Seen 2026-10-05: in Live mode a `Date` column one character wide
+(`2026-09-15` on ten lines) next to a wide description column, and in a second table `LB-01`
+split at its hyphen.
+
+Likely causes:
+
+- The Live table widget sits inside the editor content, which wraps lines with CM6's
+  `overflow-wrap: anywhere`. That lets a cell's minimum width fall to one character, so the
+  auto table layout gives everything to the long column. Reset wrapping inside the widget to
+  `normal`.
+- Even then, the browser breaks at hyphens and slashes, so dates and IDs still wrap.
+
+Goal: a column narrows below its widest unbreakable value only when the table cannot fit
+otherwise.
+
+- Per column, measure the longest whitespace-free token (e.g. `2026-09-30`, `LB-01`), capped
+  at about 18 characters, and set it as the column's minimum width (`<colgroup>` or cell
+  `min-width`). A value with spaces may still wrap between words: `2026-09-30 14:00` keeps
+  the date whole and may push the time to a second line.
+- Long prose columns take the remaining width and wrap as now.
+- When the minimums add up to more than the editor width, the table scrolls horizontally
+  instead of wrapping tokens.
+- Same rules in Live, Reading and exported HTML (`renderMarkdown`), so one helper serves all
+  three.
+
+Depends on: nothing.
+
+## 7. Mermaid diagrams
+
+Status: planned
+
+Render fenced ` ```mermaid ` blocks as diagrams, the way tables render: a diagram widget in
+Live mode when the cursor is outside the block, the raw source when inside it, and the diagram
+in Reading mode, export and copy-as-HTML.
+
+- Vendor Mermaid into `src/vendor/` (no CDN, keeping zero egress) and load it lazily, only
+  when a document has a Mermaid block. It is large (about 3 MB minified), so measure what it
+  adds to the bundle and to first render.
+- Run with `securityLevel: "strict"`, which keeps clicks and raw HTML out of diagrams. Check it
+  works under the app CSP (`script-src 'self'`, no `eval`) and that diagrams pull nothing
+  remote.
+- Diagram colors follow the active theme and preset; re-render on theme change.
+- A syntax error shows Mermaid's message in place of the diagram, never a blank block.
+- Render off the typing path: debounce, and cache by source text so editing elsewhere does not
+  re-render every diagram.
+
+Depends on: nothing.
+Open: whether a lighter renderer covers the diagrams actually used (flowchart, sequence)
+well enough to skip the full bundle.

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 use std::sync::{Arc, RwLock};
@@ -27,6 +27,7 @@ use uuid::Uuid;
 
 use crate::docs::commands::SharedRegistry;
 use crate::docs::registry::Workspace;
+use crate::mcp_config::{self, McpConfig};
 use crate::store::workspace::{Folder, Note};
 
 const MCP_PORT: u16 = 39_393;
@@ -97,7 +98,7 @@ fn snapshot_of(workspace: &Workspace) -> Snapshot {
     }
 }
 
-/// The functions an agent may call. Writes start disabled at every start.
+/// The functions an agent may call, as the owner last chose them.
 type Permissions = Arc<RwLock<HashSet<String>>>;
 
 fn read_permissions() -> HashSet<String> {
@@ -111,7 +112,7 @@ const READ_TOOLS: [&str; 5] = [
     "get_note",
     "list_trash",
 ];
-const WRITE_TOOLS: [&str; 8] = [
+const WRITE_TOOLS: [&str; 10] = [
     "create_note",
     "create_folder",
     "append_to_note",
@@ -120,6 +121,8 @@ const WRITE_TOOLS: [&str; 8] = [
     "rename_folder",
     "delete_note",
     "delete_folder",
+    "push_quick_note",
+    "open_document",
 ];
 
 fn permission_set(tools: Vec<String>) -> Result<HashSet<String>, String> {
@@ -132,12 +135,60 @@ fn permission_set(tools: Vec<String>) -> Result<HashSet<String>, String> {
     Ok(tools.into_iter().collect())
 }
 
+/// The saved choices, with any function the file does not name at its default:
+/// reads on, writes off.
+fn saved_permissions(config: &McpConfig) -> HashSet<String> {
+    READ_TOOLS
+        .iter()
+        .chain(WRITE_TOOLS.iter())
+        .filter(|tool| {
+            config
+                .permissions
+                .get(**tool)
+                .copied()
+                .unwrap_or(READ_TOOLS.contains(*tool))
+        })
+        .map(|tool| tool.to_string())
+        .collect()
+}
+
+fn permission_map(enabled: &HashSet<String>) -> BTreeMap<String, bool> {
+    READ_TOOLS
+        .iter()
+        .chain(WRITE_TOOLS.iter())
+        .map(|tool| (tool.to_string(), enabled.contains(*tool)))
+        .collect()
+}
+
+fn config_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    app.path()
+        .app_config_dir()
+        .map(|directory| directory.join(mcp_config::FILE_NAME))
+        .map_err(|error| format!("Could not resolve the app configuration directory: {error}"))
+}
+
+fn sorted(tools: &HashSet<String>) -> Vec<String> {
+    READ_TOOLS
+        .iter()
+        .chain(WRITE_TOOLS.iter())
+        .filter(|tool| tools.contains(**tool))
+        .map(|tool| tool.to_string())
+        .collect()
+}
+
+// Saved before it is applied, so a choice that cannot be remembered is not used.
 #[tauri::command]
 pub(crate) fn set_mcp_permissions(
+    app: tauri::AppHandle,
     state: tauri::State<'_, McpState>,
     tools: Vec<String>,
 ) -> Result<(), String> {
-    *state.permissions.write().map_err(|e| e.to_string())? = permission_set(tools)?;
+    let tools = permission_set(tools)?;
+    let path = config_path(&app)?;
+    let mut config = mcp_config::load(&path);
+    config.permissions = permission_map(&tools);
+    mcp_config::save(&path, &config)?;
+    *state.permissions.write().map_err(|e| e.to_string())? = tools;
     Ok(())
 }
 
@@ -150,6 +201,8 @@ struct RunningServer {
 pub(crate) struct McpState {
     permissions: Permissions,
     running: tokio::sync::Mutex<Option<RunningServer>>,
+    /// Why access that was on at quit could not start again at launch.
+    start_error: std::sync::Mutex<Option<String>>,
 }
 
 impl Default for McpState {
@@ -157,8 +210,25 @@ impl Default for McpState {
         Self {
             permissions: Arc::new(RwLock::new(read_permissions())),
             running: tokio::sync::Mutex::new(None),
+            start_error: std::sync::Mutex::new(None),
         }
     }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct McpStarted {
+    #[serde(flatten)]
+    connection: McpConnectionInfo,
+    tools: Vec<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct McpStatus {
+    enabled: bool,
+    tools: Vec<String>,
+    error: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -194,7 +264,46 @@ pub(crate) fn get_mcp_connection_info() -> Result<McpConnectionInfo, String> {
 pub(crate) async fn start_mcp_server(
     app: tauri::AppHandle,
     state: tauri::State<'_, McpState>,
-) -> Result<McpConnectionInfo, String> {
+) -> Result<McpStarted, String> {
+    let connection = start(&app, &state).await?;
+    let tools = sorted(&*state.permissions.read().map_err(|e| e.to_string())?);
+    Ok(McpStarted { connection, tools })
+}
+
+#[tauri::command]
+pub(crate) async fn get_mcp_state(state: tauri::State<'_, McpState>) -> Result<McpStatus, String> {
+    let enabled = state.running.lock().await.is_some();
+    let tools = if enabled {
+        sorted(&*state.permissions.read().map_err(|e| e.to_string())?)
+    } else {
+        Vec::new()
+    };
+    let error = state.start_error.lock().map_err(|e| e.to_string())?.clone();
+    Ok(McpStatus {
+        enabled,
+        tools,
+        error,
+    })
+}
+
+/// Starts access at launch when it was on at quit, before any page loads.
+pub(crate) fn start_saved(app: &tauri::AppHandle) {
+    let Ok(path) = config_path(app) else {
+        return;
+    };
+    if !mcp_config::load(&path).enabled {
+        return;
+    }
+    let state = app.state::<McpState>();
+    if let Err(error) = tauri::async_runtime::block_on(start(app, &state)) {
+        eprintln!("{error}");
+        if let Ok(mut saved) = state.start_error.lock() {
+            *saved = Some(error);
+        }
+    }
+}
+
+async fn start(app: &tauri::AppHandle, state: &McpState) -> Result<McpConnectionInfo, String> {
     let mut running = state.running.lock().await;
     if let Some(server) = running.as_ref() {
         return Ok(server.connection.clone());
@@ -214,13 +323,28 @@ pub(crate) async fn start_mcp_server(
         .map_err(|error| format!("Could not resolve the app configuration directory: {error}"))?
         .join(MCP_TOKEN_FILE_NAME);
     let token = load_or_create_token(&token_path)?;
-    *state.permissions.write().map_err(|e| e.to_string())? = read_permissions();
+    let path = config_path(app)?;
+    let permissions = saved_permissions(&mcp_config::load(&path));
+    if let Err(error) = mcp_config::save(
+        &path,
+        &McpConfig {
+            enabled: true,
+            permissions: permission_map(&permissions),
+        },
+    ) {
+        eprintln!("{error}");
+    }
+    *state.permissions.write().map_err(|e| e.to_string())? = permissions;
+    if let Ok(mut error) = state.start_error.lock() {
+        *error = None;
+    }
     let registry = app.state::<SharedRegistry>().inner().clone();
     let cancellation = CancellationToken::new();
     let task = tokio::spawn(serve_local_connections(
         listener,
         registry,
         state.permissions.clone(),
+        Some(app.clone()),
         token,
         cancellation.clone(),
     ));
@@ -233,8 +357,17 @@ pub(crate) async fn start_mcp_server(
 }
 
 #[tauri::command]
-pub(crate) async fn stop_mcp_server(state: tauri::State<'_, McpState>) -> Result<(), String> {
+pub(crate) async fn stop_mcp_server(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, McpState>,
+) -> Result<(), String> {
     *state.permissions.write().map_err(|e| e.to_string())? = HashSet::new();
+    let path = config_path(&app)?;
+    let mut config = mcp_config::load(&path);
+    config.enabled = false;
+    if let Err(error) = mcp_config::save(&path, &config) {
+        eprintln!("{error}");
+    }
     let server = state.running.lock().await.take();
     if let Some(server) = server {
         server.cancellation.cancel();
@@ -257,6 +390,7 @@ async fn serve_local_connections(
     listener: TcpListener,
     registry: SharedRegistry,
     permissions: Permissions,
+    app: Option<tauri::AppHandle>,
     token: String,
     cancellation: CancellationToken,
 ) {
@@ -292,6 +426,7 @@ async fn serve_local_connections(
                 };
                 let registry = registry.clone();
                 let permissions = permissions.clone();
+                let app = app.clone();
                 let token = token.clone();
                 let session_cancellation = cancellation.child_token();
                 sessions.spawn(async move {
@@ -310,7 +445,7 @@ async fn serve_local_connections(
                         _ = session_cancellation.cancelled() => return,
                     };
                     if !matches!(authenticated, Ok(Ok(()))) { return; }
-                    serve_mcp_connection(stream, SodilaudServer::new(registry, permissions), session_cancellation).await;
+                    serve_mcp_connection(stream, SodilaudServer::new(registry, permissions, app), session_cancellation).await;
                 });
             }
         }
@@ -730,6 +865,28 @@ struct CreateNoteArgs {
 
 #[derive(Debug, Serialize, serde::Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct PushQuickNoteArgs {
+    /// Unique retry key (1-128 characters). Reuse with identical arguments on retry.
+    request_id: String,
+    /// Explicit title (1-200 characters after trimming).
+    title: String,
+    /// Markdown content, at most 100000 UTF-8 bytes. Defaults to empty.
+    #[serde(default)]
+    content: String,
+    /// Show the Quick Notes panel with the note selected, without taking keyboard focus. Defaults to true.
+    #[serde(skip_serializing)]
+    show: Option<bool>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct OpenDocumentArgs {
+    /// Absolute path to an existing .md, .markdown or .txt file (UTF-8, at most 10 MB).
+    path: String,
+}
+
+#[derive(Debug, Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct CreateFolderArgs {
     /// Collection ID from a recent list_notes or list_folders result.
     collection_id: String,
@@ -1110,15 +1267,22 @@ fn tool_error(message: String) -> CallToolResult {
 struct SodilaudServer {
     registry: SharedRegistry,
     permissions: Permissions,
+    /// The running app, to show what agents push or open. Tests run without one.
+    app: Option<tauri::AppHandle>,
     #[allow(dead_code)]
     tool_router: ToolRouter<Self>,
 }
 
 impl SodilaudServer {
-    fn new(registry: SharedRegistry, permissions: Permissions) -> Self {
+    fn new(
+        registry: SharedRegistry,
+        permissions: Permissions,
+        app: Option<tauri::AppHandle>,
+    ) -> Self {
         Self {
             registry,
             permissions,
+            app,
             tool_router: Self::tool_router(),
         }
     }
@@ -1258,6 +1422,82 @@ impl SodilaudServer {
                 .map_err(|e| McpError::internal_error(e.to_string(), None))?,
         )
         .await
+    }
+
+    /// Put a note into Quick Notes for the user: a list of commands, the result of a chat with no project to save into. It goes into the "From agents" folder of the collection open now (created if missing), and by default the Quick Notes panel shows it without taking keyboard focus. Needs no collectionId. Retry identical arguments after a failure; a requestId is never applied twice. Follow up with append_to_note using the returned note ID and revision.
+    #[tool(annotations(
+        title = "Push quick note",
+        read_only_hint = false,
+        destructive_hint = false,
+        idempotent_hint = true,
+        open_world_hint = false
+    ))]
+    async fn push_quick_note(
+        &self,
+        Parameters(args): Parameters<PushQuickNoteArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        if !self.is_allowed("push_quick_note")? {
+            return Ok(tool_error(
+                "Permission for push_quick_note is disabled. Enable it in MCP Configuration."
+                    .into(),
+            ));
+        }
+        if args.request_id.trim().is_empty() || args.request_id.chars().count() > 128 {
+            return Err(McpError::invalid_params(
+                "requestId must contain 1-128 characters",
+                None,
+            ));
+        }
+        let title = args.title.trim();
+        if title.is_empty() || title.chars().count() > 200 || args.content.len() > 100_000 {
+            return Err(McpError::invalid_params(
+                "title must contain 1-200 characters and content at most 100000 UTF-8 bytes",
+                None,
+            ));
+        }
+        let show = args.show.unwrap_or(true);
+        let arguments = serde_json::to_value(&args)
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        let result = match self.registry.agent_write("push_quick_note", &arguments) {
+            Ok(result) => result,
+            Err(error) => return Ok(tool_error(error)),
+        };
+        if let (true, Some(app), Some(id)) = (show, &self.app, result["note"]["id"].as_str()) {
+            let handle = app.clone();
+            let focus = crate::quicknotes::window::Focus::Id(id.to_string());
+            let _ = app.run_on_main_thread(move || {
+                crate::quicknotes::window::reveal(&handle, focus);
+            });
+        }
+        successful_result(result)
+    }
+
+    /// Open a Markdown or text file in Sodilaud's main window so the user can read it there, or switch to it if it is already open. Takes an absolute path to an existing .md, .markdown or .txt file. Returns the path, name and size, not the content. The returned path is the file's real path (symbolic links resolved, e.g. /tmp becomes /private/tmp on macOS); use it in later calls. Safe to repeat.
+    #[tool(annotations(
+        title = "Open document",
+        read_only_hint = false,
+        destructive_hint = false,
+        idempotent_hint = true,
+        open_world_hint = false
+    ))]
+    async fn open_document(
+        &self,
+        Parameters(args): Parameters<OpenDocumentArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        if !self.is_allowed("open_document")? {
+            return Ok(tool_error(
+                "Permission for open_document is disabled. Enable it in MCP Configuration.".into(),
+            ));
+        }
+        let opened = match &self.app {
+            Some(app) => crate::files::open_for_agent(app, &args.path),
+            None => crate::files::agent_document(&args.path)
+                .and_then(|_| Err(crate::files::FileError::not_granted(Path::new(&args.path)))),
+        };
+        match opened {
+            Ok(opened) => successful_result(opened),
+            Err(error) => Ok(tool_error(error.message)),
+        }
     }
 
     /// Create a folder. Requires explicit write access. Retry using the same requestId.
@@ -1534,7 +1774,7 @@ impl ServerHandler for SodilaudServer {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new("sodilaud-mcp", env!("CARGO_PKG_VERSION")))
             .with_instructions(
-                "Access to the notes collection currently open in Sodilaud, as the editor shows it. Each function requires its permission enabled in MCP Configuration. All read functions start enabled; all write functions start disabled. delete_note moves a note to persistent trash and requires expectedRevision from get_note. delete_folder requires expectedRevision from list_folders and rejects nonempty folders. list_trash lists recovery metadata; only the user can restore or empty trash through the UI. rename_note and move_note require expectedRevision from get_note. rename_folder requires expectedRevision from list_folders. All edits preserve content except append_to_note, which requires the expectedRevision from get_note, appends exact text, and never adds separators; line breaks are stored as \\n. A revision conflict requires rereading; after a failure or timeout, retry identical arguments with the same requestId, which never applies a write twice. Get collectionId from a read result and supply a unique requestId for each write; reuse identical arguments on retries. Retry keys last for this collection session; a switch or app restart invalidates collectionId. Results are paginated; follow nextOffset until it is null. get_note offsets count Unicode characters, not bytes.",
+                "Access to the notes collection currently open in Sodilaud, as the editor shows it. Each function requires its permission enabled in MCP Configuration. Read functions start enabled and write functions disabled until the user selects them; choices are remembered across restarts. push_quick_note puts a note into the user's Quick Notes (the From agents folder) and needs no collectionId. open_document opens an absolute .md, .markdown or .txt path in the main window and returns no content. delete_note moves a note to persistent trash and requires expectedRevision from get_note. delete_folder requires expectedRevision from list_folders and rejects nonempty folders. list_trash lists recovery metadata; only the user can restore or empty trash through the UI. rename_note and move_note require expectedRevision from get_note. rename_folder requires expectedRevision from list_folders. All edits preserve content except append_to_note, which requires the expectedRevision from get_note, appends exact text, and never adds separators; line breaks are stored as \\n. A revision conflict requires rereading; after a failure or timeout, retry identical arguments with the same requestId, which never applies a write twice. Get collectionId from a read result and supply a unique requestId for each write; reuse identical arguments on retries. Retry keys last for this collection session; a switch or app restart invalidates collectionId. Results are paginated; follow nextOffset until it is null. get_note offsets count Unicode characters, not bytes.",
             )
     }
 
@@ -1614,7 +1854,7 @@ mod tests {
         let (registry, path) = registry();
         let permissions = Arc::new(RwLock::new(read_permissions()));
         (
-            SodilaudServer::new(registry, permissions.clone()),
+            SodilaudServer::new(registry, permissions.clone(), None),
             permissions,
             path,
         )
@@ -1624,6 +1864,41 @@ mod tests {
         registry
             .with(|workspace| Ok(snapshot_of(workspace).note_revisions[id].clone()))
             .unwrap()
+    }
+
+    #[test]
+    fn saved_permissions_restore_choices_and_default_new_tools() {
+        assert_eq!(saved_permissions(&McpConfig::default()), read_permissions());
+        let config = McpConfig {
+            enabled: true,
+            permissions: [
+                ("get_note".to_string(), false),
+                ("create_note".to_string(), true),
+                ("unknown".to_string(), true),
+            ]
+            .into(),
+        };
+        let restored = saved_permissions(&config);
+        assert!(!restored.contains("get_note"));
+        assert!(restored.contains("create_note"));
+        assert!(
+            restored.contains("list_notes"),
+            "a read missing from the map starts on"
+        );
+        assert!(
+            !restored.contains("append_to_note"),
+            "a write missing from the map starts off"
+        );
+        assert!(!restored.contains("unknown"));
+        let saved = McpConfig {
+            enabled: true,
+            permissions: permission_map(&restored),
+        };
+        assert_eq!(
+            saved.permissions.len(),
+            READ_TOOLS.len() + WRITE_TOOLS.len()
+        );
+        assert_eq!(saved_permissions(&saved), restored);
     }
 
     #[tokio::test]
@@ -1827,6 +2102,70 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn push_quick_note_is_gated_validated_and_lands_in_from_agents() {
+        let (server, permissions, path) = server();
+        let push = |args: serde_json::Value| {
+            server.push_quick_note(Parameters(serde_json::from_value(args).unwrap()))
+        };
+        let off = push(serde_json::json!({"requestId": "p", "title": "T"}))
+            .await
+            .unwrap();
+        assert_eq!(off.is_error, Some(true));
+        permissions
+            .write()
+            .unwrap()
+            .insert("push_quick_note".into());
+        for invalid in [
+            serde_json::json!({"requestId": "", "title": "T"}),
+            serde_json::json!({"requestId": "x".repeat(129), "title": "T"}),
+            serde_json::json!({"requestId": "p", "title": "  "}),
+            serde_json::json!({"requestId": "p", "title": "t".repeat(201)}),
+            serde_json::json!({"requestId": "p", "title": "T", "content": "x".repeat(100_001)}),
+        ] {
+            assert!(push(invalid).await.is_err());
+        }
+        let pushed = push(serde_json::json!({"requestId": "p", "title": "T", "show": false}))
+            .await
+            .unwrap();
+        assert_eq!(pushed.is_error, Some(false));
+        let result = pushed.structured_content.unwrap();
+        assert_eq!(result["collectionId"], "test-collection");
+        assert!(result["revision"].is_string());
+        let again = push(serde_json::json!({"requestId": "p", "title": "T", "show": true}))
+            .await
+            .unwrap();
+        assert_eq!(
+            again.structured_content.unwrap(),
+            result,
+            "show does not change the request"
+        );
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[tokio::test]
+    async fn open_document_is_gated_and_checks_the_path_first() {
+        let (server, permissions, path) = server();
+        let open = |path: &str| {
+            server.open_document(Parameters(
+                serde_json::from_value(serde_json::json!({ "path": path })).unwrap(),
+            ))
+        };
+        let message = |result: CallToolResult| {
+            assert_eq!(result.is_error, Some(true));
+            serde_json::to_value(&result.content).unwrap()[0]["text"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        };
+        assert!(message(open("/tmp/x.md").await.unwrap()).contains("disabled"));
+        permissions.write().unwrap().insert("open_document".into());
+        assert!(message(open("notes/x.md").await.unwrap()).contains("full path"));
+        let missing = std::env::temp_dir().join(format!("sodilaud-missing-{}.md", Uuid::new_v4()));
+        assert!(message(open(missing.to_str().unwrap()).await.unwrap()).contains("does not exist"));
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[tokio::test]
     async fn an_append_reaches_the_registry_once_per_request_id() {
         let (server, permissions, path) = server();
         permissions.write().unwrap().insert("append_to_note".into());
@@ -2010,7 +2349,7 @@ mod tests {
         .await;
         let tools = receive_json(&mut client).await;
         let tools = tools["result"]["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 13);
+        assert_eq!(tools.len(), 15);
         for forbidden in ["empty_trash", "purge_trash", "restore_note"] {
             assert!(!tools.iter().any(|tool| tool["name"] == forbidden));
         }
@@ -2099,6 +2438,16 @@ mod tests {
                 8,
                 "create_folder",
                 serde_json::json!({"collectionId":"test-collection", "requestId":"f1", "name":"New"}),
+            ),
+            (
+                13,
+                "push_quick_note",
+                serde_json::json!({"requestId":"p1", "title":"Build steps"}),
+            ),
+            (
+                14,
+                "open_document",
+                serde_json::json!({"path":"/tmp/notes.md"}),
             ),
         ] {
             send_json(
@@ -2240,7 +2589,7 @@ mod tests {
         )
         .await;
         let tools = receive_json(&mut client).await;
-        assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 13);
+        assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 15);
         cancellation.cancel();
         server.await.unwrap();
     }
@@ -2261,6 +2610,7 @@ mod tests {
             listener,
             registry.clone(),
             permissions.clone(),
+            None,
             "a".repeat(64),
             cancellation.clone(),
         ));

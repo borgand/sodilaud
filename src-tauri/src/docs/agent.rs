@@ -17,8 +17,9 @@ const MAX_RECEIPTS: usize = 1000;
 const RESERVED_FOLDER_NAMES: [&str; 2] = ["pinned", "top level"];
 
 pub(crate) const AGENT_CLIENT: &str = "agent";
+pub(crate) const AGENT_FOLDER: &str = "From agents";
 
-pub(crate) const OPERATIONS: [&str; 8] = [
+pub(crate) const OPERATIONS: [&str; 9] = [
     "create_note",
     "create_folder",
     "append_to_note",
@@ -27,6 +28,7 @@ pub(crate) const OPERATIONS: [&str; 8] = [
     "rename_folder",
     "delete_note",
     "delete_folder",
+    "push_quick_note",
 ];
 
 fn text<'a>(args: &'a Value, field: &str) -> &'a str {
@@ -59,7 +61,7 @@ impl Registry {
         if !OPERATIONS.contains(&operation) {
             return Err("Unknown write operation".into());
         }
-        let collection_id = text(args, "collectionId").to_string();
+        let requested_collection = text(args, "collectionId").to_string();
         let request_id = text(args, "requestId").to_string();
         let fingerprint = json!([
             operation,
@@ -73,7 +75,13 @@ impl Registry {
         .to_string();
 
         self.with(|workspace| {
-            workspace.check(&collection_id)?;
+            // A push needs no earlier read: it always targets the open collection.
+            let collection_id = if operation == "push_quick_note" {
+                workspace.id.clone()
+            } else {
+                workspace.check(&requested_collection)?;
+                requested_collection.clone()
+            };
             if let Some(receipt) = workspace.receipts.get(&request_id) {
                 if receipt.fingerprint != fingerprint {
                     return Err("requestId was already used with different arguments".into());
@@ -137,6 +145,39 @@ fn apply(
             insert_below_pinned(&mut draft.notes, new_entry(note.clone(), rev));
             workspace.commit(draft)?;
             Ok(json!({ "note": note }))
+        }
+        "push_quick_note" => {
+            let mut draft = workspace.draft();
+            let rev = draft.rev();
+            let wanted = AGENT_FOLDER.to_lowercase();
+            let folder_id = match draft
+                .folders
+                .iter()
+                .find(|f| f.folder.name.to_lowercase() == wanted)
+            {
+                Some(entry) => entry.folder.id.clone(),
+                None => {
+                    let folder = Folder {
+                        id: format!("folder_{}", uuid::Uuid::new_v4()),
+                        name: AGENT_FOLDER.to_string(),
+                    };
+                    let id = folder.id.clone();
+                    draft.folders.push(FolderEntry { folder, rev });
+                    id
+                }
+            };
+            let note = Note {
+                id: format!("note_{}", uuid::Uuid::new_v4()),
+                title: text(args, "title").trim().to_string(),
+                content: changes::normalize_newlines(text(args, "content")).into_owned(),
+                updated_at: now_ms(),
+                is_title_locked: true,
+                is_pinned: false,
+                folder_id: Some(folder_id),
+            };
+            insert_below_pinned(&mut draft.notes, new_entry(note.clone(), rev));
+            workspace.commit(draft)?;
+            Ok(json!({ "note": metadata(&note), "revision": rev.to_string() }))
         }
         "create_folder" => {
             let name = normalize_folder_name(text(args, "name"));
@@ -398,6 +439,94 @@ mod tests {
         .unwrap();
         assert_eq!(deleted["trash"]["noteId"], "a");
         assert_eq!(registry.state().unwrap().trash.len(), 1);
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn push_files_notes_under_from_agents_and_recreates_the_folder() {
+        let (registry, _, path, id) = registry_with(&[note("a", "x", 1)]);
+        let push = |request: &str, title: &str| {
+            registry.agent_write(
+                "push_quick_note",
+                &json!({"requestId": request, "title": title, "content": "- run it\r\n"}),
+            )
+        };
+        let first = push("p1", " Build steps ").unwrap();
+        assert_eq!(first["collectionId"], json!(id));
+        assert_eq!(first["note"]["title"], "Build steps");
+        assert!(first["note"].get("content").is_none());
+        let state = registry.state().unwrap();
+        assert_eq!(state.folders.len(), 1);
+        assert_eq!(state.folders[0].name, AGENT_FOLDER);
+        let created = state
+            .notes
+            .iter()
+            .find(|n| json!(n.note.id) == first["note"]["id"])
+            .unwrap();
+        assert_eq!(created.note.content, "- run it\n");
+        assert!(created.note.is_title_locked);
+        assert_eq!(
+            created.note.folder_id.as_deref(),
+            Some(state.folders[0].id.as_str())
+        );
+        assert_eq!(first["revision"], json!(created.rev.to_string()));
+
+        assert_eq!(push("p1", " Build steps ").unwrap(), first);
+        assert!(push("p1", "Other")
+            .unwrap_err()
+            .contains("different arguments"));
+        push("p2", "Second").unwrap();
+        assert_eq!(
+            registry.state().unwrap().folders.len(),
+            1,
+            "the folder is reused"
+        );
+
+        let folder = registry.state().unwrap().folders[0].clone();
+        registry
+            .agent_write(
+                "rename_folder",
+                &json!({"collectionId": id, "requestId": "r", "folderId": folder.id,
+                    "expectedRevision": folder.rev.to_string(), "name": "Mine"}),
+            )
+            .unwrap();
+        push("p3", "Third").unwrap();
+        let names: Vec<_> = registry
+            .state()
+            .unwrap()
+            .folders
+            .iter()
+            .map(|f| f.name.clone())
+            .collect();
+        assert_eq!(names, vec!["Mine".to_string(), AGENT_FOLDER.to_string()]);
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn push_reuses_the_folder_whatever_its_case_and_stays_below_pinned_notes() {
+        let mut pinned = note("p", "pinned", 1);
+        pinned.is_pinned = true;
+        let (registry, _, path, id) = registry_with(&[pinned]);
+        registry
+            .agent_write(
+                "create_folder",
+                &json!({"collectionId": id, "requestId": "f", "name": "from AGENTS"}),
+            )
+            .unwrap();
+        let pushed = registry
+            .agent_write(
+                "push_quick_note",
+                &json!({"requestId": "q", "title": "Q", "collectionId": "ignored"}),
+            )
+            .unwrap();
+        let state = registry.state().unwrap();
+        assert_eq!(state.folders.len(), 1);
+        assert_eq!(state.notes[0].note.id, "p");
+        assert_eq!(json!(state.notes[1].note.id), pushed["note"]["id"]);
+        assert_eq!(
+            state.notes[1].note.folder_id.as_deref(),
+            Some(state.folders[0].id.as_str())
+        );
         std::fs::remove_file(path).unwrap();
     }
 

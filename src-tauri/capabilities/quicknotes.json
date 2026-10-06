@@ -24,6 +24,7 @@
     "allow-doc-push",
     "allow-doc-pull",
     "allow-get-mcp-connection-info",
+    "allow-get-mcp-state",
     "allow-start-mcp-server",
     "allow-set-mcp-permissions",
     "allow-stop-mcp-server",

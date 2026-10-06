@@ -226,9 +226,11 @@ let activeNotification = null;
 let previewHighlightsRendered = false;
 let isMcpEnabled = false;
 const MCP_READ_TOOLS = ["list_folders", "list_notes", "search_notes", "get_note", "list_trash"];
-const MCP_WRITE_TOOLS = ["create_note", "create_folder", "append_to_note", "rename_note", "move_note", "rename_folder", "delete_note", "delete_folder"];
+const MCP_WRITE_TOOLS = ["create_note", "create_folder", "append_to_note", "rename_note", "move_note", "rename_folder", "delete_note", "delete_folder", "push_quick_note", "open_document"];
 const defaultMcpPermissions = () => Object.fromEntries([...MCP_READ_TOOLS.map(tool => [tool, true]), ...MCP_WRITE_TOOLS.map(tool => [tool, false])]);
 let mcpPermissions = defaultMcpPermissions();
+const mcpPermissionsFrom = tools => Object.fromEntries([...MCP_READ_TOOLS, ...MCP_WRITE_TOOLS].map(tool => [tool, tools.includes(tool)]));
+let mcpStartError = null;
 let isMcpPermissionSaving = false;
 let isWorkspaceSwitching = false;
 
@@ -490,6 +492,7 @@ function applyWorkspaceState(state, { initial = false } = {}) {
   if (!isCreatingFolder && editingFolderId === null) renderNoteList(searchInput.value);
   populateSecondaryNoteSelect();
   if (isFindResultsOpen && isFindAllNotesMode) renderFindResults();
+  if (pendingFocusNoteId !== null) focusPendingNote();
 }
 
 // Text another client changed: this page's editors, another pane, or an agent.
@@ -713,6 +716,7 @@ async function init() {
   // 5. Render UI
   renderNoteList();
   loadActiveNote();
+  await loadMcpState();
 }
 
 // ----------------------------------------------------
@@ -1670,6 +1674,7 @@ async function toggleMcpAccess() {
 
   agentAccessToggleBtn.disabled = true;
   agentAccessConfigBtn.disabled = true;
+  mcpStartError = null;
   const previousPermissions = mcpPermissions;
   const disabling = isMcpEnabled;
   try {
@@ -1690,11 +1695,14 @@ async function toggleMcpAccess() {
     if (!connection?.command || !Array.isArray(connection?.args) || !connection.args.length) {
       throw new Error("Sodilaud returned incomplete MCP connection details");
     }
-    mcpConnectionInfo = connection;
-    mcpPermissions = defaultMcpPermissions();
+    mcpConnectionInfo = { command: connection.command, args: connection.args };
+    mcpPermissions = mcpPermissionsFrom(Array.isArray(connection.tools) ? connection.tools : []);
     isMcpEnabled = true;
     updateMcpUiState();
-    showNotification("Agent access enabled — reads only until you allow write functions in MCP Configuration");
+    const writeCount = MCP_WRITE_TOOLS.filter(tool => mcpPermissions[tool]).length;
+    showNotification(writeCount
+      ? `Agent access enabled with ${writeCount} write ${writeCount === 1 ? "function" : "functions"} allowed`
+      : "Agent access enabled — reads only until you allow write functions in MCP Configuration");
   } catch (error) {
     if (disabling) mcpPermissions = previousPermissions;
     updateMcpUiState();
@@ -1708,8 +1716,26 @@ async function toggleMcpAccess() {
   }
 }
 
+// Rust starts access at launch when it was on at quit, before this page loads.
+async function loadMcpState() {
+  try {
+    const state = await invoke("get_mcp_state");
+    mcpStartError = state?.error ?? null;
+    if (state?.enabled) {
+      isMcpEnabled = true;
+      mcpPermissions = mcpPermissionsFrom(Array.isArray(state.tools) ? state.tools : []);
+    }
+  } catch (error) {
+    console.error("Could not read the agent access state", error);
+  } finally {
+    updateMcpUiState();
+  }
+}
+
 async function openMcpConfigModal() {
-  mcpPermissionStatus.textContent = isMcpEnabled ? "" : "Agent access is off. Enable it from the actions menu to change function permissions.";
+  mcpPermissionStatus.textContent = isMcpEnabled ? "" : (mcpStartError
+    ? `Agent access was on when Sodilaud quit but could not start again: ${mcpStartError}`
+    : "Agent access is off. Enable it from the actions menu to change function permissions.");
   updateMcpUiState();
   mcpConfigModalPreviousFocus = actionsDropdown.contains(document.activeElement)
     ? actionsBtn
@@ -3574,12 +3600,13 @@ async function registerQuickNotesHandlers() {
   if (typeof listen !== "function") return;
   try {
     await listen("quicknotes-focus-note", ({ payload }) => {
+      if (typeof payload?.id === "string") {
+        pendingFocusNoteId = payload.id;
+        focusPendingNote();
+        return;
+      }
       const note = notes.find(candidate => candidate.title === payload?.title);
-      if (!note) return;
-      if (isFocusMode) toggleFocusMode();
-      activeNoteId = note.id;
-      renderNoteList(searchInput.value);
-      loadActiveNote();
+      if (note) focusNote(note);
     });
     await listen("quicknotes-open-menu", () => {
       toggleActionsDropdown(true);
@@ -3587,6 +3614,27 @@ async function registerQuickNotesHandlers() {
   } catch (error) {
     console.error("Failed to register the Quick Notes handlers", error);
   }
+}
+
+// An agent's push names its note by ID. The event can arrive before the state
+// that contains the note, so the request waits for it.
+let pendingFocusNoteId = null;
+
+function focusPendingNote() {
+  const note = notes.find(candidate => candidate.id === pendingFocusNoteId);
+  if (!note) return;
+  pendingFocusNoteId = null;
+  focusNote(note);
+}
+
+function focusNote(note) {
+  if (isFocusMode) toggleFocusMode();
+  if (!isNotePinned(note) && collapsedFolderIds.delete(validFolderId(note.folderId, folders) || UNFILED_SECTION_ID)) {
+    persistCollapsedFolders();
+  }
+  activeNoteId = note.id;
+  renderNoteList(searchInput.value);
+  loadActiveNote();
 }
 
 function hideQuickNotes() {
