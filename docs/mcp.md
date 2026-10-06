@@ -372,7 +372,8 @@ The file editor's rules apply: the file must be UTF-8 text of at most 10 MB.
 Relative paths, folders, missing files and other file types are rejected,
 including a symbolic link whose target has another extension. The result is
 `{ path, name, bytes }`: the resolved path, the file name and its size. It does
-not contain the file's text.
+not contain the file's text. The resolved path follows symbolic links (on macOS,
+`/tmp/x.md` comes back as `/private/tmp/x.md`); use it in later calls.
 
 Opening a file grants the main window access to that one file, like opening it
 yourself, and makes it co-edited (see below). No MCP tool lists folders. Reading

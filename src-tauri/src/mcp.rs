@@ -1599,7 +1599,7 @@ impl SodilaudServer {
         successful_result(result)
     }
 
-    /// Open a Markdown or text file in Sodilaud's main window so the user can read it there, or switch to it if it is already open. Takes an absolute path to an existing .md, .markdown or .txt file. Returns the path, name and size, not the content. Safe to repeat.
+    /// Open a Markdown or text file in Sodilaud's main window so the user can read it there, or switch to it if it is already open. Takes an absolute path to an existing .md, .markdown or .txt file. Returns the path, name and size, not the content. The returned path is the file's real path (symbolic links resolved, e.g. /tmp becomes /private/tmp on macOS); use it in later calls. Safe to repeat.
     #[tool(annotations(
         title = "Open document",
         read_only_hint = false,
