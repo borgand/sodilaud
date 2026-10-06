@@ -227,6 +227,17 @@ test("tables render as an HTML widget until the caret enters them", async () => 
   } finally { t.done(); }
 });
 
+test("the Live table widget keeps short values whole and scrolls wide tables", async () => {
+  const table = "| Date | Notes |\n|---|---|\n| 2026-09-30 | a long description |";
+  const t = await setup(`intro\n\n${table}\n\nafter`);
+  try {
+    await t.caret(0);
+    const widget = t.view.contentDOM.querySelector(".cm-lp-table");
+    assert.ok(widget.querySelector("div.table-scroll > table"));
+    assert.deepEqual([...widget.querySelectorAll("span.table-token")].map(span => span.textContent), ["2026-09-30"]);
+  } finally { t.done(); }
+});
+
 test("clicking a table widget moves the caret into the table", async () => {
   const t = await setup("intro\n\n| a |\n|---|\n| 1 |");
   try {

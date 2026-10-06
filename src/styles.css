@@ -3376,6 +3376,9 @@ kbd {
   font-family: var(--font-sans);
   font-size: inherit;
   cursor: text;
+  white-space: normal;
+  word-break: normal;
+  overflow-wrap: normal;
 }
 
 .cm-mode-live .cm-lp-table.markdown-preview table {
