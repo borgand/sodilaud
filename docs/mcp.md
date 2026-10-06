@@ -474,7 +474,7 @@ in place; **Remove** takes out exactly what was installed.
 
 A file is co-edited from the moment an agent opens, reads or comments on it
 until you close it; Sodilaud lists those files in `coedit.json` in its app data
-folder for the hook, and empties the list when it quits. A note is co-edited
+folder for the hook (readable only by you), and empties the list when it quits. A note is co-edited
 until it is trashed or the collection changes.
 
 ## Live data and privacy boundary

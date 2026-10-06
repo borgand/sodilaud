@@ -112,8 +112,8 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-/// Writes the co-edited files for the hook: a temporary file renamed over
-/// the old one, so the hook never reads half a list.
+/// Writes the co-edited files for the hook, owner-only: a temporary file
+/// renamed over the old one, so the hook never reads half a list.
 pub(crate) fn write_mirror(target: &Path, files: &BTreeSet<PathBuf>) -> Result<(), String> {
     if let Some(parent) = target.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
@@ -125,6 +125,7 @@ pub(crate) fn write_mirror(target: &Path, files: &BTreeSet<PathBuf>) -> Result<(
     let bytes = serde_json::to_vec_pretty(&json!({ "files": list })).map_err(|e| e.to_string())?;
     let temporary = target.with_extension(format!("json.{}.tmp", uuid::Uuid::new_v4().simple()));
     std::fs::write(&temporary, bytes).map_err(|e| e.to_string())?;
+    crate::restrict_to_owner(&temporary)?;
     std::fs::rename(&temporary, target).map_err(|e| {
         let _ = std::fs::remove_file(&temporary);
         e.to_string()
@@ -909,6 +910,19 @@ mod tests {
             collection_id: collection.into(),
             note_id: id.into(),
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_mirror_is_readable_only_by_the_owner() {
+        use std::os::unix::fs::PermissionsExt;
+        let directory =
+            std::env::temp_dir().join(format!("sodilaud-mirror-{}", uuid::Uuid::new_v4().simple()));
+        let target = directory.join(FILE_NAME);
+        write_mirror(&target, &BTreeSet::from([PathBuf::from("/a/spec.md")])).unwrap();
+        let mode = std::fs::metadata(&target).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600);
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
