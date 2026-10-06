@@ -93,9 +93,17 @@ test("only the main window can reach user files", async () => {
   const caps = await capabilities();
   const holders = (command) => caps.filter(cap => cap.permissions.includes(grant(command))).map(cap => cap.identifier);
   for (const command of [
-    "file_open_dialog", "file_save_as_dialog", "file_read", "file_write", "file_lists",
-    "file_set_open", "file_take_pending", "file_forget_recent", "file_confirm_discard"
+    "file_open_dialog", "file_save_as_dialog", "file_lists",
+    "file_set_open", "file_take_pending", "file_forget_recent", "file_confirm_discard",
+    "file_doc_open", "file_doc_push", "file_doc_pull", "file_doc_close", "file_doc_save", "file_doc_resolve"
   ]) {
     assert.deepEqual(holders(command), ["default"], `${command} must be granted to the main window only`);
+  }
+});
+
+test("file contents are sent to the main window only", async () => {
+  const commands = await readFile("src-tauri/src/docs/commands.rs", "utf8");
+  for (const event of ["FILE_DOC_EVENT", "FILE_SAVED_EVENT", "FILE_EXTERNAL_EVENT"]) {
+    assert.match(commands, new RegExp(`emit_to\\(\\s*quicknotes::window::MAIN_LABEL,\\s*${event}`), event);
   }
 });

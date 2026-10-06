@@ -17,6 +17,8 @@ use std::thread;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
+use crate::docs::commands::SharedRegistry;
+use crate::docs::files::Disk;
 use grants::Grants;
 use store::FileLists;
 use watch::Watcher;
@@ -28,6 +30,7 @@ pub enum FileErrorCode {
     NotUtf8,
     TooLarge,
     WrongWindow,
+    NotOpen,
     Unsupported,
     Io,
 }
@@ -42,6 +45,17 @@ pub struct FileError {
 impl FileError {
     fn new(code: FileErrorCode, message: String) -> Self {
         Self { code, message }
+    }
+
+    pub fn not_open(path: &Path) -> Self {
+        Self::new(
+            FileErrorCode::NotOpen,
+            format!("{} is not open in Sodilaud.", io::file_name(path)),
+        )
+    }
+
+    pub fn other(message: String) -> Self {
+        Self::new(FileErrorCode::Io, message)
     }
 
     pub fn not_granted(path: &Path) -> Self {
@@ -211,20 +225,45 @@ impl Files {
     }
 }
 
-/// Called from setup: restores the file lists and starts watching.
+impl Disk for Files {
+    fn read(&self, path: &Path) -> Result<Vec<u8>, FileError> {
+        let bytes = io::read_bytes(path)?;
+        self.record(path, &io::hash(&bytes));
+        Ok(bytes)
+    }
+
+    fn write(
+        &self,
+        path: &Path,
+        text: &str,
+        line_ending: io::LineEnding,
+        bom: bool,
+    ) -> Result<String, FileError> {
+        Files::write(self, path, text, line_ending, bom)
+    }
+}
+
+/// Called from setup, after the registry: restores the file lists, watches
+/// the open files for outside edits and autosaves them.
 pub fn start(app: &AppHandle) {
     app.manage(Files::load(app));
-    let app = app.clone();
+    let registry = app.state::<SharedRegistry>().inner().clone();
+    let watching = app.clone();
+    let watched = registry.clone();
     thread::spawn(move || loop {
         thread::sleep(watch::INTERVAL);
-        let changes = lock(&app.state::<Files>().watcher).poll();
+        let files = watching.state::<Files>();
+        let changes = lock(&files.watcher).poll();
         for change in changes {
-            let _ = app.emit_to(
-                crate::quicknotes::window::MAIN_LABEL,
-                watch::CHANGED_EVENT,
-                change,
-            );
+            let removed = change.kind == watch::ChangeKind::Removed;
+            watched.file_changed_on_disk(Path::new(&change.path), removed, &*files);
         }
+    });
+    let saving = app.clone();
+    thread::spawn(move || loop {
+        let path = registry.file_next_due();
+        // A failure reaches the page as a `file-doc-saved` event.
+        let _ = registry.file_save(&path, &*saving.state::<Files>());
     });
 }
 
@@ -289,11 +328,9 @@ pub fn agent_document(path: &str) -> Result<(PathBuf, u64), FileError> {
     if resolved.is_file() && !is_text_file(&resolved) {
         return Err(FileError::not_text(requested));
     }
-    io::read(&resolved)?;
-    let bytes = std::fs::metadata(&resolved)
-        .map_err(|error| FileError::io(&resolved, &error))?
-        .len();
-    Ok((resolved, bytes))
+    let bytes = io::read_bytes(&resolved)?;
+    io::decode_normalized(&bytes)?;
+    Ok((resolved, bytes.len() as u64))
 }
 
 #[derive(Serialize, Clone, Debug, PartialEq, Eq)]

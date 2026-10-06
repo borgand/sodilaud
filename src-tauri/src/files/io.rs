@@ -24,19 +24,6 @@ pub enum LineEnding {
     Crlf,
 }
 
-/// A file as the editor sees it: text with LF line endings, plus what is needed
-/// to write it back byte for byte.
-#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct FileText {
-    pub path: String,
-    pub name: String,
-    pub text: String,
-    pub line_ending: LineEnding,
-    pub bom: bool,
-    pub hash: String,
-}
-
 /// A content hash, used only to recognize Sodilaud's own writes.
 pub fn hash(bytes: &[u8]) -> String {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -44,21 +31,23 @@ pub fn hash(bytes: &[u8]) -> String {
     format!("{:016x}", hasher.finish())
 }
 
-/// Splits a file into editor text, its line ending and whether it had a BOM. Only
-/// a file that uses CRLF throughout is converted; any other file (LF, or mixed)
-/// reaches the editor as it is.
-pub fn decode(bytes: &[u8]) -> Result<(String, LineEnding, bool), FileError> {
+/// Splits a file into registry text, which uses `\n` only as CM6 does, the
+/// line ending most of its lines use, and whether it had a BOM.
+pub fn decode_normalized(bytes: &[u8]) -> Result<(String, LineEnding, bool), FileError> {
     let (body, bom) = match bytes.strip_prefix(BOM) {
         Some(rest) => (rest, true),
         None => (bytes, false),
     };
     let text = std::str::from_utf8(body).map_err(|_| FileError::not_utf8())?;
     let crlf = text.matches("\r\n").count();
-    if crlf > 0 && crlf == text.matches('\n').count() {
-        Ok((text.replace("\r\n", "\n"), LineEnding::Crlf, bom))
+    let lf = text.matches('\n').count() - crlf;
+    let line_ending = if crlf > lf {
+        LineEnding::Crlf
     } else {
-        Ok((text.to_string(), LineEnding::Lf, bom))
-    }
+        LineEnding::Lf
+    };
+    let text = crate::docs::changes::normalize_newlines(text).into_owned();
+    Ok((text, line_ending, bom))
 }
 
 pub fn encode(text: &str, line_ending: LineEnding, bom: bool) -> Vec<u8> {
@@ -80,7 +69,8 @@ pub fn file_name(path: &Path) -> String {
         .unwrap_or_else(|| path.to_string_lossy().to_string())
 }
 
-pub fn read(path: &Path) -> Result<FileText, FileError> {
+/// The bytes of a regular file of at most `MAX_BYTES`.
+pub fn read_bytes(path: &Path) -> Result<Vec<u8>, FileError> {
     let metadata = fs::metadata(path).map_err(|error| FileError::io(path, &error))?;
     if !metadata.is_file() {
         return Err(FileError::not_found(path));
@@ -88,16 +78,7 @@ pub fn read(path: &Path) -> Result<FileText, FileError> {
     if metadata.len() > MAX_BYTES {
         return Err(FileError::too_large(path));
     }
-    let bytes = fs::read(path).map_err(|error| FileError::io(path, &error))?;
-    let (text, line_ending, bom) = decode(&bytes)?;
-    Ok(FileText {
-        path: path.to_string_lossy().to_string(),
-        name: file_name(path),
-        text,
-        line_ending,
-        bom,
-        hash: hash(&bytes),
-    })
+    fs::read(path).map_err(|error| FileError::io(path, &error))
 }
 
 /// Writes `text` to a temporary file beside `path`, then renames it over `path`,
@@ -159,16 +140,10 @@ mod tests {
     fn a_crlf_file_round_trips_byte_for_byte() {
         let path = scratch("crlf").join("notes.md");
         fs::write(&path, b"# Title\r\n\r\n- one\r\n").unwrap();
-        let file = read(&path).unwrap();
-        assert_eq!(file.text, "# Title\n\n- one\n");
-        assert_eq!(file.line_ending, LineEnding::Crlf);
-        write_atomic(
-            &path,
-            &format!("{}- two\n", file.text),
-            file.line_ending,
-            file.bom,
-        )
-        .unwrap();
+        let (text, line_ending, bom) = decode_normalized(&read_bytes(&path).unwrap()).unwrap();
+        assert_eq!(text, "# Title\n\n- one\n");
+        assert_eq!(line_ending, LineEnding::Crlf);
+        write_atomic(&path, &format!("{text}- two\n"), line_ending, bom).unwrap();
         assert_eq!(
             fs::read(&path).unwrap(),
             b"# Title\r\n\r\n- one\r\n- two\r\n"
@@ -179,19 +154,22 @@ mod tests {
     fn a_bom_is_kept() {
         let path = scratch("bom").join("bom.txt");
         fs::write(&path, b"\xEF\xBB\xBFhello\n").unwrap();
-        let file = read(&path).unwrap();
-        assert_eq!(file.text, "hello\n");
-        assert!(file.bom);
-        write_atomic(&path, "hello world\n", file.line_ending, file.bom).unwrap();
+        let (text, line_ending, bom) = decode_normalized(&read_bytes(&path).unwrap()).unwrap();
+        assert_eq!(text, "hello\n");
+        assert!(bom);
+        write_atomic(&path, "hello world\n", line_ending, bom).unwrap();
         assert_eq!(fs::read(&path).unwrap(), b"\xEF\xBB\xBFhello world\n");
     }
 
     #[test]
-    fn mixed_line_endings_reach_the_editor_unchanged() {
-        let (text, line_ending, _) = decode(b"a\r\nb\nc").unwrap();
-        assert_eq!(text, "a\r\nb\nc");
-        assert_eq!(line_ending, LineEnding::Lf);
-        assert_eq!(encode(&text, line_ending, false), b"a\r\nb\nc");
+    fn registry_text_is_normalized_and_keeps_the_majority_ending() {
+        let (text, line_ending, bom) = decode_normalized(b"\xEF\xBB\xBFa\r\nb\r\nc\n").unwrap();
+        assert_eq!(
+            (text.as_str(), line_ending, bom),
+            ("a\nb\nc\n", LineEnding::Crlf, true)
+        );
+        let (text, line_ending, _) = decode_normalized(b"a\r\nb\nc\n").unwrap();
+        assert_eq!((text.as_str(), line_ending), ("a\nb\nc\n", LineEnding::Lf));
     }
 
     #[cfg(unix)]
@@ -225,7 +203,11 @@ mod tests {
     fn a_file_that_is_not_utf8_is_refused() {
         let path = scratch("latin1").join("latin1.txt");
         fs::write(&path, b"caf\xE9\n").unwrap();
-        assert_eq!(read(&path).unwrap_err().code, FileErrorCode::NotUtf8);
+        let bytes = read_bytes(&path).unwrap();
+        assert_eq!(
+            decode_normalized(&bytes).unwrap_err().code,
+            FileErrorCode::NotUtf8
+        );
     }
 
     #[test]
@@ -233,6 +215,6 @@ mod tests {
         let path = scratch("large").join("large.md");
         let file = File::create(&path).unwrap();
         file.set_len(MAX_BYTES + 1).unwrap();
-        assert_eq!(read(&path).unwrap_err().code, FileErrorCode::TooLarge);
+        assert_eq!(read_bytes(&path).unwrap_err().code, FileErrorCode::TooLarge);
     }
 }

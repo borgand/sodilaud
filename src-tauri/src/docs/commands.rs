@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Tauri commands for the notes registry, and the events it sends to the
-//! Quick Notes window, the only one that may see note contents.
+//! Tauri commands for the notes registry, and the events it sends: note
+//! events to the Quick Notes window, the only one that may see note contents,
+//! and file events to the main window, the only one that edits files.
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -9,6 +10,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
+use super::files::{FileDocUpdates, FileExternal, FileSaved};
 use super::registry::{
     DocUpdates, LocalCollection, Pulled, Pushed, Registry, Sink, State, Structure, Update,
 };
@@ -18,6 +20,9 @@ use crate::workspace::Workspaces;
 
 pub(crate) const CHANGED_EVENT: &str = "notes-workspace-changed";
 pub(crate) const DOC_EVENT: &str = "notes-doc-updates";
+pub(crate) const FILE_DOC_EVENT: &str = "file-doc-updates";
+pub(crate) const FILE_SAVED_EVENT: &str = "file-doc-saved";
+pub(crate) const FILE_EXTERNAL_EVENT: &str = "file-doc-external";
 
 pub(crate) type SharedRegistry = Arc<Registry>;
 
@@ -33,6 +38,23 @@ impl Sink for AppSink {
         let _ = self
             .0
             .emit_to(quicknotes::window::LABEL, DOC_EVENT, updates);
+    }
+    fn file_doc(&self, updates: &FileDocUpdates) {
+        let _ = self
+            .0
+            .emit_to(quicknotes::window::MAIN_LABEL, FILE_DOC_EVENT, updates);
+    }
+    fn file_saved(&self, saved: &FileSaved) {
+        let _ = self
+            .0
+            .emit_to(quicknotes::window::MAIN_LABEL, FILE_SAVED_EVENT, saved);
+    }
+    fn file_external(&self, external: &FileExternal) {
+        let _ = self.0.emit_to(
+            quicknotes::window::MAIN_LABEL,
+            FILE_EXTERNAL_EVENT,
+            external,
+        );
     }
 }
 

@@ -435,13 +435,17 @@ pub fn run(context: tauri::Context<tauri::Wry>) {
             quicknotes::commands::show_main_window,
             files::commands::file_open_dialog,
             files::commands::file_save_as_dialog,
-            files::commands::file_read,
-            files::commands::file_write,
             files::commands::file_lists,
             files::commands::file_set_open,
             files::commands::file_take_pending,
             files::commands::file_forget_recent,
-            files::commands::file_confirm_discard
+            files::commands::file_confirm_discard,
+            files::commands::file_doc_open,
+            files::commands::file_doc_push,
+            files::commands::file_doc_pull,
+            files::commands::file_doc_close,
+            files::commands::file_doc_save,
+            files::commands::file_doc_resolve
         ])
         .setup(|app| {
             #[cfg(target_os = "macos")]

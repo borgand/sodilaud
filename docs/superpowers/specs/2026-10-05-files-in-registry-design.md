@@ -1,0 +1,107 @@
+# Files in the document registry - design
+
+Date: 2026-10-05
+Status: implemented 2026-10-05 on `feat/files-registry`
+Branch: `feat/files-registry`
+Roadmap: the "3-way merge of outside edits" part of item 4 in
+[`ROADMAP.md`](../../../ROADMAP.md), and the prerequisite for item 5. Builds on
+[`2026-09-28-rust-document-model-design.md`](2026-09-28-rust-document-model-design.md).
+Sibling specs: [`2026-10-05-agent-push-and-open-design.md`](2026-10-05-agent-push-and-open-design.md),
+[`2026-10-05-agent-coedit-design.md`](2026-10-05-agent-coedit-design.md).
+
+## Intent
+
+**What.** Files open in the main window join the Rust document registry the way notes did in
+0.11. Rust owns each open file's text and version, the editor is a `@codemirror/collab` client,
+Rust autosaves, and an edit made outside Sodilaud is 3-way merged into the open text instead of
+offering only Reload / Keep mine.
+
+**Why.** Agent co-editing of files (spec C) needs one authority that rebases an agent's edits
+around the owner's typing. The same authority makes outside edits (git checkout, another
+editor, an agent writing the file directly) merge instead of forcing a choice.
+
+**Done.**
+
+- Editing, autosave, Save As, close, quit and the open/recent lists behave as in 0.10.
+- An outside edit to a part of the file the owner has not touched since the last save appears
+  in the editor without moving the cursor, losing typing or undo history.
+- An outside edit that overlaps unsaved typing keeps the owner's text and shows today's
+  banner (Reload / Keep mine).
+- Checks pass: `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test`, `npm run check`.
+
+**Not done here.** Agent tools for files, comments (spec C). Folders, `.csv`/`.tsv`, find and
+replace, split and compare for files.
+
+## Decisions
+
+| Topic | Decision |
+|---|---|
+| Shared core | A `Collab` struct (text, version, last 1,000 updates, apply, pull) extracted from the note `Entry`. Notes keep their behaviour and their tests; files use the same struct. Spec C's merge engine and comments work on `Collab`, so both document kinds get them |
+| File registry | `Registry.files: HashMap<PathBuf, FileDoc>` keyed by canonical path, independent of the open workspace (switching workspaces does not touch files). `FileDoc { collab, line_ending, bom, synced: String, disk_hash, save: SaveState }` |
+| Protocol | `file_doc_open(path) -> { text, version, lineEnding, bom, savedVersion }`, `file_doc_push(path, version, updates) -> { accepted, version }`, `file_doc_pull(path, since)`, `file_doc_close(path)`. Event `file-doc-updates { path, from, updates, version }` to the main window only. Grants are checked on every call, as `file_read` does today |
+| Untitled files | Stay in the page until Save As. After the first write the page calls `file_doc_open` and continues as a client |
+| Autosave | Rust writes 400 ms after the last accepted change (today's delay), atomically with `io::write_atomic`, in the file's line ending and BOM. One write per file at a time; a change during a write schedules another. Event `file-doc-saved { path, version, hash, error? }`. The page's dirty dot means "version > saved version" |
+| Line endings | Text is `\n` inside the registry. A file with mixed endings loads normalized and is written with its majority ending only once it is edited. Opening never writes |
+| Outside edits | The watcher reads the new bytes. Base = `synced` (last text read or written), mine = current text, theirs = disk. Mine == base: apply theirs. Otherwise a line-based 3-way merge (`diffy::merge`). Clean: apply the merged text. Conflict: keep mine, set `external = conflict`, show the banner |
+| Applying a text | Any whole-text replacement (outside edit, Reload) is turned into a minimal change set (`similar` diff) and broadcast as an update from client `disk`, so cursors and undo survive. `changes::replace_all` stays test-only |
+| Removed on disk | As today: banner, buffer kept, no autosave until the owner saves or closes |
+| Close | `file_doc_close` flushes a pending save, then drops the doc when no client holds it. Spec C will also keep docs alive while an agent co-edits them |
+| Quit | The page waits for unconfirmed pushes (as Quick Notes does), then Rust flushes pending saves before exit |
+| New crates | `diffy` (3-way merge), `similar` (minimal diffs). `cargo fetch` needs the sandbox off |
+
+## Module map
+
+```
+src-tauri/src/
+  docs/collab.rs       Collab { text, version, updates }: push, pull, apply_text (minimal diff)
+  docs/registry.rs     Entry uses Collab; Registry.files
+  docs/files.rs        FileDoc, open/push/pull/close, autosave scheduler, external merge
+  docs/changes.rs      diff(old, new) -> change set JSON
+  files/commands.rs    file_doc_* commands; file_write stays for Save As of untitled buffers
+  files/watch.rs       reports to docs/files.rs instead of straight to the page
+src/
+  doc-sync.js          note-sync.js generalized: push/pull/identity passed in; note-sync.js wraps it
+  file-editor.js       buffers hold version and saved version; autosave timers removed
+  files.js             model: saved state from events, external = merged | conflict | removed
+```
+
+## Changes made during implementation
+
+1. **Two more commands and one more event.** `file_doc_save(path) -> { path, version, hash, error }`
+   writes at once (Cmd+S, Try again, and a quit, which then reports a failed write and
+   cancels, as before). `file_doc_resolve(path, keep: "disk" | "mine")` answers the conflict
+   banner. Event `file-doc-external { path, kind: "applied" | "merged" | "conflict" | "removed" }`
+   tells the page what an outside edit did; the page keeps `external` as `null`, `"conflict"`
+   or `"removed"`, and a merge needs no banner.
+2. **`file_read` and `file_write` are removed.** `file_doc_open` reads and `file_save_as_dialog`
+   writes, so nothing used them. `file_open_dialog` returns the granted path, which the page
+   opens with `file_doc_open`.
+3. **Save As drops a document open at the chosen path** (`file_discard`) before writing, so its
+   pending autosave cannot overwrite the new file. The page then opens the new path as a fresh
+   document: the editor keeps its text and selection, but undo history starts over.
+4. **Quit flushes twice.** The page sends its unconfirmed changes and calls `file_doc_save` for
+   every file, so a failed write cancels the quit; Rust also writes any pending save in
+   `quit::exit`, for a window that never answered.
+5. **Edge cases.** An outside edit that is not UTF-8 counts as a conflict (Reload then reports
+   the encoding). A removed file that comes back with the bytes last seen is no longer
+   "removed". Mixed line endings are normalized on open and the majority ending (LF on a tie) is
+   used once the file is edited; `io::decode` and its "mixed files reach the editor unchanged"
+   behaviour are gone.
+6. **Each opening of a file has a `docId`.** `file_doc_open` returns it, `file_doc_push` and
+   `file_doc_pull` take it, and every `file-doc-*` event carries it, as notes carry
+   `collectionId`. A file closed and opened again (or replaced by Save As onto its own path)
+   starts over at version 0, so without it an update still in flight from the earlier opening
+   would apply to the new one. A push or pull for an earlier opening fails with `NotOpen`.
+7. **`Collab` API**, for spec C: `new(text)`, `text()`, `version()`, `apply(&[Update]) -> Result<String>`
+   (pure), `commit(text, updates) -> from`, `replace(client_id, text) -> Option<(from, updates)>`
+   (minimal diff), `pull(since) -> Result<Pulled>`. Notes persist between `apply` and `commit`;
+   files call `commit` directly.
+
+## Risks
+
+- **Refactoring note `Entry`** could regress notes. Existing registry and `note-sync` tests run
+  unchanged before and after the extraction; the extraction is its own commit.
+- **Merge correctness.** Unit tests: disjoint edits merge, overlapping edits conflict, astral
+  characters and CRLF files round-trip, an outside edit during a pending autosave.
+- **Write storms.** The watcher must ignore Sodilaud's own writes (hash recorded before the
+  rename, as today).
