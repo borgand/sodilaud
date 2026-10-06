@@ -158,7 +158,9 @@ Decided 2026-10-05: comments on files are kept in app data, keyed by a hash of t
 
 ## 6. Table column widths that avoid wrapping short values
 
-Status: planned
+Status: built on `feat/table-column-widths` (spec
+[`2026-10-06-table-column-widths-design.md`](docs/superpowers/specs/2026-10-06-table-column-widths-design.md));
+not yet released
 
 Tables let long-text columns take the width and squeeze short ones until they wrap
 character by character. Seen 2026-10-05: in Live mode a `Date` column one character wide

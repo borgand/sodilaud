@@ -145,7 +145,66 @@ export function sanitizeMarkdownHtml(html) {
     }
   });
 
+  keepTableValuesWhole(template.content);
   return template.innerHTML;
+}
+
+const TABLE_TOKEN_MAX_LENGTH = 18;
+const BREAKABLE_CHARACTER = /[^\p{L}\p{N}\p{M}]/u;
+const CJK_CHARACTER = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
+const SHOW_TEXT = 4;
+
+function keepsWhole(token) {
+  const length = [...token].length;
+  return length > 1 && length <= TABLE_TOKEN_MAX_LENGTH &&
+    BREAKABLE_CHARACTER.test(token) && !CJK_CHARACTER.test(token);
+}
+
+function wrapCellTokens(cell) {
+  const doc = cell.ownerDocument;
+  const walker = doc.createTreeWalker(cell, SHOW_TEXT);
+  const textNodes = [];
+  while (walker.nextNode()) textNodes.push(walker.currentNode);
+
+  textNodes.forEach(textNode => {
+    if (textNode.parentElement?.classList.contains("table-token")) return;
+    const parts = textNode.nodeValue.split(/(\s+)/);
+    if (!parts.some(keepsWhole)) return;
+
+    const fragment = doc.createDocumentFragment();
+    parts.forEach(part => {
+      if (!part) return;
+      if (keepsWhole(part)) {
+        const span = doc.createElement("span");
+        span.className = "table-token";
+        span.setAttribute("style", "white-space: nowrap");
+        span.textContent = part;
+        fragment.append(span);
+      } else {
+        fragment.append(doc.createTextNode(part));
+      }
+    });
+    textNode.replaceWith(fragment);
+  });
+}
+
+// Browsers break after hyphens and slashes, so a long prose column can squeeze
+// a date or ID column until `2026-09-30` splits. Keeping each short token whole
+// makes the column's minimum width its longest such token; a box per table
+// scrolls when those minimums do not fit. Inline styles keep this working in
+// copied HTML. Runs after sanitizing, so note content cannot forge it.
+export function keepTableValuesWhole(root) {
+  root.querySelectorAll("table").forEach(table => {
+    const parent = table.parentNode;
+    if (!(parent?.nodeType === 1 && parent.classList.contains("table-scroll"))) {
+      const box = table.ownerDocument.createElement("div");
+      box.className = "table-scroll";
+      box.setAttribute("style", "overflow-x: auto");
+      table.replaceWith(box);
+      box.append(table);
+    }
+    table.querySelectorAll("th, td").forEach(wrapCellTokens);
+  });
 }
 
 export function renderMarkdown(rawText, emptyFallback = "", markedApi = globalThis.window?.marked) {

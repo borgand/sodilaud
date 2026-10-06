@@ -6,6 +6,7 @@ import { JSDOM } from "jsdom";
 import { marked } from "marked";
 import {
   isSafeMarkdownUrl,
+  keepTableValuesWhole,
   renderMarkdown,
   resolveLinkAction,
   sanitizeMarkdownHtml
@@ -115,4 +116,88 @@ test("URL policy rejects obfuscated active schemes", () => {
   assert.equal(isSafeMarkdownUrl("java\nscript:alert(1)"), false);
   assert.equal(isSafeMarkdownUrl("https://example.com"), true);
   assert.equal(isSafeMarkdownUrl("https://example.com/image.png", true), false);
+});
+
+function renderTable(markdown) {
+  const container = document.createElement("div");
+  container.innerHTML = renderMarkdown(markdown, "", marked);
+  return container;
+}
+
+const nowrapTexts = node => [...node.querySelectorAll("span.table-token")].map(span => {
+  assert.match(span.getAttribute("style"), /white-space:\s*nowrap/);
+  return span.textContent;
+});
+
+test("short table values with break characters are kept whole", () => {
+  const container = renderTable(
+    "| Date | ID | Notes |\n|---|---|---|\n| 2026-09-30 | LB-01 | a long description of the work |"
+  );
+
+  assert.deepEqual(nowrapTexts(container), ["2026-09-30", "LB-01"]);
+  assert.equal(container.querySelector("tbody td:nth-child(3)").innerHTML, "a long description of the work");
+});
+
+test("a table value with spaces can still wrap between its words", () => {
+  const cell = renderTable("| When |\n|---|\n| 2026-09-30 14:00 |").querySelector("td");
+
+  assert.deepEqual(nowrapTexts(cell), ["2026-09-30", "14:00"]);
+  assert.equal(cell.textContent, "2026-09-30 14:00");
+  assert.equal(cell.childNodes[1].nodeValue, " ");
+});
+
+test("long tokens and CJK text in tables stay breakable", () => {
+  const container = renderTable(
+    "| Link | Text |\n|---|---|\n| https://example.com/a/long/path | 日本語、テスト |"
+  );
+
+  assert.deepEqual(nowrapTexts(container), []);
+});
+
+test("an 18-character token is the longest kept whole", () => {
+  const container = renderTable("| A | B |\n|---|---|\n| 123456789-12345678 | 123456789-123456789 |");
+
+  assert.deepEqual(nowrapTexts(container), ["123456789-12345678"]);
+});
+
+test("tokens inside inline markup in a cell are kept whole", () => {
+  const container = renderTable("| A |\n|---|\n| `LB-01` and **2026-09-30** |");
+
+  assert.deepEqual(nowrapTexts(container), ["LB-01", "2026-09-30"]);
+  assert.equal(container.querySelector("code span.table-token").textContent, "LB-01");
+});
+
+test("each table scrolls horizontally inside its own box", () => {
+  const container = renderTable("| a |\n|---|\n| 1 |\n\ntext\n\n| b |\n|---|\n| 2 |");
+  const boxes = container.querySelectorAll("div.table-scroll");
+
+  assert.equal(boxes.length, 2);
+  boxes.forEach(box => {
+    assert.match(box.getAttribute("style"), /overflow-x:\s*auto/);
+    assert.equal(box.children.length, 1);
+    assert.equal(box.firstElementChild.tagName, "TABLE");
+  });
+});
+
+test("text outside tables is left alone", () => {
+  const html = renderMarkdown("Due 2026-09-30 for LB-01.", "", marked);
+
+  assert.equal(html.trim(), "<p>Due 2026-09-30 for LB-01.</p>");
+});
+
+test("note content cannot forge the table layout styles", () => {
+  const html = sanitizeMarkdownHtml(
+    '<div class="table-scroll" style="position:fixed">x</div><span class="table-token" style="color:red">y</span>'
+  );
+
+  assert.equal(html, "xy");
+});
+
+test("keeping table values whole twice changes nothing", () => {
+  const container = renderTable("| Date | Notes |\n|---|---|\n| 2026-09-30 | done |");
+  const once = container.innerHTML;
+
+  keepTableValuesWhole(container);
+  assert.equal(container.innerHTML, once);
+  assert.equal(sanitizeMarkdownHtml(once), once);
 });

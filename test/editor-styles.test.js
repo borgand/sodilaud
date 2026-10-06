@@ -44,3 +44,14 @@ test("the editor selection colour outranks every CodeMirror base-theme selection
     }
   }
 });
+
+test("the Live table widget wraps cells between words, not anywhere", () => {
+  const rules = [...styles.matchAll(/([^{}]*)\{([^}]*)\}/g)]
+    .filter(([, selectors]) => selectors.split(",").some(s => s.trim() === ".cm-mode-live .cm-lp-table.markdown-preview"))
+    .map(([, , body]) => body)
+    .join(";");
+
+  assert.match(rules, /white-space:\s*normal/);
+  assert.match(rules, /word-break:\s*normal/);
+  assert.match(rules, /overflow-wrap:\s*normal/);
+});
