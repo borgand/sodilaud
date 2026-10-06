@@ -16,6 +16,8 @@ use super::collab::Update;
 
 /// How alike a window of lines must be to `oldText` to count as a fuzzy match.
 const FUZZY_SIMILARITY: f32 = 0.9;
+/// How alike the closest text must be to be offered back with a not_found conflict.
+const NEAREST_SIMILARITY: f32 = 0.6;
 /// Longer `oldText`s are matched exactly or not at all.
 const FUZZY_MAX_CHARS: usize = 20_000;
 const FUZZY_BUDGET: Duration = Duration::from_millis(800);
@@ -44,7 +46,35 @@ pub(crate) struct Conflict {
     pub(crate) index: usize,
     pub(crate) reason: Reason,
     /// The edit's region as it is now, so the agent can retry without rereading.
+    /// For not_found, the closest text in the document, or empty when nothing is close.
     pub(crate) current_text: String,
+    /// For ambiguous: how many times oldText occurs in the text that was read.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) matches: Option<usize>,
+    pub(crate) hint: &'static str,
+}
+
+impl Reason {
+    fn hint(self) -> &'static str {
+        match self {
+            Reason::NotFound => "oldText is not in the version you read. Copy it exactly from read_document; currentText shows the closest text, if any.",
+            Reason::Ambiguous => "oldText matches more than one place. Include more surrounding text so it matches once.",
+            Reason::EditedByOwner => "The owner changed this region since your base version. Keep their change; retry against currentText if your edit still applies.",
+            Reason::OverlapsEdit => "This edit overlaps another edit in the same call. Combine them into one edit.",
+        }
+    }
+}
+
+impl Conflict {
+    fn new(index: usize, reason: Reason, current_text: String) -> Self {
+        Self {
+            index,
+            reason,
+            current_text,
+            matches: None,
+            hint: reason.hint(),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -129,9 +159,40 @@ fn whitespace_tolerant(haystack: &str, needle: &str) -> Vec<(usize, usize)> {
 /// The window of whole lines most like `needle`, if it is alike enough and
 /// no other window that does not overlap it is as alike.
 pub(crate) fn fuzzy(haystack: &str, needle: &str) -> Result<(usize, usize), Reason> {
+    let scored = scan(haystack, needle, FUZZY_SIMILARITY).ok_or(Reason::NotFound)?;
+    let best = scored
+        .iter()
+        .copied()
+        .max_by(|a, b| a.0.total_cmp(&b.0))
+        .ok_or(Reason::NotFound)?;
+    let rival = scored
+        .iter()
+        .any(|&(ratio, from, to)| ratio == best.0 && (to <= best.1 || from >= best.2));
+    if rival {
+        return Err(Reason::Ambiguous);
+    }
+    let mut end = best.2;
+    if needle.ends_with('\n') && end < haystack.len() {
+        end += 1;
+    }
+    Ok((best.1, end))
+}
+
+/// The window of whole lines most like `needle`, however many are as alike.
+fn nearest(haystack: &str, needle: &str) -> Option<String> {
+    scan(haystack, needle, NEAREST_SIMILARITY)?
+        .into_iter()
+        .max_by(|a, b| a.0.total_cmp(&b.0))
+        .map(|(_, from, to)| haystack[from..to].to_string())
+}
+
+/// Every window of whole lines about as long as `needle` and at least
+/// `minimum` alike, as (similarity, byte from, byte to). `None` when `needle`
+/// cannot be matched fuzzily or the time budget ran out.
+fn scan(haystack: &str, needle: &str, minimum: f32) -> Option<Vec<(f32, usize, usize)>> {
     let wanted = needle.strip_suffix('\n').unwrap_or(needle);
     if wanted.trim().is_empty() || wanted.chars().count() > FUZZY_MAX_CHARS {
-        return Err(Reason::NotFound);
+        return None;
     }
     let mut starts = vec![0];
     starts.extend(haystack.match_indices('\n').map(|(index, _)| index + 1));
@@ -150,7 +211,7 @@ pub(crate) fn fuzzy(haystack: &str, needle: &str) -> Result<(usize, usize), Reas
         }
         for (first, &from) in starts.iter().enumerate().take(starts.len() - size + 1) {
             if Instant::now() > deadline {
-                return Err(Reason::NotFound);
+                return None;
             }
             let to = line_end(first + size - 1);
             let window = &haystack[from..to];
@@ -162,27 +223,12 @@ pub(crate) fn fuzzy(haystack: &str, needle: &str) -> Result<(usize, usize), Reas
                 .deadline(deadline)
                 .diff_chars(wanted, window)
                 .ratio();
-            if ratio >= FUZZY_SIMILARITY {
+            if ratio >= minimum {
                 scored.push((ratio, from, to));
             }
         }
     }
-    let best = scored
-        .iter()
-        .copied()
-        .max_by(|a, b| a.0.total_cmp(&b.0))
-        .ok_or(Reason::NotFound)?;
-    let rival = scored
-        .iter()
-        .any(|&(ratio, from, to)| ratio == best.0 && (to <= best.1 || from >= best.2));
-    if rival {
-        return Err(Reason::Ambiguous);
-    }
-    let mut end = best.2;
-    if needle.ends_with('\n') && end < haystack.len() {
-        end += 1;
-    }
-    Ok((best.1, end))
+    Some(scored)
 }
 
 /// Where `old` is in `base`, in UTF-16 units: an exact unique match, else a
@@ -226,12 +272,16 @@ pub(crate) fn merge(base: &str, current: &str, since: &[Update], edits: &[Edit])
     for (index, edit) in edits.iter().enumerate() {
         let (mut from, mut to) = match locate(base, &edit.old_text) {
             Ok(range) => range,
+            Err(Reason::Ambiguous) => {
+                let occurrences = base.match_indices(edit.old_text.as_str()).count();
+                let mut conflict = Conflict::new(index, Reason::Ambiguous, String::new());
+                conflict.matches = (occurrences > 1).then_some(occurrences);
+                conflicts.push(conflict);
+                continue;
+            }
             Err(reason) => {
-                conflicts.push(Conflict {
-                    index,
-                    reason,
-                    current_text: String::new(),
-                });
+                let closest = nearest(current, &edit.old_text).unwrap_or_default();
+                conflicts.push(Conflict::new(index, reason, closest));
                 continue;
             }
         };
@@ -245,19 +295,19 @@ pub(crate) fn merge(base: &str, current: &str, since: &[Update], edits: &[Edit])
             to = changes::map_pos_in(update, to, assoc_to).unwrap_or(to);
         }
         if touched {
-            conflicts.push(Conflict {
+            conflicts.push(Conflict::new(
                 index,
-                reason: Reason::EditedByOwner,
-                current_text: slice_utf16(current, from, to.max(from)),
-            });
+                Reason::EditedByOwner,
+                slice_utf16(current, from, to.max(from)),
+            ));
             continue;
         }
         if accepted.iter().any(|&(_, a, b)| a < to && from < b) {
-            conflicts.push(Conflict {
+            conflicts.push(Conflict::new(
                 index,
-                reason: Reason::OverlapsEdit,
-                current_text: slice_utf16(current, from, to),
-            });
+                Reason::OverlapsEdit,
+                slice_utf16(current, from, to),
+            ));
             continue;
         }
         accepted.push((index, from, to));
@@ -354,11 +404,7 @@ mod tests {
         assert_eq!(merged, "one tXwo three");
         assert_eq!(
             outcome.conflicts,
-            vec![Conflict {
-                index: 0,
-                reason: Reason::EditedByOwner,
-                current_text: "tXwo".into()
-            }]
+            vec![Conflict::new(0, Reason::EditedByOwner, "tXwo".into())]
         );
         let edges = [
             owner(json!([4, [0, "<"], 9])),
@@ -367,6 +413,31 @@ mod tests {
         let (merged, outcome) = run(base, &edges, &[edit("two", "2")]);
         assert_eq!(merged, "one <2> three");
         assert_eq!(outcome.applied, vec![0]);
+    }
+
+    #[test]
+    fn conflicts_say_how_to_retry() {
+        let base = "# Spec\n\nThe widget reads status.\nA widget writes logs.\n";
+        let (_, outcome) = run(
+            base,
+            &[],
+            &[
+                edit("widget", "robot"),
+                edit("The gizmo checks status.", "x"),
+                edit("nothing like this at all, anywhere", "x"),
+            ],
+        );
+        let [ambiguous, near, missing] = outcome.conflicts.as_slice() else {
+            panic!("three conflicts expected: {:?}", outcome.conflicts);
+        };
+        assert_eq!(ambiguous.reason, Reason::Ambiguous);
+        assert_eq!(ambiguous.matches, Some(2));
+        assert!(ambiguous.hint.contains("more surrounding text"));
+        assert_eq!(near.reason, Reason::NotFound);
+        assert_eq!(near.current_text, "The widget reads status.");
+        assert_eq!(missing.reason, Reason::NotFound);
+        assert_eq!(missing.current_text, "");
+        assert!(missing.hint.contains("read_document"));
     }
 
     #[test]

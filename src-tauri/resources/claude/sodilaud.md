@@ -40,13 +40,20 @@ Keep an `empty` counter, starting at 0.
       `apply_edit` for these too.
    4. If `apply_edit` reports conflicts, the user changed that text meanwhile and the user
       wins. Read again and retry once with fresh text; if it still conflicts, leave it and
-      say so in the note.
+      say so in the note. Each conflict has a `hint`; `ambiguous` gives the number of
+      `matches`, and `not_found` gives the closest text as `currentText` when there is one.
    5. Call `mcp__sodilaud__resolve_comment` with the comment `id` and a one-line `note` that
       names what changed, including the other places you changed.
    Then go back to step 1.
 
 ## Rules
 
+- Text the user changed since your last read is intentional. Keep their wording unless the
+  comment asks you to change it. If consistency requires undoing one of their changes, do
+  it only when the comment calls for it, and say so in the resolve note ("replaced your
+  'ROBOT' with 'widget' in Design to match Goals").
+- Use paths exactly as Sodilaud returns them (symbolic links resolved, for example `/tmp`
+  becomes `/private/tmp` on macOS).
 - Never use Edit, Write or MultiEdit on a co-edited file. Sodilaud owns its text; edits go
   through `apply_edit` only.
 - `STALE_BASE` means your `baseVersion` is too old: read the document again.

@@ -1669,7 +1669,7 @@ impl SodilaudServer {
         successful_result(result)
     }
 
-    /// Open a Markdown or text file in Sodilaud's main window so the user can read it there, or switch to it if it is already open. Takes an absolute path to an existing .md, .markdown or .txt file. Returns the path, name and size, not the content. Safe to repeat.
+    /// Open a Markdown or text file in Sodilaud's main window so the user can read it there, or switch to it if it is already open. Takes an absolute path to an existing .md, .markdown or .txt file. Returns the path, name and size, not the content. The returned path is the file's real path (symbolic links resolved, e.g. /tmp becomes /private/tmp on macOS); use it in later calls. Safe to repeat.
     #[tool(annotations(
         title = "Open document",
         read_only_hint = false,
@@ -1868,7 +1868,7 @@ impl SodilaudServer {
         )
     }
 
-    /// Edit a co-edited document while the user keeps typing in it. Each edit replaces oldText, copied from the text read_document returned at baseVersion, with newText. Sodilaud finds each oldText (exactly, then ignoring whitespace layout, then a close match), carries it through what the user typed since, and applies all edits that the user did not touch as one change. The user wins: an edit whose text the user changed comes back as a conflict with its currentText. Partial success is normal; reread and retry conflicts. STALE_BASE means baseVersion is too old: call read_document again. Retry identical arguments with the same requestId after a failure.
+    /// Edit a co-edited document while the user keeps typing in it. Each edit replaces oldText, copied from the text read_document returned at baseVersion, with newText. Sodilaud finds each oldText (exactly, then ignoring whitespace layout, then a close match), carries it through what the user typed since, and applies all edits that the user did not touch as one change. The user wins: an edit whose text the user changed comes back as a conflict with its currentText. Every conflict has a hint; ambiguous reports how many matches, and not_found returns the closest text as currentText when there is one. Keep text the user changed unless asked otherwise. Partial success is normal; reread and retry conflicts. STALE_BASE means baseVersion is too old: call read_document again. Retry identical arguments with the same requestId after a failure.
     #[tool(annotations(
         title = "Apply edit",
         read_only_hint = false,
@@ -2642,9 +2642,7 @@ pub(crate) mod tests {
         permissions.write().unwrap().insert("open_document".into());
         assert!(message(open("notes/x.md").await.unwrap()).contains("full path"));
         let missing = std::env::temp_dir().join(format!("sodilaud-missing-{}.md", Uuid::new_v4()));
-        assert!(
-            message(open(missing.to_str().unwrap()).await.unwrap()).contains("no longer on disk")
-        );
+        assert!(message(open(missing.to_str().unwrap()).await.unwrap()).contains("does not exist"));
         std::fs::remove_file(path).unwrap();
     }
 

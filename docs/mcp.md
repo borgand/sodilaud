@@ -375,7 +375,8 @@ The file editor's rules apply: the file must be UTF-8 text of at most 10 MB.
 Relative paths, folders, missing files and other file types are rejected,
 including a symbolic link whose target has another extension. The result is
 `{ path, name, bytes }`: the resolved path, the file name and its size. It does
-not contain the file's text.
+not contain the file's text. The resolved path follows symbolic links (on macOS,
+`/tmp/x.md` comes back as `/private/tmp/x.md`); use it in later calls.
 
 Opening a file grants the main window access to that one file, like opening it
 yourself, and makes it co-edited (see below). No MCP tool lists folders. Reading
@@ -397,7 +398,7 @@ collection). A file must be open: `open_document` is the way in.
 | --- | --- | --- | --- |
 | `list_documents` | read | none | `{ documents[{ path or noteId, name, version, coEdited, pendingComments }] }` |
 | `read_document` | read | document, `offset`, `limit` (1-200,000 characters, default 200,000) | `{ version, content, totalLength, nextOffset, headings[{ level, text, offset }], comments[] }` |
-| `apply_edit` | write | document, `baseVersion`, `requestId`, `edits[{ oldText, newText }]` (1-50) | `{ applied[index], conflicts[{ index, reason, currentText }], version }` |
+| `apply_edit` | write | document, `baseVersion`, `requestId`, `edits[{ oldText, newText }]` (1-50) | `{ applied[index], conflicts[{ index, reason, currentText, matches?, hint }], version }` |
 | `get_pending_comments` | read | document (optional), `waitSeconds` (0-1,800, default 0) | `{ comments[], timedOut }` |
 | `add_comment` | write | document, `anchorText`, `occurrence` (from 1), `body` (1-2,000 characters), `requestId` | `{ comment }` |
 | `resolve_comment` | write | `id`, `note` (1-500 characters) | `{ comment }` |
@@ -419,12 +420,13 @@ did not apply comes back in `conflicts` with a `reason`:
 
 | Reason | Meaning |
 | --- | --- |
-| `not_found` | `oldText` is not in the base text |
-| `ambiguous` | `oldText` matches more than one place |
+| `not_found` | `oldText` is not in the base text; `currentText` holds the closest lines in the document, or is empty when nothing is close |
+| `ambiguous` | `oldText` matches more than one place; `matches` says how many when it is an exact repeat |
 | `edited_by_owner` | The text was changed after `baseVersion`; `currentText` holds it as it is now |
 | `overlaps_edit` | It overlaps an earlier edit in the same call |
 
-Partial success is normal: reread and retry what conflicted. A `baseVersion`
+Every conflict also has a `hint`, one sentence on how to retry. Partial success
+is normal: reread and retry what conflicted. A `baseVersion`
 Sodilaud no longer keeps fails with `STALE_BASE`; call `read_document` again.
 Retrying with the same `requestId` and arguments returns the first result.
 

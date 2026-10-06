@@ -75,6 +75,13 @@ impl FileError {
         )
     }
 
+    pub fn does_not_exist(path: &Path) -> Self {
+        Self::new(
+            FileErrorCode::NotFound,
+            format!("{} does not exist.", path.display()),
+        )
+    }
+
     pub fn not_utf8() -> Self {
         Self::new(
             FileErrorCode::NotUtf8,
@@ -316,9 +323,16 @@ pub fn agent_document(path: &str) -> Result<(PathBuf, u64), FileError> {
     if !requested.is_absolute() {
         return Err(FileError::not_absolute(requested));
     }
-    let resolved = requested
-        .canonicalize()
-        .map_err(|error| FileError::io(requested, &error))?;
+    if !is_text_file(requested) {
+        return Err(FileError::not_text(requested));
+    }
+    let resolved = requested.canonicalize().map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            FileError::does_not_exist(requested)
+        } else {
+            FileError::io(requested, &error)
+        }
+    })?;
     if resolved.is_file() && !is_text_file(&resolved) {
         return Err(FileError::not_text(requested));
     }
@@ -409,7 +423,17 @@ mod tests {
         let relative = agent_document("Plan.md").unwrap_err();
         assert_eq!(relative.code, FileErrorCode::Unsupported);
         assert!(relative.message.contains("full path"));
-        assert_eq!(code(&directory.join("missing.md")), FileErrorCode::NotFound);
+        let missing = agent_document(directory.join("missing.md").to_str().unwrap()).unwrap_err();
+        assert_eq!(missing.code, FileErrorCode::NotFound);
+        assert!(
+            missing.message.contains("does not exist"),
+            "{}",
+            missing.message
+        );
+        assert_eq!(
+            code(&directory.join("missing.json")),
+            FileErrorCode::Unsupported
+        );
         let json = directory.join("data.json");
         fs::write(&json, "{}").unwrap();
         assert_eq!(code(&json), FileErrorCode::Unsupported);
