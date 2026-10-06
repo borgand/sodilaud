@@ -57,7 +57,9 @@ pub fn qn_dismiss_intro(app: AppHandle) {
 /// Shows the panel from the main window, optionally selecting a note by title.
 #[tauri::command]
 pub fn qn_show(app: AppHandle, focus_note_title: Option<String>) {
-    on_main(&app, move |app| window::show(app, focus_note_title));
+    on_main(&app, move |app| {
+        window::show(app, focus_note_title.map(window::Focus::Title))
+    });
 }
 
 /// Shows the main window from the panel, optionally opening one of its sections.

@@ -68,7 +68,7 @@ Depends on: 1. Unblocks everything below.
 
 ## 3. Quick Notes popover and agent push
 
-Status: panel done in 0.10; agent push not started
+Status: done. Panel in 0.10; agent push (`push_quick_note`) built on `feat/mcp-push-open`
 
 Design: [`docs/superpowers/specs/2026-09-28-quick-notes-and-files-design.md`](docs/superpowers/specs/2026-09-28-quick-notes-and-files-design.md)
 
@@ -80,8 +80,9 @@ it, then put build instructions for me in a Sodilaud quick note").
 - New MCP tool `push_quick_note`, creating a note and optionally showing the panel.
 
 Depends on: nothing (the panel shipped without item 2).
-Open: whether `push_quick_note` is on by default, given that write tools reset to off at every start
-(needs a security review).
+Decided 2026-10-05: `push_quick_note` is a write tool, off until selected. Access and permissions
+are now remembered across restarts (see
+[`docs/superpowers/specs/2026-10-05-agent-push-and-open-design.md`](docs/superpowers/specs/2026-10-05-agent-push-and-open-design.md)).
 
 ## 4. External files and folders
 
@@ -95,7 +96,7 @@ detection (reload a clean file, Reload / Keep mine for an edited one), `.md`, `.
 - Open Folder and the Folders section below
 - 3-way merge of outside edits (needs item 2)
 - `.csv` and `.tsv`
-- MCP `open_document` and drafts
+- MCP drafts (`open_document` for files is built on `feat/mcp-push-open`)
 - Find and replace, split view and compare for files
 
 The original plan follows.

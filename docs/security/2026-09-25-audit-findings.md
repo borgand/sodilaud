@@ -221,6 +221,23 @@ fall back to `default-src`. Fixed in Task 3.
 - **No new egress.** The file watcher polls metadata; the single-instance plugin (Windows and
   Linux) talks only to the local running instance.
 
+## Addendum 2026-10-05: remembered agent access, push and open
+
+- **Access can be on without a click this session.** Agent access and per-function
+  permissions are kept in `mcp.json` (app config, mode 0600) and restored at launch, so the
+  "off at every start" mitigation for F1 and F8 no longer holds. Kept: loopback-only bind,
+  token authentication, the visible **MCP listening** indicator, and every write function off
+  until the owner selects it. A function added later starts off if it writes. F1 is unchanged:
+  a squatter on port 39393 now gets the chance at every launch where access was on, not only
+  after a manual enable.
+- **`push_quick_note`** creates a note in the open collection without a prior read. It is a
+  write permission, off until selected, and goes through the same registry write path,
+  receipts and limits as `create_note`.
+- **`open_document`** lets an agent make the main window open any `.md`, `.markdown` or
+  `.txt` file the owner can read. It grants that one file, like Finder's Open With, and
+  returns only path, name and size, never content. It is a write permission, off until
+  selected. Reading file content through MCP stays out of scope.
+
 ## Reading order for reviewers
 
 `docs/mcp.md:335-355` and `README.md:50-62` already describe the intended privacy boundary

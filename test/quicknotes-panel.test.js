@@ -8,12 +8,19 @@ import { bootApp } from "./helpers/app-harness.js";
 const NOTES = [
   { id: "a", title: "Groceries", content: "Groceries", updatedAt: 3, isTitleLocked: false },
   { id: "b", title: "Welcome to Quick Notes", content: "Welcome to Quick Notes", updatedAt: 2, isTitleLocked: false },
-  { id: "c", title: "Plan", content: "Plan", updatedAt: 1, isTitleLocked: false }
+  { id: "c", title: "Plan", content: "Plan", updatedAt: 1, isTitleLocked: false },
+  { id: "t1", title: "Twin", content: "Twin one", updatedAt: 0, isTitleLocked: true },
+  { id: "t2", title: "Twin", content: "Twin two", updatedAt: 0, isTitleLocked: true, folderId: "f" }
 ];
 
 const app = await bootApp({
   platform: "MacIntel",
-  storage: { sodilaud_notes: NOTES, sodilaud_quicknotes_active_note: "c" }
+  storage: {
+    sodilaud_notes: NOTES,
+    sodilaud_folders: [{ id: "f", name: "From agents" }],
+    sodilaud_collapsed_folders: ["f"],
+    sodilaud_quicknotes_active_note: "c"
+  }
 });
 const { document, KeyboardEvent, MouseEvent } = app.dom.window;
 const calls = (command) => app.invocations.filter(call => call.command === command);
@@ -64,6 +71,21 @@ test("the main window can select a note by title and open this menu", async () =
 
   await app.emit("quicknotes-open-menu");
   assert.equal(document.getElementById("actions-dropdown-content").classList.contains("show"), true);
+});
+
+test("an agent push selects its note by ID, in a collapsed folder or once it arrives", async () => {
+  await app.emit("quicknotes-focus-note", { id: "t2" });
+  assert.equal(app.editorText(), "Twin two");
+  assert.equal(app.storage.getItem("sodilaud_quicknotes_active_note"), "t2");
+  assert.deepEqual(app.read("sodilaud_collapsed_folders"), []);
+  assert.ok(document.querySelector('.note-item[data-id="t2"]'), "the pushed note is visible in the sidebar");
+
+  await app.emit("quicknotes-focus-note", { id: "late" });
+  assert.equal(app.editorText(), "Twin two");
+  app.registry.agentCreate({ id: "late", title: "Late", content: "Late body", folderId: "f" });
+  await app.settle();
+  assert.equal(app.editorText(), "Late body");
+  assert.equal(app.storage.getItem("sodilaud_quicknotes_active_note"), "late");
 });
 
 test("a theme chosen in the main window is applied here", async () => {

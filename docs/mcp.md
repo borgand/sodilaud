@@ -7,9 +7,13 @@ no separate server executable or runtime to install. Open Quick Notes, then its 
 copy connection values and select function permissions. Configuration is also
 available while access is off; copying it does not start the server.
 
-Access is off each time Sodilaud starts. Disabling it stops access and
-disconnects active MCP sessions. Enable it before starting or reconnecting the
-client; clients do not all retry a server that was unavailable at startup.
+Sodilaud remembers whether access is on. If it was on when Sodilaud quit, it
+starts again at launch, before any window opens, with the same function
+permissions. If it cannot start (another application holds the port, say),
+access stays off and MCP Configuration shows why. Access is off on a new
+installation. Disabling it stops access and disconnects active MCP sessions.
+Enable it before starting or reconnecting the client; clients do not all retry
+a server that was unavailable at startup.
 The accent-colored **MCP listening** indicator appears beside the save status
 while access is enabled. It indicates that the server is listening, even when no
 client is connected. Hover it to see the enabled read and write counts.
@@ -94,16 +98,18 @@ Open Configuration to choose individual functions in the **Read** and **Write**
 sections. Each section has a **Select all** checkbox; a partially selected
 section shows a mixed state.
 
-Each time agent access starts, all five read functions are enabled and all eight
-write functions are disabled. Select specific write functions or **Select all
-write functions** to allow them. Read functions can also be disabled individually.
+On a new installation, all five read functions are enabled and all ten write
+functions are disabled. Select specific write functions or **Select all write
+functions** to allow them. Read functions can also be disabled individually.
 Changes apply immediately to connected clients without reconnecting. Disabled
 tools remain discoverable but reject calls. Failed permission updates restore
 the previous choices and show an error in Configuration.
 
-Choices last until agent access is disabled or the app closes; closing and
-reopening Configuration preserves them. New sessions always start with reads
-on and writes off. Content replacement and permanent deletion are not exposed.
+Sodilaud keeps your choices, and whether access is on, in `mcp.json` in its
+app configuration directory (owner-only on macOS and Linux). They survive
+disabling access and restarting the app. A function added in a later version
+starts enabled if it reads and disabled if it writes. Content replacement and
+permanent deletion are not exposed.
 
 ## Creating notes and folders
 
@@ -166,8 +172,8 @@ Write tools are marked idempotent and closed-world. Deletion tools have
 ## Appending to existing notes
 
 Select **MCP Configuration → Write → Append to note**. This permission is
-independent of **Create note** and **Create folder** and starts off each time
-agent access starts.
+independent of **Create note** and **Create folder** and is off until you
+select it.
 
 1. Call `get_note` and retain its `collectionId`, note `id`, and `revision`.
 2. Call `append_to_note` with those values as `collectionId`, `noteId`, and
@@ -314,6 +320,60 @@ automatic expiry.
 can list trash metadata and move active notes into it; only the user can restore
 notes or empty trash through the UI.
 
+## Pushing a quick note
+
+Select **MCP Configuration → Write → Push quick note**. `push_quick_note` puts a
+note into Quick Notes for you to pick up later: a list of commands to run, or the
+output of a chat that has no project to save into. It needs no earlier read and
+no `collectionId`; the note goes into the collection open in Sodilaud.
+
+| Argument | Rule |
+| --- | --- |
+| `requestId` | Required, 1-128 characters. Reuse the same ID and arguments when retrying |
+| `title` | Required, 1-200 characters after trimming. Locked against automatic title generation |
+| `content` | Optional Markdown, at most 100,000 UTF-8 bytes. Empty by default |
+| `show` | Optional, `true` by default |
+
+The note goes into a folder named **From agents**, below any pinned notes.
+Sodilaud finds the folder by name, ignoring case, and creates it on the first
+push, or again if you deleted or renamed it. Pushed notes do not expire.
+
+With `show` left on, the Quick Notes panel appears with the new note selected.
+It does not take keyboard focus: you keep typing in the app you were using. If
+the panel is already showing, it only selects the note.
+
+The result contains `note` (metadata without content), its `revision` and the
+`collectionId`, so the agent can follow up with `append_to_note` if that
+permission is also selected.
+
+```json
+{
+  "name": "push_quick_note",
+  "arguments": {
+    "requestId": "build-steps-001",
+    "title": "Build steps for plan 5",
+    "content": "1. npm ci\n2. npm run tauri build"
+  }
+}
+```
+
+## Opening a file in the main window
+
+Select **MCP Configuration → Write → Open document**. `open_document` takes one
+argument, `path`: the absolute path to an existing `.md`, `.markdown` or `.txt`
+file. Sodilaud opens it in the main window, as Finder's **Open With** does, and
+brings the window forward. Opening a file that is already open switches to it.
+
+The file editor's rules apply: the file must be UTF-8 text of at most 10 MB.
+Relative paths, folders, missing files and other file types are rejected,
+including a symbolic link whose target has another extension. The result is
+`{ path, name, bytes }`: the resolved path, the file name and its size. It does
+not contain the file's text. The resolved path follows symbolic links (on macOS,
+`/tmp/x.md` comes back as `/private/tmp/x.md`); use it in later calls.
+
+Opening a file grants the main window access to that one file, like opening it
+yourself. No MCP tool lists folders or reads a file's content.
+
 ## Live data and privacy boundary
 
 The app's notes registry owns the collection and serves MCP. A connected agent
@@ -335,6 +395,9 @@ a group; there are no separate permissions per client.
 Sodilaud itself does not send notes anywhere. The agent or MCP client you
 connect can send tool results—including note contents—to its model provider.
 Enable access only when needed and under a client's privacy terms you accept.
+
+With **Open document** selected, an agent can make Sodilaud open any text file
+you can read and learn its size, but not its content.
 
 Agents can search the full text of every note in the open collection, so do not keep
 tokens, passwords or other secrets in a collection you expose to them. The optional macOS
