@@ -260,3 +260,66 @@ Goal: a comment can be anchored to any table cell text from Live, Source or Read
 the entry popup stays open while the table widget re-renders.
 
 Depends on: 5.
+
+## 10. Review book: skill and checker
+
+Status: not started (spec
+[`docs/superpowers/specs/2026-10-07-review-book-design.md`](docs/superpowers/specs/2026-10-07-review-book-design.md))
+
+Items 10 to 14 build a guided code review in Sodilaud: after a feature is complete, the agent
+presents the change as a book of chapters, narrative and diagrams first, then the diff hunks
+each chapter owns, with links between them. Every hunk of the diff belongs to exactly one
+chapter, the reviewer marks each hunk reviewed, and design questions are discussed in comment
+threads with the agent. See the spec for the problem, the format and the rejected routes.
+
+Decided 2026-10-07: the whole series is built on the long-running branch `feat/review-book`.
+Items 10 to 14 are pull requests against that branch, not `main`, and no release happens until
+the complete feature is judged worth keeping and merged to `main` with a merge commit.
+
+This item: the `review-book` skill and its coverage checker in `src-tauri/resources/claude/`,
+installed from the Agent Access menu like the `/sodilaud` command. The book is a folder of
+Markdown files under `.claude/review/<branch>/`; hunks are `diff` fences with `path=`, `hunk=`
+and `lines=` metadata. Acceptance: generate the book for the Mermaid change (#25) and read it
+in today's Sodilaud.
+
+Depends on: 5.
+
+## 11. Review book: links and anchors
+
+Status: not started
+
+Heading ids in Reading and Live mode, `#heading` links that scroll, and `chapter.md#heading`
+links that open a sibling file. A new command resolves the sibling against the current file's
+directory and opens only existing text files inside it or below it.
+
+Depends on: 10.
+
+## 12. Review book: diff hunk widget
+
+Status: not started
+
+A `diff` fence with `path=` renders as a widget in Live and Reading mode: path and line range
+header, old and new line numbers, syntax highlighting by file extension, a Reviewed toggle
+that writes a `reviewed` token into the fence, a collapse toggle, and a per-line comment
+button. Export emits a plain highlighted diff.
+
+Depends on: 11.
+
+## 13. Review book: discussion threads
+
+Status: not started
+
+Comment threads of any depth and either author. New MCP tool `reply_comment`, thread context
+in `get_pending_comments`, a nested comments panel with a reply box on every open thread, and
+an unread marker for new agent replies.
+
+Depends on: 5. Item 9 can follow this one.
+
+## 14. Review book: folding and outline
+
+Status: not started
+
+Section folding by heading in Live and Reading mode, an outline panel listing headings with
+reviewed-over-total counts, and an "n/m reviewed" status bar item.
+
+Depends on: 12.
