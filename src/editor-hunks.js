@@ -28,6 +28,9 @@ function fence(state, node) {
   };
 }
 
+/** The review hunk fence a FencedCode syntax node is, or null. */
+export const reviewHunkFence = fence;
+
 /** Every review hunk fence in document order. */
 export function reviewHunkFences(state) {
   const tree = ensureSyntaxTree(state, state.doc.length, PARSE_TIMEOUT_MS) ?? syntaxTree(state);
@@ -76,21 +79,77 @@ function dispatchChange(view, changes) {
 export const setHunkReviewed = (view, target, reviewed) => dispatchChange(view, reviewedChange(view.state, target, reviewed));
 export const setFenceReviewed = (view, found, reviewed) => dispatchChange(view, fenceReviewedChange(found, reviewed));
 
+// Row `row` of a hunk's body as a document line, or null past its end.
+function bodyLine(state, found, row) {
+  if (found.bodyFrom === null || row < 0) return null;
+  const number = state.doc.lineAt(found.bodyFrom).number + row;
+  if (number > state.doc.lines) return null;
+  const line = state.doc.line(number);
+  return line.to <= found.bodyFrom + found.body.length ? line : null;
+}
+
+// The widget shows a code row without its +, - or space marker; "@@" headers
+// and "\ No newline" notes are shown whole.
+const markerWidth = text => (/^[ +-]/.test(text) ? 1 : 0);
+
+/** A widget position {row, char} as a document offset. */
+export function hunkPositionOffset(state, found, { row, char }) {
+  const line = bodyLine(state, found, row);
+  if (!line) return null;
+  return Math.min(line.to, line.from + markerWidth(line.text) + Math.max(0, char));
+}
+
+/** A document offset inside the hunk's body as a widget position {row, char}. */
+export function hunkOffsetPosition(state, found, pos) {
+  const line = state.doc.lineAt(pos);
+  const row = line.number - state.doc.lineAt(found.bodyFrom).number;
+  return { row, char: Math.max(0, pos - line.from - markerWidth(line.text)) };
+}
+
+/** The document range of code selected in the widget, or null. */
+export function hunkSpanRange(state, found, { start, end }) {
+  const from = hunkPositionOffset(state, found, start);
+  const to = hunkPositionOffset(state, found, end);
+  return from !== null && to !== null && to > from ? { from, to } : null;
+}
+
 /**
- * Selects one line of a hunk's body, without its +, - or space marker and
- * leading indent, so a comment anchors to the code the reviewer pointed at.
+ * The comment ranges that fall inside the hunk's body, as widget marks.
+ * `ranges` are {from, to, id?, className}.
  */
-export function selectHunkLine(view, found, index) {
-  if (found.bodyFrom === null) return false;
-  const first = view.state.doc.lineAt(found.bodyFrom).number;
-  const number = first + index;
-  if (number > view.state.doc.lines) return false;
-  const line = view.state.doc.line(number);
-  if (line.to > found.to) return false;
+export function hunkMarks(state, found, ranges) {
+  if (found.bodyFrom === null) return [];
+  const bodyTo = found.bodyFrom + found.body.length;
+  return ranges.flatMap(range => {
+    const from = Math.max(range.from, found.bodyFrom);
+    const to = Math.min(range.to, bodyTo);
+    if (from >= to) return [];
+    return [{
+      ...(range.id ? { id: range.id } : {}),
+      className: range.className,
+      start: hunkOffsetPosition(state, found, from),
+      end: hunkOffsetPosition(state, found, to)
+    }];
+  });
+}
+
+/**
+ * One line of a hunk's body without its +, - or space marker and leading
+ * indent, so a comment anchors to the code the reviewer pointed at.
+ */
+export function hunkLineRange(state, found, index) {
+  const line = bodyLine(state, found, index);
+  if (!line) return null;
   const text = line.text;
   const skip = /^[ +-]?\s*/.exec(text)[0].length;
   const from = skip < text.length ? line.from + skip : line.from;
-  if (line.to === from) return false;
-  view.dispatch({ selection: EditorSelection.single(from, line.to), scrollIntoView: true });
+  return line.to === from ? null : { from, to: line.to };
+}
+
+/** Selects one line of a hunk's body, as hunkLineRange gives it. */
+export function selectHunkLine(view, found, index) {
+  const range = hunkLineRange(view.state, found, index);
+  if (!range) return false;
+  view.dispatch({ selection: EditorSelection.single(range.from, range.to), scrollIntoView: true });
   return true;
 }

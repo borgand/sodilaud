@@ -5,6 +5,7 @@
 // Reading mode, the Live widget and copy-as-HTML. No CodeMirror import.
 
 import { HUNK_ID, parseFenceInfo } from "./anchors.js";
+import { enableCodeSelection } from "./hunk-comments.js";
 import { escapeHTML } from "./syntax-highlighting.js";
 
 // Repository-relative: no scheme, no leading slash or space, no `..` segment,
@@ -196,7 +197,9 @@ function setCollapsedState(root, collapsed) {
 
 /**
  * The hunk widget's DOM. `onLineComment(index)` gets the row's index in the
- * fence body; without it, line numbers are plain text.
+ * fence body; without it, line numbers are plain text. With `codeComments`
+ * (see enableCodeSelection), code is selected inside the widget and offered
+ * for a comment.
  */
 export function buildHunkElement(document, {
   meta,
@@ -204,7 +207,8 @@ export function buildHunkElement(document, {
   hljs = null,
   onToggleReviewed = null,
   onLineComment = null,
-  onToggleCollapsed = null
+  onToggleCollapsed = null,
+  codeComments = null
 }) {
   const root = document.createElement("div");
   root.className = "diff-hunk";
@@ -249,6 +253,7 @@ export function buildHunkElement(document, {
           if (onLineComment) {
             const comment = button(document, "diff-ln-button", String(number));
             comment.title = "Comment on this line";
+            comment.setAttribute("aria-label", `Comment on line ${number}`);
             comment.addEventListener("click", event => {
               event.preventDefault();
               event.stopPropagation();
@@ -301,6 +306,10 @@ export function buildHunkElement(document, {
     });
   } else {
     reviewed.disabled = true;
+  }
+  if (codeComments) {
+    root.classList.add("diff-hunk-commentable");
+    enableCodeSelection(root, codeComments);
   }
   return root;
 }

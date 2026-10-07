@@ -3693,9 +3693,67 @@ kbd {
   cursor: pointer;
 }
 
-.diff-ln-button:hover {
+.diff-ln-button:hover,
+.diff-ln-button:focus-visible {
   color: var(--accent-color);
   text-decoration: underline;
+}
+
+/* A line number opens a comment on its line: show a small bubble on hover. */
+.diff-ln-button:hover::after {
+  content: "+";
+  margin-left: 2px;
+  padding: 0 3px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--accent-color) 20%, transparent);
+  color: var(--accent-color);
+  font-size: 0.7em;
+  font-weight: 700;
+  text-decoration: none;
+  vertical-align: 1px;
+}
+
+.diff-hunk-commentable {
+  position: relative;
+}
+
+.diff-hunk-commentable .diff-code,
+.diff-hunk-commentable .diff-meta {
+  cursor: text;
+}
+
+.diff-hunk .diff-mark {
+  cursor: pointer;
+}
+
+.diff-hunk-comment-button {
+  position: absolute;
+  z-index: 3;
+  padding: 2px 10px;
+  border: 1px solid var(--accent-color);
+  border-radius: 6px;
+  background: var(--editor-bg);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 20%);
+}
+
+.diff-hunk-comment-button[hidden] {
+  display: none;
+}
+
+.diff-hunk .diff-composer-row td {
+  padding: 0 8px;
+  white-space: normal;
+}
+
+/* The body scrolls sideways; keep the composer at the widget's left edge. */
+.diff-hunk .diff-composer-row .cm-comment-composer {
+  position: sticky;
+  left: 8px;
+  max-width: 560px;
 }
 
 .diff-hunk .diff-marker {
