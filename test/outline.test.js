@@ -196,3 +196,16 @@ test("Reading mode names the folds that hide an anchor target", () => {
   assert.deepEqual(readingFoldsHiding(root, root.querySelector("[data-anchor=comments]"), new Set(["comments", "book"])), ["book"]);
   assert.deepEqual(readingFoldsHiding(root, deep, new Set()), []);
 });
+
+test("the next unreviewed hunk is the first one after the reading position, wrapping round", async () => {
+  const { nextUnreviewed } = await import("../src/outline.js");
+  const hunks = [
+    { id: "h00001", reviewed: false, at: 10 },
+    { id: "h00002", reviewed: true, at: 20 },
+    { id: "h00003", reviewed: false, at: 30 }
+  ];
+  assert.equal(nextUnreviewed(hunks, 0), "h00001");
+  assert.equal(nextUnreviewed(hunks, 10), "h00003", "the hunk being read is not picked again");
+  assert.equal(nextUnreviewed(hunks, 30), "h00001", "past the last one it wraps");
+  assert.equal(nextUnreviewed(hunks.map(hunk => ({ ...hunk, reviewed: true })), 0), null);
+});

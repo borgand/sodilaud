@@ -11,7 +11,7 @@ import { markdownEditingCommands, runFormatAction } from "./editor-commands.js";
 import { livePreview } from "./editor-live-preview.js";
 import { createFormatToolbar } from "./format-toolbar.js";
 import { renderMarkdown, resolveLinkAction } from "./markdown.js";
-import { findReadingAnchor, scrollToReadingAnchor } from "./anchors.js";
+import { HUNK_ID, findReadingAnchor, scrollToReadingAnchor } from "./anchors.js";
 import { documentAnchors, scrollToAnchor } from "./editor-anchors.js";
 import { highlightPreviewCode } from "./syntax-highlighting.js";
 import { renderHunkWidgets } from "./diff-hunk.js";
@@ -20,6 +20,7 @@ import { reviewHunkFences, setHunkReviewed } from "./editor-hunks.js";
 import { foldedSections, revealAnchor, sectionFolding, setSectionFolded } from "./editor-folds.js";
 import {
   applyReadingFolds,
+  nextUnreviewed,
   outlineEntries,
   readingFoldsHiding,
   renderOutlineList,
@@ -63,6 +64,7 @@ export function createFileEditor({
   const outlineToggle = $("outline-toggle-btn");
   const outlineList = $("outline-list");
   const reviewStatus = $("review-progress");
+  const reviewNext = $("review-next-btn");
   const backButton = $("nav-back-btn");
   const forwardButton = $("nav-forward-btn");
   const banner = $("file-banner");
@@ -293,6 +295,40 @@ export function createFileEditor({
     reviewStatus.hidden = progress.total === 0;
     reviewStatus.textContent = reviewProgressText(progress);
     reviewStatus.classList.toggle("complete", progress.total > 0 && progress.reviewed === progress.total);
+    reviewNext.hidden = progress.reviewed === progress.total;
+  }
+
+  // A hunk this close below the top of the view counts as the one being read,
+  // so a hunk a jump just scrolled to is not picked again.
+  const TOP_SLACK_PX = 8;
+
+  function nextUnreviewedHunk() {
+    if (layoutMode === "reading") {
+      const widgets = [...preview.querySelectorAll(".diff-hunk[data-hunk]")];
+      const top = preview.getBoundingClientRect().top + TOP_SLACK_PX;
+      let current = -1;
+      widgets.forEach((widget, index) => {
+        const rect = widget.getBoundingClientRect();
+        if (rect.height > 0 && rect.top <= top) current = index;
+      });
+      const hunks = widgets.map((widget, index) => ({
+        id: widget.dataset.hunk,
+        reviewed: widget.classList.contains("diff-hunk-is-reviewed"),
+        at: index
+      }));
+      return nextUnreviewed(hunks, current);
+    }
+    const { view } = editor;
+    const top = view.lineBlockAtHeight(view.scrollDOM.getBoundingClientRect().top - view.documentTop + TOP_SLACK_PX).from;
+    const hunks = reviewHunkFences(view.state)
+      .filter(fence => HUNK_ID.test(fence.meta.hunk ?? ""))
+      .map(fence => ({ id: fence.meta.hunk, reviewed: fence.meta.reviewed, at: fence.from }));
+    return nextUnreviewed(hunks, top);
+  }
+
+  function goToNextUnreviewed() {
+    const id = nextUnreviewedHunk();
+    if (id) jumpTo(id);
   }
 
   function scheduleOutline() {
@@ -321,12 +357,21 @@ export function createFileEditor({
     editorSection.hidden = !showEditor;
     toolbar.hidden = !showEditor;
     if (showEditor && shownId !== buffer.id) {
+      // The editor and the preview are shared by every file, so each file
+      // keeps its own scroll position; one shown for the first time starts
+      // at the top instead of where the last file was.
       const previous = model.get(shownId);
-      if (previous) previous.editorState = editor.getState();
+      if (previous) {
+        previous.editorState = editor.getState();
+        previous.scroll = editor.scrollPlace();
+        previous.previewTop = preview.scrollTop;
+      }
       if (buffer.editorState) editor.restoreState(buffer.editorState);
       else loadBuffer(buffer);
       shownId = buffer.id;
       renderPreview();
+      editor.restoreScroll(buffer.scroll);
+      preview.scrollTop = buffer.previewTop ?? 0;
     }
     if (showEditor) formatToolbar.layout();
     comments.shown();
@@ -788,6 +833,7 @@ export function createFileEditor({
     }
     sidebarToggle.addEventListener("click", toggleSidebar);
     outlineToggle.addEventListener("click", toggleOutline);
+    reviewNext.addEventListener("click", goToNextUnreviewed);
     backButton.addEventListener("click", goBack);
     forwardButton.addEventListener("click", goForward);
     // The side buttons of a mouse, as in a browser.

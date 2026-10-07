@@ -413,6 +413,15 @@ export function createMarkdownEditor(options) {
     setFindMatches,
     setDiff,
     scrollToRange,
+    scrollPlace: () => ({ top: view.scrollDOM.scrollTop, snapshot: view.scrollSnapshot() }),
+    // Goes to a place from scrollPlace(), or the top. The pixel offset applies
+    // at once; the snapshot applies again once the editor has measured its
+    // widgets, so estimated heights of diagrams and diff hunks above the
+    // place cannot leave it somewhere else.
+    restoreScroll(place) {
+      view.scrollDOM.scrollTop = place?.top ?? 0;
+      view.dispatch({ effects: place?.snapshot ?? view.scrollSnapshot() });
+    },
     getScrollTop: () => view.scrollDOM.scrollTop,
     setScrollTop: px => { view.scrollDOM.scrollTop = px; },
     destroy: () => view.destroy()
