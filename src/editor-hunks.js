@@ -64,9 +64,12 @@ function fenceReviewedChange(found, reviewed) {
   return info === found.info ? null : { from: found.infoFrom, to: found.infoTo, insert: info };
 }
 
+// The change sits inside the hunk's widget, so CodeMirror rebuilds it; for a
+// moment the content is shorter and the browser clamps the scroll offset. The
+// snapshot puts the reader back where they were once the widget is measured.
 function dispatchChange(view, changes) {
   if (!changes) return false;
-  view.dispatch({ changes, userEvent: "input" });
+  view.dispatch({ changes, userEvent: "input", effects: view.scrollSnapshot() });
   return true;
 }
 
