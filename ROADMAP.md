@@ -284,11 +284,16 @@ Depends on: 5.
 
 ## 11. Review book: links and anchors
 
-Status: not started
+Status: built on `feat/review-book`, not released
 
 Heading ids in Reading and Live mode, `#heading` links that scroll, and `chapter.md#heading`
 links that open a sibling file. A new command resolves the sibling against the current file's
 directory and opens only existing text files inside it or below it.
+
+As built: Reading mode marks headings with `data-anchor` rather than `id`, so a heading cannot
+shadow one of the app's own element ids. `#h<5 hex>` fragments reach the diff fence with that
+`hunk=` id in both modes. Links to sibling files work in the file editor; Quick Notes have no
+folder, so there only `#heading` links scroll.
 
 Depends on: 10.
 

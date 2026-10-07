@@ -68,6 +68,7 @@ fn main() {
             "file_forget_recent",
             "file_confirm_discard",
             "file_doc_open",
+            "file_doc_open_sibling",
             "file_doc_push",
             "file_doc_pull",
             "file_doc_close",

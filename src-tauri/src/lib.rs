@@ -475,6 +475,7 @@ pub fn run(context: tauri::Context<tauri::Wry>) {
             files::commands::file_forget_recent,
             files::commands::file_confirm_discard,
             files::commands::file_doc_open,
+            files::commands::file_doc_open_sibling,
             files::commands::file_doc_push,
             files::commands::file_doc_pull,
             files::commands::file_doc_close,

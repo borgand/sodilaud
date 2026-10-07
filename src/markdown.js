@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+import { HUNK_ID, addHeadingAnchors, decodeFragment, hunkIdFromInfo } from "./anchors.js";
+
 const MARKDOWN_ALLOWED_TAGS = new Set([
   "a", "blockquote", "br", "code", "del", "em", "h1", "h2", "h3", "h4",
   "h5", "h6", "hr", "img", "input", "li", "ol", "p", "pre", "strong",
@@ -14,7 +16,7 @@ const MARKDOWN_DROP_CONTENT_TAGS = new Set([
 
 const MARKDOWN_ALLOWED_ATTRIBUTES = {
   a: new Set(["href", "title"]),
-  code: new Set(["class"]),
+  code: new Set(["class", "data-hunk"]),
   img: new Set(["alt", "src", "title"]),
   input: new Set(["checked", "disabled", "type"]),
   ol: new Set(["start"]),
@@ -33,7 +35,30 @@ export function isSafeMarkdownUrl(value, isImage = false) {
   return compact.startsWith("#") ||
     compact.startsWith("https://") ||
     compact.startsWith("http://") ||
-    compact.startsWith("mailto:");
+    compact.startsWith("mailto:") ||
+    parseSiblingHref(value) !== null;
+}
+
+const SIBLING_EXTENSION = /\.(md|markdown|txt)$/i;
+
+// A link to another document next to this one, such as `02-merge.md#engine`:
+// relative, no scheme, query or `..`, ending in a text extension. Returns the
+// decoded path and fragment, or null for anything else.
+export function parseSiblingHref(href) {
+  if (typeof href !== "string") return null;
+  const value = href.trim();
+  if (!value || /[\u0000- \u007f\\?:]/.test(value)) return null;
+  const hash = value.indexOf("#");
+  let path;
+  try {
+    path = decodeURIComponent(hash === -1 ? value : value.slice(0, hash));
+  } catch {
+    return null;
+  }
+  if (!path || path.startsWith("/") || /[\u0000-\u001f\u007f\\:]/.test(path)) return null;
+  if (path.split("/").some(segment => segment === ".." || segment === "")) return null;
+  if (!SIBLING_EXTENSION.test(path)) return null;
+  return { path, fragment: hash === -1 ? "" : decodeFragment(value.slice(hash + 1)) };
 }
 
 // Decides what clicking a link in the rendered preview should do. Kept apart
@@ -45,11 +70,15 @@ export function resolveLinkAction(href) {
   const value = href.trim();
   if (!value) return { kind: "ignore" };
 
-  // In-document anchors are inert: no heading ids are generated and the
-  // sanitizer strips id attributes, so there is nothing to jump to. They are
-  // still called out here so they are never mistaken for something to hand to
-  // the operating system.
-  if (value.startsWith("#")) return { kind: "ignore" };
+  // In-document anchors scroll to a heading or hunk; they never reach the
+  // operating system.
+  if (value.startsWith("#")) {
+    const fragment = decodeFragment(value.slice(1));
+    return fragment ? { kind: "anchor", fragment } : { kind: "ignore" };
+  }
+
+  const sibling = parseSiblingHref(value);
+  if (sibling) return { kind: "sibling", ...sibling };
 
   // Compare on the same stripped form the URL policy uses, so a scheme split
   // by control characters cannot slip past this check.
@@ -89,7 +118,7 @@ export function sanitizeMarkdownHtml(html) {
       const href = element.getAttribute("href");
       if (!href || !isSafeMarkdownUrl(href)) {
         element.removeAttribute("href");
-      } else {
+      } else if (resolveLinkAction(href).kind === "external") {
         element.setAttribute("target", "_blank");
         element.setAttribute("rel", "noopener noreferrer");
       }
@@ -120,6 +149,10 @@ export function sanitizeMarkdownHtml(html) {
       }
     }
 
+    if (tag === "code" && element.hasAttribute("data-hunk") && !HUNK_ID.test(element.getAttribute("data-hunk"))) {
+      element.removeAttribute("data-hunk");
+    }
+
     if (tag === "code" && element.hasAttribute("class")) {
       const safeClasses = element.className
         .split(/\s+/)
@@ -146,6 +179,7 @@ export function sanitizeMarkdownHtml(html) {
   });
 
   keepTableValuesWhole(template.content);
+  addHeadingAnchors(template.content);
   return template.innerHTML;
 }
 
@@ -207,11 +241,26 @@ export function keepTableValuesWhole(root) {
   });
 }
 
+// Marked keeps only the first word of a fence's info string; a review-book
+// hunk also needs its id on the element so links can reach it.
+function hunkRenderer(markedApi) {
+  if (typeof markedApi.Renderer !== "function") return null;
+  const renderer = new markedApi.Renderer();
+  const code = renderer.code;
+  renderer.code = function (token) {
+    const html = code.call(this, token);
+    const hunk = hunkIdFromInfo(token.lang);
+    return hunk ? html.replace("<code", `<code data-hunk="${hunk}"`) : html;
+  };
+  return renderer;
+}
+
 export function renderMarkdown(rawText, emptyFallback = "", markedApi = globalThis.window?.marked) {
   if (!markedApi) return "";
   const source = rawText || emptyFallback;
   if (typeof markedApi.parse === "function") {
-    return sanitizeMarkdownHtml(markedApi.parse(source));
+    const renderer = hunkRenderer(markedApi);
+    return sanitizeMarkdownHtml(renderer ? markedApi.parse(source, { renderer }) : markedApi.parse(source));
   }
   if (typeof markedApi === "function") {
     return sanitizeMarkdownHtml(markedApi(source));

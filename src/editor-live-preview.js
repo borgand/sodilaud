@@ -12,7 +12,8 @@ import {
   syntaxTree
 } from "./vendor/codemirror.js";
 import { modeFacet } from "./editor-view.js";
-import { isSafeMarkdownUrl, renderMarkdown } from "./markdown.js";
+import { isSafeMarkdownUrl, renderMarkdown, resolveLinkAction } from "./markdown.js";
+import { scrollToAnchor } from "./editor-anchors.js";
 
 const TABLE_CACHE_LIMIT = 200;
 const tableHtmlCache = new Map();
@@ -561,7 +562,8 @@ function isPrimaryClick(event, view) {
  * unless the mode facet is "live".
  *
  * @param {object} [options]
- * @param {(href: string) => void} [options.onOpenLink] called on Cmd-click (Ctrl-click off macOS) of a link
+ * @param {(href: string) => void} [options.onOpenLink] called on Cmd-click (Ctrl-click off macOS) of a link;
+ *   `#anchor` links scroll the editor instead
  * @param {object} [options.mermaid] a renderer from createMermaidRenderer; without one,
  *   mermaid blocks stay code blocks
  */
@@ -592,7 +594,10 @@ export function livePreview({ onOpenLink, mermaid } = {}) {
         const link = element.closest(".cm-lp-link");
         if (link) {
           event.preventDefault();
-          onOpenLink?.(link.getAttribute("data-href") ?? "");
+          const href = link.getAttribute("data-href") ?? "";
+          const action = resolveLinkAction(href);
+          if (action.kind === "anchor") scrollToAnchor(view, action.fragment);
+          else onOpenLink?.(href);
           return true;
         }
       }

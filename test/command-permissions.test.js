@@ -109,7 +109,7 @@ test("only the main window can reach user files", async () => {
   for (const command of [
     "file_open_dialog", "file_save_as_dialog", "file_lists",
     "file_set_open", "file_take_pending", "file_forget_recent", "file_confirm_discard",
-    "file_doc_open", "file_doc_push", "file_doc_pull", "file_doc_close", "file_doc_save", "file_doc_resolve"
+    "file_doc_open", "file_doc_open_sibling", "file_doc_push", "file_doc_pull", "file_doc_close", "file_doc_save", "file_doc_resolve"
   ]) {
     assert.deepEqual(holders(command), ["default"], `${command} must be granted to the main window only`);
   }

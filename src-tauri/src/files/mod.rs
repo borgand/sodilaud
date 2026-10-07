@@ -10,7 +10,7 @@ pub mod io;
 pub mod store;
 pub mod watch;
 
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::thread;
 
@@ -116,6 +116,13 @@ impl FileError {
                 "{} is not a Markdown or text file. Sodilaud opens .md, .markdown and .txt files.",
                 io::file_name(path)
             ),
+        )
+    }
+
+    pub fn outside_folder(relative: &str) -> Self {
+        Self::new(
+            FileErrorCode::Unsupported,
+            format!("{relative} is not in this document's folder or below it."),
         )
     }
 
@@ -341,6 +348,31 @@ pub fn agent_document(path: &str) -> Result<(PathBuf, u64), FileError> {
     Ok((resolved, bytes.len() as u64))
 }
 
+/// Checks a file a link in `from` names by a relative path, such as one
+/// chapter of a review book linking the next. The target must be a plain
+/// relative path, resolve (after symbolic links) to `from`'s folder or below,
+/// and pass the agent rules. `from` is a canonical, granted path.
+pub fn sibling_document(from: &Path, relative: &str) -> Result<(PathBuf, u64), FileError> {
+    let requested = Path::new(relative);
+    let plain = !relative.is_empty()
+        && !relative.contains(['\\', ':'])
+        && requested
+            .components()
+            .all(|part| matches!(part, Component::Normal(_) | Component::CurDir));
+    if !plain {
+        return Err(FileError::outside_folder(relative));
+    }
+    let folder = from
+        .parent()
+        .ok_or_else(|| FileError::outside_folder(relative))?;
+    let target = folder.join(requested);
+    let (resolved, bytes) = agent_document(&target.to_string_lossy())?;
+    if !resolved.starts_with(folder) {
+        return Err(FileError::outside_folder(relative));
+    }
+    Ok((resolved, bytes))
+}
+
 #[derive(Serialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct OpenedDocument {
@@ -386,7 +418,7 @@ pub fn paths_from_args<I: IntoIterator<Item = String>>(args: I) -> Vec<PathBuf> 
 
 #[cfg(test)]
 mod tests {
-    use super::{agent_document, paths_from_args, FileErrorCode};
+    use super::{agent_document, paths_from_args, sibling_document, FileErrorCode};
     use std::fs;
     use std::path::PathBuf;
 
@@ -447,6 +479,62 @@ mod tests {
             let link = directory.join("link.md");
             std::os::unix::fs::symlink(&json, &link).unwrap();
             assert_eq!(code(&link), FileErrorCode::Unsupported);
+        }
+    }
+
+    #[test]
+    fn a_link_opens_a_text_file_in_the_same_folder_or_below() {
+        let directory = scratch("sibling").canonicalize().unwrap();
+        let from = directory.join("00-overview.md");
+        fs::write(&from, "# Overview\n").unwrap();
+        fs::write(directory.join("01-tools.md"), "# Tools\n").unwrap();
+        fs::create_dir(directory.join("notes")).unwrap();
+        fs::write(directory.join("notes/a b.txt"), "text").unwrap();
+
+        let (path, bytes) = sibling_document(&from, "01-tools.md").unwrap();
+        assert_eq!(path, directory.join("01-tools.md"));
+        assert_eq!(bytes, 8);
+        assert_eq!(
+            sibling_document(&from, "./notes/a b.txt").unwrap().0,
+            directory.join("notes/a b.txt")
+        );
+    }
+
+    #[test]
+    fn a_link_cannot_leave_the_folder_or_open_other_files() {
+        let root = scratch("sibling-refuse").canonicalize().unwrap();
+        let directory = root.join("book");
+        fs::create_dir(&directory).unwrap();
+        let from = directory.join("00-overview.md");
+        fs::write(&from, "# Overview\n").unwrap();
+        fs::write(root.join("secret.md"), "secret").unwrap();
+        fs::write(directory.join("data.json"), "{}").unwrap();
+
+        let refused = |relative: &str| sibling_document(&from, relative).unwrap_err().code;
+        for relative in [
+            "../secret.md",
+            "notes/../../secret.md",
+            "/etc/hosts.md",
+            "",
+            "C:secret.md",
+            "a\\..\\secret.md",
+        ] {
+            assert_eq!(refused(relative), FileErrorCode::Unsupported, "{relative}");
+        }
+        let absolute = root.join("secret.md");
+        assert_eq!(
+            refused(absolute.to_str().unwrap()),
+            FileErrorCode::Unsupported
+        );
+        assert_eq!(refused("missing.md"), FileErrorCode::NotFound);
+        assert_eq!(refused("data.json"), FileErrorCode::Unsupported);
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(root.join("secret.md"), directory.join("escape.md"))
+                .unwrap();
+            assert_eq!(refused("escape.md"), FileErrorCode::Unsupported);
+            std::os::unix::fs::symlink(&root, directory.join("up")).unwrap();
+            assert_eq!(refused("up/secret.md"), FileErrorCode::Unsupported);
         }
     }
 

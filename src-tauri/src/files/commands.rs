@@ -7,7 +7,7 @@ use tauri::{State, Window};
 
 use super::io::{self, LineEnding};
 use super::store::FileLists;
-use super::{FileError, Files};
+use super::{FileError, Files, OpenedDocument};
 use crate::docs::commands::SharedRegistry;
 use crate::docs::files::{FileOpened, FileSaved, Resolve};
 use crate::docs::registry::{Pulled, Pushed, Update};
@@ -131,6 +131,27 @@ pub fn file_doc_open(
     let opened = registry.file_open(&path, &*files)?;
     files.update_lists(|lists| lists.opened(&opened.path));
     Ok(opened)
+}
+
+/// Grants the file a link in the open document `from_path` names by a relative
+/// path, when it lies in that document's folder or below. The page then opens
+/// the returned path like any other granted file.
+#[tauri::command]
+pub fn file_doc_open_sibling(
+    window: Window,
+    files: State<'_, Files>,
+    from_path: String,
+    relative: String,
+) -> Result<OpenedDocument, FileError> {
+    require_main(&window)?;
+    let from = files.require(&from_path)?;
+    let (resolved, bytes) = super::sibling_document(&from, &relative)?;
+    let granted = files.grant(&resolved)?;
+    Ok(OpenedDocument {
+        name: io::file_name(&granted),
+        path: granted.to_string_lossy().to_string(),
+        bytes,
+    })
 }
 
 #[tauri::command]
