@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! Installs the Claude Code side of co-editing into a home directory: the
-//! `/sodilaud` command, the `sodilaud` skill, and a PreToolUse hook in
-//! `settings.json` that sends native edits of co-edited files to the MCP
-//! tools. Only on the owner's request, after showing what changes. Every
-//! function takes the home directory, so tests never touch the real one.
+//! `/sodilaud` command, the `sodilaud` skill, the `review-book` skill with its
+//! checker script, and a PreToolUse hook in `settings.json` that sends native
+//! edits of co-edited files to the MCP tools. Only on the owner's request,
+//! after showing what changes. Every function takes the home directory, so
+//! tests never touch the real one.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -17,6 +18,9 @@ use crate::mcp::McpState;
 
 pub(crate) const COMMAND: &str = include_str!("../resources/claude/sodilaud.md");
 pub(crate) const SKILL: &str = include_str!("../resources/claude/SKILL.md");
+pub(crate) const REVIEW_SKILL: &str = include_str!("../resources/claude/review-book/SKILL.md");
+pub(crate) const REVIEW_CHECKER: &str =
+    include_str!("../resources/claude/review-book/check-book.mjs");
 const MATCHER: &str = "Edit|Write|MultiEdit";
 
 #[derive(Serialize, Clone, Debug, PartialEq)]
@@ -32,14 +36,35 @@ pub(crate) struct Plan {
 struct Paths {
     command: PathBuf,
     skill: PathBuf,
+    review_skill: PathBuf,
+    review_checker: PathBuf,
     settings: PathBuf,
+}
+
+impl Paths {
+    /// Every installed file with its contents and what it is for the plan.
+    fn files(&self) -> [(&PathBuf, &'static str, &'static str); 4] {
+        [
+            (&self.command, COMMAND, "the /sodilaud command"),
+            (&self.skill, SKILL, "the sodilaud skill"),
+            (&self.review_skill, REVIEW_SKILL, "the review-book skill"),
+            (
+                &self.review_checker,
+                REVIEW_CHECKER,
+                "the review-book checker",
+            ),
+        ]
+    }
 }
 
 fn paths(home: &Path) -> Paths {
     let claude = home.join(".claude");
+    let review = claude.join("skills").join("review-book");
     Paths {
         command: claude.join("commands").join("sodilaud.md"),
         skill: claude.join("skills").join("sodilaud").join("SKILL.md"),
+        review_skill: review.join("SKILL.md"),
+        review_checker: review.join("check-book.mjs"),
         settings: claude.join("settings.json"),
     }
 }
@@ -151,10 +176,7 @@ pub(crate) fn plan(home: &Path, executable: &str) -> Result<Plan, String> {
     let command = hook_command(executable);
     let settings = read_settings(&paths.settings)?;
     let mut changes = Vec::new();
-    for (path, contents, what) in [
-        (&paths.command, COMMAND, "the /sodilaud command"),
-        (&paths.skill, SKILL, "the sodilaud skill"),
-    ] {
+    for (path, contents, what) in paths.files() {
         if !path.exists() {
             changes.push(format!("Create {} ({what})", shown(home, path)));
         } else if !same_contents(path, contents) {
@@ -173,8 +195,7 @@ pub(crate) fn plan(home: &Path, executable: &str) -> Result<Plan, String> {
             None => format!("Create {file} with a PreToolUse hook for {MATCHER}"),
         });
     }
-    let present = paths.command.exists()
-        || paths.skill.exists()
+    let present = paths.files().iter().any(|(path, ..)| path.exists())
         || settings.as_ref().is_some_and(|settings| {
             settings
                 .get("hooks")
@@ -236,7 +257,7 @@ pub(crate) fn install(home: &Path, executable: &str) -> Result<Plan, String> {
         }));
         write_settings(&paths.settings, &settings, existed)?;
     }
-    for (path, contents) in [(&paths.command, COMMAND), (&paths.skill, SKILL)] {
+    for (path, contents, _) in paths.files() {
         if !same_contents(path, contents) {
             write_atomic(path, contents.as_bytes())?;
         }
@@ -264,7 +285,7 @@ pub(crate) fn remove(home: &Path, executable: &str) -> Result<Plan, String> {
             write_settings(&paths.settings, &settings, true)?;
         }
     }
-    for path in [&paths.command, &paths.skill] {
+    for (path, ..) in paths.files() {
         match fs::remove_file(path) {
             Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
                 return Err(format!("Could not remove {}: {error}", path.display()))
@@ -272,7 +293,10 @@ pub(crate) fn remove(home: &Path, executable: &str) -> Result<Plan, String> {
             _ => {}
         }
     }
-    if let Some(folder) = paths.skill.parent() {
+    for folder in [paths.skill.parent(), paths.review_skill.parent()]
+        .into_iter()
+        .flatten()
+    {
         let _ = fs::remove_dir(folder);
     }
     plan(home, executable)
@@ -361,8 +385,9 @@ mod tests {
         let home = home();
         let before = plan(&home, EXE).unwrap();
         assert!(!before.installed && !before.present);
-        assert_eq!(before.changes.len(), 3);
-        assert!(before.changes[2].starts_with("Create ~/.claude/settings.json"));
+        assert_eq!(before.changes.len(), 5);
+        assert!(before.changes[2].starts_with("Create ~/.claude/skills/review-book/SKILL.md"));
+        assert!(before.changes[4].starts_with("Create ~/.claude/settings.json"));
         let after = install(&home, EXE).unwrap();
         assert!(after.installed, "{:?}", after.changes);
         assert_eq!(
@@ -370,6 +395,10 @@ mod tests {
             COMMAND
         );
         assert!(home.join(".claude/skills/sodilaud/SKILL.md").exists());
+        assert_eq!(
+            fs::read_to_string(home.join(".claude/skills/review-book/check-book.mjs")).unwrap(),
+            REVIEW_CHECKER
+        );
         assert!(
             !home.join(".claude/settings.json.bak").exists(),
             "nothing to back up"
@@ -418,6 +447,34 @@ mod tests {
         assert_eq!(removed["model"], "opus");
         assert!(!home.join(".claude/commands/sodilaud.md").exists());
         assert!(!home.join(".claude/skills/sodilaud").exists());
+        assert!(!home.join(".claude/skills/review-book").exists());
+    }
+
+    #[test]
+    fn an_outdated_review_book_skill_is_reported_and_updated() {
+        let home = home();
+        install(&home, EXE).unwrap();
+        let checker = home.join(".claude/skills/review-book/check-book.mjs");
+        fs::write(&checker, "old").unwrap();
+        let stale = plan(&home, EXE).unwrap();
+        assert!(stale.present && !stale.installed);
+        assert_eq!(
+            stale.changes,
+            ["Update ~/.claude/skills/review-book/check-book.mjs (the review-book checker)"]
+        );
+        install(&home, EXE).unwrap();
+        assert_eq!(fs::read_to_string(&checker).unwrap(), REVIEW_CHECKER);
+        fs::write(
+            home.join(".claude/skills/review-book/notes.txt"),
+            "the user's",
+        )
+        .unwrap();
+        remove(&home, EXE).unwrap();
+        assert!(
+            home.join(".claude/skills/review-book/notes.txt").exists(),
+            "a folder with the user's own files stays"
+        );
+        assert!(!checker.exists());
     }
 
     #[test]
@@ -453,11 +510,14 @@ mod tests {
 
     #[test]
     fn bundled_text_names_the_tools_and_uses_no_em_dashes() {
-        for text in [COMMAND, SKILL] {
+        for text in [COMMAND, SKILL, REVIEW_SKILL] {
             assert!(!text.contains('\u{2014}'));
             assert!(text.contains("mcp__sodilaud__") || text.contains("apply_edit"));
         }
+        assert!(!REVIEW_CHECKER.contains('\u{2014}'));
         assert!(COMMAND.contains("$ARGUMENTS"));
         assert!(SKILL.starts_with("---\nname: sodilaud\n"));
+        assert!(REVIEW_SKILL.starts_with("---\nname: review-book\n"));
+        assert!(REVIEW_SKILL.contains("~/.claude/skills/review-book/check-book.mjs"));
     }
 }

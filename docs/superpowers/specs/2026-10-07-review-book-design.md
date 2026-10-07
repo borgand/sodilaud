@@ -66,7 +66,7 @@ Mermaid.
 A hunk is a fenced `diff` block whose info string carries metadata:
 
 ````
-```diff path=src-tauri/src/mcp.rs hunk=h3f2a lines=120-168
+```diff path=src-tauri/src/mcp.rs hunk=h3f2a1 lines=120-168
 @@ -120,7 +120,30 @@ fn register_tools(
  ...
 ```
@@ -75,7 +75,12 @@ A hunk is a fenced `diff` block whose info string carries metadata:
 - `path`: path relative to the repository root. Required.
 - `hunk`: `h` plus the first five hex characters of the SHA-256 of `path`, a newline, and the
   hunk body. An edited hunk gets a new id, which is what makes "changed since you read" fall
-  out: a changed hunk is a new, unreviewed one. Required.
+  out: a changed hunk is a new, unreviewed one. Required. The body is every line after the
+  `@@` header, each ending in a newline, so a hunk that only moved keeps its id; when two
+  hunks collide, the later one is hashed again with `#2`, `#3` appended.
+- `elided`: present on a block that holds only its `@@` header. Allowed for generated,
+  vendored, minified and lockfile hunks over 20 000 characters; the checker still requires
+  the id, header and `lines` to match the diff.
 - `lines`: new-side line range. Required. For a deletion, the old-side range prefixed `old:`.
 - `reviewed`: present when the reviewer has marked the hunk. Written only by Sodilaud's
   toggle. The generator never emits it, and re-generation of an unchanged hunk preserves it.
@@ -91,7 +96,7 @@ linked from any number of others.
 - Headings get GitHub-style slugs (lowercase, spaces to hyphens, punctuation removed,
   duplicates suffixed `-1`, `-2`).
 - Within a chapter: `[the merge engine](#merge-engine)`.
-- To another chapter or hunk: `[register_tools()](01-mcp-tools.md#h3f2a)`.
+- To another chapter or hunk: `[register_tools()](01-mcp-tools.md#h3f2a1)`.
 - A hunk's anchor is its id.
 
 ### File map
@@ -111,9 +116,10 @@ never explains test bodies.
 ```json
 {
   "base": "<merge-base sha>",
-  "head": "<worktree hash at generation>",
+  "ref": "<head commit, only when the book covers a committed range>",
+  "head": "<worktree tree hash at generation>",
   "hunks": [
-    {"id": "h3f2a", "path": "src-tauri/src/mcp.rs", "lines": "120-168",
+    {"id": "h3f2a1", "path": "src-tauri/src/mcp.rs", "lines": "120-168",
      "owner": "01-mcp-tools.md", "refs": ["03-review-loop.md"]}
   ],
   "signedOff": null
