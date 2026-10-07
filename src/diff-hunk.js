@@ -176,6 +176,16 @@ function setReviewedState(root, reviewed) {
   toggle.textContent = reviewed ? "✓ Reviewed" : "Mark reviewed";
 }
 
+// Collapsing from the floating header of a hunk scrolled far into would leave
+// the collapsed hunk high above the view; bring its header back to the top.
+function keepHeaderInView(root) {
+  let scroller = root.parentElement;
+  while (scroller && scroller.scrollHeight <= scroller.clientHeight) scroller = scroller.parentElement;
+  if (!scroller) return;
+  const above = scroller.getBoundingClientRect().top - root.getBoundingClientRect().top;
+  if (above > 0) scroller.scrollTop -= above;
+}
+
 function setCollapsedState(root, collapsed) {
   root.classList.toggle("diff-hunk-is-collapsed", collapsed);
   const toggle = root.querySelector(".diff-hunk-collapse");
@@ -193,7 +203,8 @@ export function buildHunkElement(document, {
   body,
   hljs = null,
   onToggleReviewed = null,
-  onLineComment = null
+  onLineComment = null,
+  onToggleCollapsed = null
 }) {
   const root = document.createElement("div");
   root.className = "diff-hunk";
@@ -277,6 +288,8 @@ export function buildHunkElement(document, {
     const next = !root.classList.contains("diff-hunk-is-collapsed");
     setHunkCollapsed(meta, next);
     setCollapsedState(root, next);
+    if (next) keepHeaderInView(root);
+    onToggleCollapsed?.(next);
   });
   if (onToggleReviewed) {
     reviewed.addEventListener("click", event => {

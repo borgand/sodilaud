@@ -170,6 +170,19 @@ test("collapse state lasts for the session and survives a re-render", () => {
   setHunkCollapsed({ hunk: "h3f2a1" }, false);
 });
 
+test("collapsing tells the host the widget's height changed", () => {
+  const toggles = [];
+  const widget = buildHunkElement(document, {
+    meta: reviewHunkMeta("diff path=src/main.rs hunk=h3f2a2"),
+    body: BODY,
+    onToggleCollapsed: collapsed => toggles.push(collapsed)
+  });
+  document.body.append(widget);
+  widget.querySelector(".diff-hunk-collapse").click();
+  widget.querySelector(".diff-hunk-collapse").click();
+  assert.deepEqual(toggles, [true, false]);
+  widget.remove();
+});
 test("an elided hunk says so instead of showing an empty diff", () => {
   const container = preview("```diff path=package-lock.json hunk=h45751 lines=1044-2215 elided reviewed\n@@ -1040,6 +1044,1172 @@\n```");
   renderHunkWidgets(container);
