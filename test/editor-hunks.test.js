@@ -81,6 +81,25 @@ test("the Reviewed toggle writes the token into the fence and back out", async (
   } finally { t.done(); }
 });
 
+// The toggle rebuilds the widget; in a browser the content shrinks for a
+// moment, the scroll offset is clamped, and a tall hunk scrolled far into
+// would leave the reader thousands of pixels away without a snapshot.
+test("the Reviewed toggle keeps the reader's place with a scroll snapshot", async () => {
+  const t = await setup(DOC);
+  try {
+    const snapshot = t.view.scrollSnapshot();
+    t.view.scrollSnapshot = () => snapshot;
+    const dispatched = [];
+    const dispatch = t.view.dispatch.bind(t.view);
+    t.view.dispatch = (...specs) => { dispatched.push(...specs); return dispatch(...specs); };
+    t.widget().querySelector(".diff-hunk-reviewed").click();
+    await settle();
+    const toggle = dispatched.find(spec => spec.changes);
+    assert.ok(toggle, "the toggle dispatched a change");
+    assert.deepEqual([toggle.effects].flat(), [snapshot]);
+  } finally { t.done(); }
+});
+
 test("Reading mode toggles find the hunk by id, or by position without one", async () => {
   const second = "```diff path=b.rs\n@@ -1 +1 @@\n+x\n```";
   const t = await setup(`${DOC}\n\n${second}\n`);
