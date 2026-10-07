@@ -3458,7 +3458,11 @@ kbd {
 }
 
 /* Review-book diff hunks, the same widget in Live and Reading mode. */
+/* inline-size containment keeps a long code line from widening the page;
+   the body scrolls sideways inside the widget instead. */
 .diff-hunk {
+  contain: inline-size;
+  max-width: 100%;
   margin: 0 0 1em;
   border: 1px solid var(--border-color);
   border-radius: 8px;
@@ -3640,13 +3644,34 @@ kbd {
   background-color: color-mix(in srgb, #e05263 14%, transparent);
 }
 
+.diff-hunk .diff-ln-old {
+  left: 0;
+}
+
+.diff-hunk .diff-ln-new {
+  left: calc(5ch + 8px);
+}
+
+.diff-hunk .diff-row-add .diff-ln {
+  background-color: color-mix(in srgb, #22a559 14%, var(--preview-bg));
+}
+
+.diff-hunk .diff-row-del .diff-ln {
+  background-color: color-mix(in srgb, #e05263 14%, var(--preview-bg));
+}
+
 .diff-hunk .diff-meta {
   color: var(--text-secondary);
   background-color: color-mix(in srgb, var(--preview-code-bg) 50%, transparent);
 }
 
 .diff-hunk .diff-ln {
-  min-width: 3ch;
+  position: sticky;
+  z-index: 1;
+  box-sizing: border-box;
+  width: calc(5ch + 8px);
+  min-width: calc(5ch + 8px);
+  background-color: var(--preview-bg);
   padding: 0 4px;
   text-align: right;
   color: var(--text-muted);
