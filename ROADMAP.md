@@ -324,9 +324,14 @@ Depends on: 5. Item 9 can follow this one.
 
 ## 14. Review book: folding and outline
 
-Status: not started
+Status: built on `feat/review-book`, not released
 
 Section folding by heading in Live and Reading mode, an outline panel listing headings with
 reviewed-over-total counts, and an "n/m reviewed" status bar item.
+
+Folds are named by heading slug and kept in the editor state for the session, so Live, Source
+and Reading mode show the same ones and the file never changes. Following a link or an outline
+entry into a folded section unfolds it. The outline and the status bar count are for files;
+Quick Notes has neither yet.
 
 Depends on: 12.

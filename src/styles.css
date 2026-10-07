@@ -3521,6 +3521,70 @@ kbd {
   display: none;
 }
 
+/* Section folding: the chevron hangs left of each heading. */
+.cm-heading-fold,
+.markdown-preview .heading-fold {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  margin-left: -1.25em;
+  margin-right: 0.25em;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  vertical-align: middle;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.cm-heading-fold::before,
+.markdown-preview .heading-fold::before {
+  content: "";
+  display: block;
+  width: 0.35em;
+  height: 0.35em;
+  margin: 0.25em auto 0;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg);
+}
+
+.cm-heading-fold.is-folded::before,
+.markdown-preview .is-section-folded > .heading-fold::before {
+  margin-top: 0.32em;
+  transform: rotate(-45deg);
+}
+
+.cm-line:hover .cm-heading-fold,
+.cm-heading-fold.is-folded,
+.markdown-preview :hover > .heading-fold,
+.markdown-preview .is-section-folded > .heading-fold,
+.markdown-preview .heading-fold:focus-visible {
+  opacity: 1;
+}
+
+.cm-heading-fold:hover,
+.markdown-preview .heading-fold:hover {
+  color: var(--accent-color);
+}
+
+.markdown-preview .section-fold-hidden {
+  display: none;
+}
+
+.cm-section-folded {
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.markdown-preview .is-section-folded::after {
+  content: " …";
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
 .diff-hunk .diff-hunk-body {
   display: block;
   overflow-x: auto;

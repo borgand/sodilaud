@@ -372,3 +372,90 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+.review-progress {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.outline-section {
+  margin-top: 16px;
+}
+
+.outline-section[hidden],
+.outline-list[hidden],
+.review-progress[hidden] {
+  display: none;
+}
+
+.outline-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: calc(100% - 16px);
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.outline-toggle::before {
+  content: "";
+  border-left: 4px solid currentColor;
+  border-top: 3.5px solid transparent;
+  border-bottom: 3.5px solid transparent;
+  transform: rotate(90deg);
+  transition: transform 0.12s;
+}
+
+.outline-toggle[aria-expanded="false"]::before {
+  transform: none;
+}
+
+.outline-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.outline-item {
+  display: flex;
+  align-items: center;
+  padding-left: calc(var(--outline-depth, 0) * 12px);
+  border-radius: 6px;
+}
+
+.outline-item:hover {
+  background: var(--bg-note-hover);
+}
+
+.outline-link {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  border: 0;
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.82rem;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.outline-progress {
+  flex-shrink: 0;
+  margin-right: 8px;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.outline-progress.complete,
+.review-progress.complete {
+  color: #22a559;
+}

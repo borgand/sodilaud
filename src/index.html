@@ -164,6 +164,10 @@
     <aside class="files-sidebar" id="files-sidebar" aria-labelledby="files-sidebar-title" hidden>
       <h2 class="files-sidebar-title" id="files-sidebar-title">Open files</h2>
       <ul class="open-files-list" id="open-files-list"></ul>
+      <section class="outline-section" id="outline-section" aria-label="Outline" hidden>
+        <button class="files-sidebar-title outline-toggle" id="outline-toggle-btn" type="button" aria-expanded="true" aria-controls="outline-list">Outline</button>
+        <ul class="outline-list" id="outline-list"></ul>
+      </section>
     </aside>
     <div class="main-content">
     <main class="start-page" id="start-page" aria-labelledby="start-title">
@@ -217,6 +221,7 @@
       </div>
       <footer class="file-status" id="file-status-bar">
         <span class="file-status-text" id="file-status" aria-live="polite"></span>
+        <span class="review-progress" id="review-progress" title="Review hunks marked reviewed" hidden></span>
         <button class="comments-count" id="comments-count-btn" type="button" aria-controls="comments-panel" aria-expanded="false" hidden>No comments</button>
       </footer>
     </section>
