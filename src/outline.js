@@ -52,6 +52,13 @@ export function reviewProgress(hunks) {
 
 export const reviewProgressText = ({ reviewed, total }) => (total ? `${reviewed}/${total} reviewed` : "");
 
+// The id of the first unreviewed hunk placed after `after`, wrapping round to
+// the first unreviewed one. Hunks are { id, reviewed, at } in document order.
+export function nextUnreviewed(hunks, after) {
+  const open = hunks.filter(hunk => !hunk.reviewed);
+  return (open.find(hunk => hunk.at > after) ?? open[0])?.id ?? null;
+}
+
 /** Fills the sidebar outline: one button per heading, indented by level. */
 export function renderOutlineList(list, entries, onSelect) {
   const document = list.ownerDocument;

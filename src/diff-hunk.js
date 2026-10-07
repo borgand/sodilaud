@@ -5,6 +5,7 @@
 // Reading mode, the Live widget and copy-as-HTML. No CodeMirror import.
 
 import { HUNK_ID, parseFenceInfo } from "./anchors.js";
+import { enableCodeSelection } from "./hunk-comments.js";
 import { escapeHTML } from "./syntax-highlighting.js";
 
 // Repository-relative: no scheme, no leading slash or space, no `..` segment,
@@ -118,6 +119,8 @@ export function splitHighlightedLines(html) {
 }
 
 function highlightSide(texts, language, hljs) {
+  // An added or deleted file has no lines on one side; highlighting "" would yield one line.
+  if (texts.length === 0) return [];
   try {
     const html = hljs.highlight(texts.join("\n"), { language, ignoreIllegals: true }).value;
     const lines = splitHighlightedLines(html);
@@ -176,6 +179,16 @@ function setReviewedState(root, reviewed) {
   toggle.textContent = reviewed ? "✓ Reviewed" : "Mark reviewed";
 }
 
+// Collapsing from the floating header of a hunk scrolled far into would leave
+// the collapsed hunk high above the view; bring its header back to the top.
+function keepHeaderInView(root) {
+  let scroller = root.parentElement;
+  while (scroller && scroller.scrollHeight <= scroller.clientHeight) scroller = scroller.parentElement;
+  if (!scroller) return;
+  const above = scroller.getBoundingClientRect().top - root.getBoundingClientRect().top;
+  if (above > 0) scroller.scrollTop -= above;
+}
+
 function setCollapsedState(root, collapsed) {
   root.classList.toggle("diff-hunk-is-collapsed", collapsed);
   const toggle = root.querySelector(".diff-hunk-collapse");
@@ -186,14 +199,18 @@ function setCollapsedState(root, collapsed) {
 
 /**
  * The hunk widget's DOM. `onLineComment(index)` gets the row's index in the
- * fence body; without it, line numbers are plain text.
+ * fence body; without it, line numbers are plain text. With `codeComments`
+ * (see enableCodeSelection), code is selected inside the widget and offered
+ * for a comment.
  */
 export function buildHunkElement(document, {
   meta,
   body,
   hljs = null,
   onToggleReviewed = null,
-  onLineComment = null
+  onLineComment = null,
+  onToggleCollapsed = null,
+  codeComments = null
 }) {
   const root = document.createElement("div");
   root.className = "diff-hunk";
@@ -238,6 +255,7 @@ export function buildHunkElement(document, {
           if (onLineComment) {
             const comment = button(document, "diff-ln-button", String(number));
             comment.title = "Comment on this line";
+            comment.setAttribute("aria-label", `Comment on line ${number}`);
             comment.addEventListener("click", event => {
               event.preventDefault();
               event.stopPropagation();
@@ -277,6 +295,8 @@ export function buildHunkElement(document, {
     const next = !root.classList.contains("diff-hunk-is-collapsed");
     setHunkCollapsed(meta, next);
     setCollapsedState(root, next);
+    if (next) keepHeaderInView(root);
+    onToggleCollapsed?.(next);
   });
   if (onToggleReviewed) {
     reviewed.addEventListener("click", event => {
@@ -288,6 +308,10 @@ export function buildHunkElement(document, {
     });
   } else {
     reviewed.disabled = true;
+  }
+  if (codeComments) {
+    root.classList.add("diff-hunk-commentable");
+    enableCodeSelection(root, codeComments);
   }
   return root;
 }

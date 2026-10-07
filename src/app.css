@@ -191,6 +191,21 @@
   flex: 0 1 auto;
 }
 
+.main-topbar-left .icon-btn[hidden] {
+  display: none;
+}
+
+.main-topbar-left .icon-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+  background: none;
+}
+
+.main-topbar-left #nav-back-btn,
+.main-topbar-left #nav-forward-btn {
+  width: 28px;
+}
+
 .main-topbar .topbar-center[hidden] {
   display: none;
 }
@@ -378,13 +393,31 @@
   font-variant-numeric: tabular-nums;
 }
 
+.review-next {
+  flex-shrink: 0;
+  padding: 0 6px;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 0.75rem;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.review-next:hover {
+  color: var(--text-primary);
+}
+
 .outline-section {
   margin-top: 16px;
 }
 
 .outline-section[hidden],
 .outline-list[hidden],
-.review-progress[hidden] {
+.review-progress[hidden],
+.review-next[hidden] {
   display: none;
 }
 

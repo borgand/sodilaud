@@ -3352,6 +3352,37 @@ kbd {
   text-decoration-thickness: 1px;
 }
 
+.cm-lp-follow {
+  position: absolute;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background-color: var(--bg-input);
+  color: var(--accent-color);
+  cursor: pointer;
+}
+
+.cm-lp-follow[hidden] {
+  display: none;
+}
+
+.cm-lp-follow:hover,
+.cm-lp-follow:focus-visible {
+  background-color: var(--accent-color);
+  color: var(--bg-app);
+}
+
+.cm-lp-follow svg {
+  width: 12px;
+  height: 12px;
+}
+
 .cm-mode-live .cm-lp-quote {
   border-left: 4px solid var(--preview-quote-border);
   background-color: var(--preview-quote-bg);
@@ -3427,11 +3458,17 @@ kbd {
 }
 
 /* Review-book diff hunks, the same widget in Live and Reading mode. */
+/* inline-size containment keeps a long code line from widening the page;
+   the body scrolls sideways inside the widget instead. */
 .diff-hunk {
+  contain: inline-size;
+  max-width: 100%;
   margin: 0 0 1em;
   border: 1px solid var(--border-color);
   border-radius: 8px;
-  overflow: hidden;
+  /* clip, not hidden: hidden would make the widget a scroll container and
+     stop the header from sticking to the editor's viewport. */
+  overflow: clip;
   background-color: var(--preview-bg);
   color: var(--preview-text);
   font-size: 0.9rem;
@@ -3444,11 +3481,14 @@ kbd {
 }
 
 .diff-hunk-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 4px 8px;
-  background-color: var(--preview-code-bg);
+  background: linear-gradient(var(--preview-code-bg), var(--preview-code-bg)), var(--preview-bg);
   border-bottom: 1px solid var(--border-color);
   font-family: var(--font-sans);
   font-size: 0.85rem;
@@ -3516,8 +3556,9 @@ kbd {
   border-color: var(--accent-color);
 }
 
-.diff-hunk-is-collapsed .diff-hunk-body,
-.diff-hunk-is-collapsed .diff-hunk-elided {
+/* Two classes, so it outranks the later `.diff-hunk .diff-hunk-body` block. */
+.diff-hunk.diff-hunk-is-collapsed .diff-hunk-body,
+.diff-hunk.diff-hunk-is-collapsed .diff-hunk-elided {
   display: none;
 }
 
@@ -3609,13 +3650,34 @@ kbd {
   background-color: color-mix(in srgb, #e05263 14%, transparent);
 }
 
+.diff-hunk .diff-ln-old {
+  left: 0;
+}
+
+.diff-hunk .diff-ln-new {
+  left: calc(5ch + 8px);
+}
+
+.diff-hunk .diff-row-add .diff-ln {
+  background-color: color-mix(in srgb, #22a559 14%, var(--preview-bg));
+}
+
+.diff-hunk .diff-row-del .diff-ln {
+  background-color: color-mix(in srgb, #e05263 14%, var(--preview-bg));
+}
+
 .diff-hunk .diff-meta {
   color: var(--text-secondary);
   background-color: color-mix(in srgb, var(--preview-code-bg) 50%, transparent);
 }
 
 .diff-hunk .diff-ln {
-  min-width: 3ch;
+  position: sticky;
+  z-index: 1;
+  box-sizing: border-box;
+  width: calc(5ch + 8px);
+  min-width: calc(5ch + 8px);
+  background-color: var(--preview-bg);
   padding: 0 4px;
   text-align: right;
   color: var(--text-muted);
@@ -3631,9 +3693,88 @@ kbd {
   cursor: pointer;
 }
 
-.diff-ln-button:hover {
+.diff-ln-button:hover,
+.diff-ln-button:focus-visible {
   color: var(--accent-color);
   text-decoration: underline;
+}
+
+/* A line number opens a comment on its line: show a small bubble on hover. */
+.diff-ln-button:hover::after {
+  content: "+";
+  margin-left: 2px;
+  padding: 0 3px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--accent-color) 20%, transparent);
+  color: var(--accent-color);
+  font-size: 0.7em;
+  font-weight: 700;
+  text-decoration: none;
+  vertical-align: 1px;
+}
+
+.diff-hunk-commentable {
+  position: relative;
+}
+
+.diff-hunk-commentable .diff-code,
+.diff-hunk-commentable .diff-meta {
+  cursor: text;
+}
+
+.diff-hunk .diff-mark {
+  cursor: pointer;
+}
+
+/* The gutter's comment dot, drawn on the commented row inside the widget.
+   The old-line cell is sticky, so the dot stays visible while scrolling sideways. */
+.diff-hunk .diff-comment-dot {
+  position: absolute;
+  left: 2px;
+  cursor: pointer;
+  font-size: 0.6rem;
+}
+
+.diff-hunk .diff-meta > .diff-comment-dot {
+  position: static;
+  margin-right: 6px;
+}
+
+.diff-hunk .diff-comment-dot::before {
+  content: "●";
+}
+
+.diff-comment-dot-owner { color: var(--accent-color); }
+.diff-comment-dot-agent { color: #b07cd8; }
+
+.diff-hunk-comment-button {
+  position: absolute;
+  z-index: 3;
+  padding: 2px 10px;
+  border: 1px solid var(--accent-color);
+  border-radius: 6px;
+  background: var(--editor-bg);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 20%);
+}
+
+.diff-hunk-comment-button[hidden] {
+  display: none;
+}
+
+.diff-hunk .diff-composer-row td {
+  padding: 0 8px;
+  white-space: normal;
+}
+
+/* The body scrolls sideways; keep the composer at the widget's left edge. */
+.diff-hunk .diff-composer-row .cm-comment-composer {
+  position: sticky;
+  left: 8px;
+  max-width: 560px;
 }
 
 .diff-hunk .diff-marker {

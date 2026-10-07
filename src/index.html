@@ -22,6 +22,12 @@
             <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h7" />
           </svg>
         </button>
+        <button class="icon-btn" id="nav-back-btn" type="button" title="Back (Cmd+[)" aria-label="Back" disabled hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6" /></svg>
+        </button>
+        <button class="icon-btn" id="nav-forward-btn" type="button" title="Forward (Cmd+])" aria-label="Forward" disabled hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6" /></svg>
+        </button>
         <div class="main-topbar-title" id="main-title">Sodilaud</div>
       </div>
       <div class="topbar-center" id="file-toolbar" hidden>
@@ -222,6 +228,7 @@
       <footer class="file-status" id="file-status-bar">
         <span class="file-status-text" id="file-status" aria-live="polite"></span>
         <span class="review-progress" id="review-progress" title="Review hunks marked reviewed" hidden></span>
+        <button class="review-next" id="review-next-btn" type="button" title="Scroll to the next hunk not marked reviewed" hidden>Next unreviewed</button>
         <button class="comments-count" id="comments-count-btn" type="button" aria-controls="comments-panel" aria-expanded="false" hidden>No comments</button>
       </footer>
     </section>
@@ -475,6 +482,14 @@
               <div class="shortcut-keys"><kbd>Tab</kbd><span class="key-plus">/</span><kbd>Shift</kbd><span class="key-plus">+</span><kbd>Tab</kbd></div>
             </div>
             <div class="shortcut-row">
+              <span class="shortcut-desc">Indent / Outdent Lines</span>
+              <div class="shortcut-keys"><kbd>Cmd</kbd><span class="key-plus">+</span><kbd>Alt</kbd><span class="key-plus">+</span><kbd>]</kbd><span class="key-plus">/</span><kbd>[</kbd></div>
+            </div>
+            <div class="shortcut-row">
+              <span class="shortcut-desc">Back / Forward After Following a Link</span>
+              <div class="shortcut-keys"><kbd>Cmd</kbd><span class="key-plus">+</span><kbd>[</kbd><span class="key-plus">/</span><kbd>]</kbd></div>
+            </div>
+            <div class="shortcut-row">
               <span class="shortcut-desc">Move List Item Up / Down</span>
               <div class="shortcut-keys"><kbd>Alt</kbd><span class="key-plus">+</span><kbd>↑</kbd><span class="key-plus">/</span><kbd>↓</kbd></div>
             </div>
@@ -487,7 +502,7 @@
               <div class="shortcut-keys"><kbd>Home</kbd></div>
             </div>
             <p class="cheatsheet-note">Parentheses, brackets, braces, quotes, and backticks pair automatically. Backspace removes an empty pair or a list marker at the start of its content. Pasting a URL over selected text makes a link; pasting a rectangular spreadsheet range makes a table, while tab-indented text stays literal.</p>
-            <p class="cheatsheet-note">Choose <strong>Live</strong>, <strong>Source</strong>, or <strong>Reading</strong> with the mode buttons in the toolbar (hover an icon to see its name). Live formats Markdown inline and shows raw Markdown on the lines your cursor touches; Source shows plain Markdown; Reading is a read-only rendered view. In Live mode, Cmd-click a link to open it (Ctrl-click off macOS); a plain click places the cursor. In Reading mode a plain click opens a link.</p>
+            <p class="cheatsheet-note">Choose <strong>Live</strong>, <strong>Source</strong>, or <strong>Reading</strong> with the mode buttons in the toolbar (hover an icon to see its name). Live formats Markdown inline and shows raw Markdown on the lines your cursor touches; Source shows plain Markdown; Reading is a read-only rendered view. In Live mode, Cmd-click a link to open it (Ctrl-click off macOS), or click the arrow that appears when you point at it; a plain click places the cursor. In Reading mode a plain click opens a link. Back and Forward in the title bar, their shortcuts above, or the side buttons of a mouse return along the links you followed.</p>
           </div>
         </div>
 

@@ -13,6 +13,10 @@ const OVERVIEW = [
   "[tools](01-tools.md#register-tools) [down](#approach) [escape](../secret.md) [gone](missing.md)",
   "",
   "## Approach",
+  "",
+  "| Chapter |",
+  "|---|",
+  "| [the tools chapter](01-tools.md) |",
   ""
 ].join("\n");
 const TOOLS = "# Tools\n\n## Register tools\n";
@@ -88,3 +92,114 @@ for (const [platform, modifier] of [["MacIntel", { metaKey: true }], ["Linux x86
     assert.equal(document.getElementById("main-title").textContent, "01-tools.md");
   });
 }
+
+for (const [platform, modifier] of [["MacIntel", { metaKey: true }], ["Linux x86_64", { ctrlKey: true }]]) {
+  test(`Live mode follows a link inside a table on ${platform} with the link modifier`, async () => {
+    const { app, document } = await boot(platform);
+    const link = document.querySelector('#editor-host .cm-lp-table a[href="01-tools.md"]');
+    assert.ok(link, "the table renders its link");
+    link.dispatchEvent(new app.dom.window.MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0, ...modifier }));
+    await app.settle();
+    assert.equal(document.getElementById("main-title").textContent, "01-tools.md");
+  });
+}
+
+test("a plain click on a table link still places the cursor in the table", async () => {
+  const { app, document } = await boot();
+  const link = document.querySelector('#editor-host .cm-lp-table a[href="01-tools.md"]');
+  link.dispatchEvent(new app.dom.window.MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));
+  await app.settle();
+  assert.equal(document.getElementById("main-title").textContent, "00-overview.md");
+  assert.equal(siblingCalls(app).length, 0);
+});
+
+test("hovering a Live link shows a button that follows it without a modifier", async () => {
+  const { app, document } = await boot();
+  const button = document.querySelector("#editor-host .cm-lp-follow");
+  assert.equal(button.hidden, true);
+  assert.equal(button.getAttribute("aria-label"), "Follow link");
+
+  const link = [...document.querySelectorAll("#editor-host .cm-lp-link")]
+    .find((element) => element.getAttribute("data-href") === "01-tools.md#register-tools");
+  link.dispatchEvent(new app.dom.window.MouseEvent("mouseover", { bubbles: true }));
+  assert.equal(button.hidden, false);
+
+  const pressed = new app.dom.window.MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 });
+  button.dispatchEvent(pressed);
+  assert.equal(pressed.defaultPrevented, true, "pressing the button never moves the cursor");
+  button.click();
+  await app.settle();
+  assert.equal(document.getElementById("main-title").textContent, "01-tools.md");
+  assert.equal(button.hidden, true);
+});
+
+test("hovering a table link shows the follow button too", async () => {
+  const { app, document } = await boot();
+  const link = document.querySelector('#editor-host .cm-lp-table a[href="01-tools.md"]');
+  link.dispatchEvent(new app.dom.window.MouseEvent("mouseover", { bubbles: true }));
+  const button = document.querySelector("#editor-host .cm-lp-follow");
+  assert.equal(button.hidden, false);
+  button.click();
+  await app.settle();
+  assert.equal(document.getElementById("main-title").textContent, "01-tools.md");
+});
+
+function pressShortcut(app, key) {
+  const event = new app.dom.window.KeyboardEvent("keydown", { bubbles: true, cancelable: true, key, metaKey: true });
+  app.dom.window.document.body.dispatchEvent(event);
+  return event;
+}
+
+test("Back and Forward return along followed links, from buttons, shortcuts and mouse buttons", async () => {
+  const { app, document } = await boot();
+  const title = () => document.getElementById("main-title").textContent;
+  const back = document.getElementById("nav-back-btn");
+  const forward = document.getElementById("nav-forward-btn");
+  assert.equal(back.hidden, false);
+  assert.equal(back.disabled, true);
+  assert.equal(forward.disabled, true);
+
+  app.click("mode-reading");
+  const preview = document.getElementById("markdown-preview");
+  linkTo(preview, "#approach").click();
+  await app.settle();
+  linkTo(preview, "01-tools.md#register-tools").click();
+  await app.settle();
+  assert.equal(title(), "01-tools.md");
+  assert.equal(back.disabled, false);
+
+  back.click();
+  await app.settle();
+  assert.equal(title(), "00-overview.md");
+  assert.equal(forward.disabled, false);
+
+  assert.equal(pressShortcut(app, "]").defaultPrevented, true);
+  await app.settle();
+  assert.equal(title(), "01-tools.md");
+  assert.equal(forward.disabled, true);
+
+  pressShortcut(app, "[");
+  await app.settle();
+  assert.equal(title(), "00-overview.md");
+
+  document.getElementById("file-editor").dispatchEvent(new app.dom.window.MouseEvent("mouseup", { bubbles: true, button: 4 }));
+  await app.settle();
+  assert.equal(title(), "01-tools.md");
+  document.getElementById("file-editor").dispatchEvent(new app.dom.window.MouseEvent("mouseup", { bubbles: true, button: 3 }));
+  await app.settle();
+  assert.equal(title(), "00-overview.md");
+});
+
+test("following a new link after going back drops the forward entries", async () => {
+  const { app, document } = await boot();
+  app.click("mode-reading");
+  const preview = () => document.getElementById("markdown-preview");
+  linkTo(preview(), "01-tools.md#register-tools").click();
+  await app.settle();
+  document.getElementById("nav-back-btn").click();
+  await app.settle();
+  linkTo(preview(), "#approach").click();
+  await app.settle();
+  assert.equal(document.getElementById("nav-forward-btn").disabled, true);
+  assert.equal(document.getElementById("nav-back-btn").disabled, false);
+});

@@ -168,6 +168,8 @@ The app displays `Cmd` on macOS and `Ctrl` on Windows or Linux.
 | `Enter` / `Shift + Enter` | Select the next or previous match |
 | `Enter` | Continue a list or blockquote, close a new code fence, or extend a table |
 | `Tab` / `Shift + Tab` | Nest or outdent a list, navigate table cells, or insert plain indentation |
+| `Cmd/Ctrl + Alt + ]` / `[` | Indent or outdent the selected lines |
+| `Cmd/Ctrl + [` / `]` | Go back or forward along the links you followed in files |
 | `Home` | Move to list-item content first, then the beginning of the line |
 | `Cmd/Ctrl + +` / `Cmd/Ctrl + -` | Zoom the editor in or out |
 | `Cmd/Ctrl + 0` | Reset editor zoom to 100% |
@@ -185,7 +187,7 @@ The app displays `Cmd` on macOS and `Ctrl` on Windows or Linux.
 
 ## Markdown editing
 
-Sodilaud has three editing modes, chosen with the mode buttons in the toolbar (icons; hover one to see its name): **Live** (default), **Source**, and **Reading**. Live renders Markdown inline - headings, emphasis, links, task checkboxes, and tables display formatted - while the line your cursor or selection touches shows its raw Markdown. In Live mode, `Cmd`-click a link (`Ctrl`-click off macOS) to open it; a plain click just places the cursor. In Reading mode a plain click opens a link. Tables render as a formatted table until you click into one, which reveals the raw pipe source. Source mode shows raw Markdown in a monospace font with the same editing features as Live. Reading mode is a read-only rendered view. Remote images never load in any mode; only `data:` images render.
+Sodilaud has three editing modes, chosen with the mode buttons in the toolbar (icons; hover one to see its name): **Live** (default), **Source**, and **Reading**. Live renders Markdown inline - headings, emphasis, links, task checkboxes, and tables display formatted - while the line your cursor or selection touches shows its raw Markdown. In Live mode, `Cmd`-click a link (`Ctrl`-click off macOS), or click the arrow that appears when you point at it, to open it; a plain click just places the cursor. In Reading mode a plain click opens a link. In files, Back and Forward in the title bar (`Cmd/Ctrl + [` and `]`, or a mouse's side buttons) return along the links you followed. Tables render as a formatted table until you click into one, which reveals the raw pipe source. Source mode shows raw Markdown in a monospace font with the same editing features as Live. Reading mode is a read-only rendered view. Remote images never load in any mode; only `data:` images render.
 
 Sodilaud keeps its Markdown assistance lightweight and works directly in the native text editor:
 

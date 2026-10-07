@@ -115,6 +115,14 @@ test("a multi-line comment keeps its colors on every row", () => {
   assert.match(html[3], /hljs-comment/);
 });
 
+test("an added or a deleted file is highlighted too", () => {
+  const added = highlightRows(parseHunkBody("@@ -0,0 +1,2 @@\n+const a = 1;\n+// note"), "a.js", hljs);
+  assert.match(added[1], /hljs-keyword/);
+  assert.match(added[2], /hljs-comment/);
+  const deleted = highlightRows(parseHunkBody("@@ -1,1 +0,0 @@\n-const a = 1;"), "a.js", hljs);
+  assert.match(deleted[1], /hljs-keyword/);
+});
+
 test("the sanitizer keeps hunk attributes only when their values are valid", () => {
   const code = preview(`${HUNK.replace("lines=10-14", "lines=10-14 reviewed elided")}`).querySelector("code");
   assert.equal(code.getAttribute("data-path"), "src/main.rs");
@@ -170,6 +178,19 @@ test("collapse state lasts for the session and survives a re-render", () => {
   setHunkCollapsed({ hunk: "h3f2a1" }, false);
 });
 
+test("collapsing tells the host the widget's height changed", () => {
+  const toggles = [];
+  const widget = buildHunkElement(document, {
+    meta: reviewHunkMeta("diff path=src/main.rs hunk=h3f2a2"),
+    body: BODY,
+    onToggleCollapsed: collapsed => toggles.push(collapsed)
+  });
+  document.body.append(widget);
+  widget.querySelector(".diff-hunk-collapse").click();
+  widget.querySelector(".diff-hunk-collapse").click();
+  assert.deepEqual(toggles, [true, false]);
+  widget.remove();
+});
 test("an elided hunk says so instead of showing an empty diff", () => {
   const container = preview("```diff path=package-lock.json hunk=h45751 lines=1044-2215 elided reviewed\n@@ -1040,6 +1044,1172 @@\n```");
   renderHunkWidgets(container);
