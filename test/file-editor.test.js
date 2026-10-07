@@ -216,10 +216,10 @@ test("Reading mode renders the file and follows outside edits; a file opened fro
   });
   app.click("mode-reading");
   assert.equal(doc(app).getElementById("file-editor").classList.contains("mode-reading"), true);
-  assert.match(doc(app).getElementById("markdown-preview").innerHTML, /<h1[^>]*>Heading<\/h1>/);
+  assert.match(doc(app).getElementById("markdown-preview").innerHTML, /<h1[^>]*>(?:<button[^>]*><\/button>)?Heading<\/h1>/);
   app.fileDocs.outsideEdit("/docs/r.md", "# Changed\n");
   await app.settle();
-  assert.match(doc(app).getElementById("markdown-preview").innerHTML, /<h1[^>]*>Changed<\/h1>/);
+  assert.match(doc(app).getElementById("markdown-preview").innerHTML, /<h1[^>]*>(?:<button[^>]*><\/button>)?Changed<\/h1>/);
   assert.ok(app.emitted.some((event) => event.name === "prefs-changed" && event.payload.key === "sodilaud_layout_mode"));
   app.click("mode-live");
 
@@ -246,6 +246,54 @@ test("the Reviewed toggle in Reading mode writes the mark into the file", async 
   assert.ok(app.editorText().includes(`${fence} reviewed\n`));
   await app.settle(700);
   assert.ok(app.fileDocs.writes.at(-1).text.includes(`${fence} reviewed\n`));
+});
+
+test("the outline lists headings with review progress and the status bar counts reviewed hunks", async () => {
+  const fake = lists({ open: ["/docs/book.md"] });
+  const fence = (id, reviewed = "") => `\`\`\`diff path=src/a.rs hunk=${id} lines=1-1${reviewed}\n@@ -1 +1 @@\n-a\n+b\n\`\`\``;
+  const text = `# Book\n\nIntro\n\n## Engine\n\n${fence("h00001", " reviewed")}\n\n${fence("h00002")}\n\n## Notes\n\nDeep note\n`;
+  const app = await bootMainWindow({
+    instance: 11,
+    disk: { "/docs/book.md": text },
+    beforeBoot: (dom) => {
+      dom.window.marked = marked;
+      dom.window.HTMLElement.prototype.scrollIntoView = () => {};
+    },
+    handlers: fake.handlers
+  });
+  const page = doc(app);
+  const rows = () => [...page.querySelectorAll(".outline-item")].map((item) => item.textContent);
+  assert.equal(page.getElementById("outline-section").hidden, false);
+  assert.deepEqual(rows(), ["Book1/2", "Engine1/2", "Notes"]);
+  const status = page.getElementById("review-progress");
+  assert.equal(status.hidden, false);
+  assert.equal(status.textContent, "1/2 reviewed");
+
+  app.click("mode-reading");
+  page.querySelector("#markdown-preview [data-anchor=engine] .heading-fold").click();
+  assert.equal(page.querySelector("#markdown-preview .diff-hunk").classList.contains("section-fold-hidden"), true);
+  page.querySelectorAll(".diff-hunk-reviewed")[1].click();
+  await app.settle(200);
+  assert.equal(status.textContent, "2/2 reviewed");
+  assert.deepEqual(rows(), ["Book2/2", "Engine2/2", "Notes"]);
+  assert.equal(page.querySelector("#markdown-preview .diff-hunk").classList.contains("section-fold-hidden"), true, "the fold survives the re-render");
+
+  page.querySelector("#markdown-preview [data-anchor=book] .heading-fold").click();
+  assert.equal(page.querySelector("#markdown-preview [data-anchor=notes]").classList.contains("section-fold-hidden"), true);
+  page.querySelectorAll(".outline-link")[2].click();
+  assert.equal(page.querySelector("#markdown-preview [data-anchor=notes]").classList.contains("section-fold-hidden"), false, "following the outline unfolds the section");
+
+  app.click("mode-live");
+  assert.ok(page.querySelector(".cm-section-folded"), "Live mode keeps the Engine fold");
+  page.getElementById("outline-toggle-btn").click();
+  assert.equal(page.getElementById("outline-list").hidden, true);
+});
+
+test("a file without headings or hunks shows no outline and no review count", async () => {
+  const fake = lists({ open: ["/docs/plain.md"] });
+  const app = await bootMainWindow({ instance: 12, disk: { "/docs/plain.md": "just text\n" }, handlers: fake.handlers });
+  assert.equal(doc(app).getElementById("outline-section").hidden, true);
+  assert.equal(doc(app).getElementById("review-progress").hidden, true);
 });
 
 test("Save As onto the file's own path right after typing keeps every change", async () => {

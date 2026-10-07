@@ -11,11 +11,20 @@ import { markdownEditingCommands, runFormatAction } from "./editor-commands.js";
 import { livePreview } from "./editor-live-preview.js";
 import { createFormatToolbar } from "./format-toolbar.js";
 import { renderMarkdown, resolveLinkAction } from "./markdown.js";
-import { scrollToReadingAnchor } from "./anchors.js";
-import { scrollToAnchor } from "./editor-anchors.js";
+import { findReadingAnchor, scrollToReadingAnchor } from "./anchors.js";
+import { documentAnchors, scrollToAnchor } from "./editor-anchors.js";
 import { highlightPreviewCode } from "./syntax-highlighting.js";
 import { renderHunkWidgets } from "./diff-hunk.js";
-import { setHunkReviewed } from "./editor-hunks.js";
+import { reviewHunkFences, setHunkReviewed } from "./editor-hunks.js";
+import { foldedSections, revealAnchor, sectionFolding, setSectionFolded } from "./editor-folds.js";
+import {
+  applyReadingFolds,
+  outlineEntries,
+  readingFoldsHiding,
+  renderOutlineList,
+  reviewProgress,
+  reviewProgressText
+} from "./outline.js";
 import { normalizeLayoutMode } from "./view-preferences.js";
 import { createDocSync } from "./doc-sync.js";
 import { createFilesModel, isDirty, needsPrompt } from "./files.js";
@@ -23,6 +32,8 @@ import { commentsExtension } from "./editor-comments.js";
 import { createComments } from "./comments-panel.js";
 
 const LAYOUT_KEY = "sodilaud_layout_mode";
+// The outline reparses the whole file, so it waits for typing to pause.
+const OUTLINE_DELAY_MS = 150;
 
 const editorModeFor = (mode) => (mode === "source" ? "source" : "live");
 
@@ -47,6 +58,10 @@ export function createFileEditor({
   const title = $("main-title");
   const status = $("file-status");
   const preview = $("markdown-preview");
+  const outlineSection = $("outline-section");
+  const outlineToggle = $("outline-toggle-btn");
+  const outlineList = $("outline-list");
+  const reviewStatus = $("review-progress");
   const banner = $("file-banner");
   const bannerText = $("file-banner-text");
   const bannerPrimary = $("file-banner-primary-btn");
@@ -63,6 +78,7 @@ export function createFileEditor({
   let sidebarHidden = false;
   let shownId = null;
   let recent = [];
+  let outlineTimer = null;
 
   const editor = createMarkdownEditor({
     parent: $("editor-host"),
@@ -74,6 +90,7 @@ export function createFileEditor({
     extensions: [
       markdownEditingCommands(),
       livePreview({ onOpenLink: followLink, mermaid }),
+      sectionFolding(),
       commentsExtension({
         onSubmit: (view, comment) => comments.submit(view, comment),
         onSelect: id => comments.select(id)
@@ -244,10 +261,45 @@ export function createFileEditor({
       });
       highlightPreviewCode(preview, hljs, appearance.syntaxHighlighting);
       mermaid?.renderBlocks(preview);
+      renderReadingFolds();
     } catch (error) {
       console.error("Could not render the file", error);
       preview.textContent = editor.getText();
     }
+  }
+
+  // Reading mode shows the folds Live mode keeps in the editor state.
+  function renderReadingFolds() {
+    applyReadingFolds(preview, foldedSections(editor.view.state), (id, folded) => {
+      setSectionFolded(editor.view, id, folded);
+      renderReadingFolds();
+    });
+  }
+
+  function renderOutline() {
+    clearTimeout(outlineTimer);
+    outlineTimer = null;
+    const buffer = showingStartPage ? null : model.active();
+    const { state } = editor.view;
+    const hunks = buffer ? reviewHunkFences(state) : [];
+    const entries = buffer ? outlineEntries(documentAnchors(state), hunks, state.doc.length) : [];
+    outlineSection.hidden = entries.length === 0;
+    if (entries.length) renderOutlineList(outlineList, entries, scrollToFragment);
+    const progress = reviewProgress(hunks);
+    reviewStatus.hidden = progress.total === 0;
+    reviewStatus.textContent = reviewProgressText(progress);
+    reviewStatus.classList.toggle("complete", progress.total > 0 && progress.reviewed === progress.total);
+  }
+
+  function scheduleOutline() {
+    clearTimeout(outlineTimer);
+    outlineTimer = setTimeout(renderOutline, OUTLINE_DELAY_MS);
+  }
+
+  function toggleOutline() {
+    const expanded = outlineToggle.getAttribute("aria-expanded") !== "true";
+    outlineToggle.setAttribute("aria-expanded", String(expanded));
+    outlineList.hidden = !expanded;
   }
 
   function renderMenu() {
@@ -276,6 +328,7 @@ export function createFileEditor({
     comments.shown();
     renderTitle();
     renderSidebar();
+    renderOutline();
     renderBanner();
     renderMenu();
   }
@@ -289,6 +342,7 @@ export function createFileEditor({
     model.edit(buffer.id, text);
     renderTitle();
     renderSidebar();
+    scheduleOutline();
   }
 
   // Sends everything typed, then has Rust write the file now. A file that
@@ -428,9 +482,20 @@ export function createFileEditor({
     }
   }
 
+  // A target inside a folded section unfolds it first.
   function scrollToFragment(fragment) {
-    if (layoutMode === "reading") scrollToReadingAnchor(preview, fragment);
-    else scrollToAnchor(editor.view, fragment);
+    if (layoutMode !== "reading") {
+      revealAnchor(editor.view, fragment);
+      scrollToAnchor(editor.view, fragment);
+      return;
+    }
+    const target = findReadingAnchor(preview, fragment);
+    const hiding = target ? readingFoldsHiding(preview, target, foldedSections(editor.view.state)) : [];
+    if (hiding.length) {
+      for (const id of hiding) setSectionFolded(editor.view, id, false);
+      renderReadingFolds();
+    }
+    scrollToReadingAnchor(preview, fragment);
   }
 
   // A link to `chapter.md#heading` opens a file next to the shown one; Rust
@@ -560,7 +625,10 @@ export function createFileEditor({
     if (!event?.path) return;
     sync.receive(event);
     const buffer = model.docUpdated(event);
-    if (buffer && buffer.id === shownId) renderPreview();
+    if (buffer && buffer.id === shownId) {
+      renderPreview();
+      scheduleOutline();
+    }
     renderTitle();
     renderSidebar();
   }
@@ -667,6 +735,7 @@ export function createFileEditor({
       button.addEventListener("click", () => setLayoutMode(mode));
     }
     sidebarToggle.addEventListener("click", toggleSidebar);
+    outlineToggle.addEventListener("click", toggleOutline);
     preview.addEventListener("click", (event) => {
       const link = event.target.closest("a[href]");
       if (!link) return;
