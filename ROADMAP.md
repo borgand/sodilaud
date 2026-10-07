@@ -299,12 +299,16 @@ Depends on: 10.
 
 ## 12. Review book: diff hunk widget
 
-Status: not started
+Status: built on `feat/review-book`, not released
 
 A `diff` fence with `path=` renders as a widget in Live and Reading mode: path and line range
 header, old and new line numbers, syntax highlighting by file extension, a Reviewed toggle
 that writes a `reviewed` token into the fence, a collapse toggle, and a per-line comment
 button. Export emits a plain highlighted diff.
+
+As built: clicking a line number comments on that line's code, without its `+`, `-` or
+indent, and works in Live mode only until item 9. An `elided` hunk shows a note instead of
+its body. Copy as HTML emits a `figure` with the path as caption.
 
 Depends on: 11.
 

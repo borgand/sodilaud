@@ -230,6 +230,24 @@ test("Reading mode renders the file and follows outside edits; a file opened fro
   assert.equal(doc(app).querySelectorAll(".open-file-item").length, 2);
 });
 
+test("the Reviewed toggle in Reading mode writes the mark into the file", async () => {
+  const fake = lists({ open: ["/docs/book.md"] });
+  const fence = "```diff path=src/a.rs hunk=h3f2a1 lines=1-1";
+  const app = await bootMainWindow({
+    instance: 10,
+    disk: { "/docs/book.md": `# Book\n\n${fence}\n@@ -1 +1 @@\n-a\n+b\n\`\`\`\n` },
+    beforeBoot: (dom) => { dom.window.marked = marked; },
+    handlers: fake.handlers
+  });
+  app.click("mode-reading");
+  const widget = doc(app).querySelector("#markdown-preview .diff-hunk");
+  assert.ok(widget);
+  widget.querySelector(".diff-hunk-reviewed").click();
+  assert.ok(app.editorText().includes(`${fence} reviewed\n`));
+  await app.settle(700);
+  assert.ok(app.fileDocs.writes.at(-1).text.includes(`${fence} reviewed\n`));
+});
+
 test("Save As onto the file's own path right after typing keeps every change", async () => {
   const fake = lists({ open: ["/docs/s.md"] });
   let disk;

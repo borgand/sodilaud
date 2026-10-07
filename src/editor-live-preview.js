@@ -14,6 +14,9 @@ import {
 import { modeFacet } from "./editor-view.js";
 import { isSafeMarkdownUrl, renderMarkdown, resolveLinkAction } from "./markdown.js";
 import { scrollToAnchor } from "./editor-anchors.js";
+import { buildHunkElement, reviewHunkMeta } from "./diff-hunk.js";
+import { hunkFenceAt, selectHunkLine, setFenceReviewed } from "./editor-hunks.js";
+import { startComment } from "./editor-comments.js";
 
 const TABLE_CACHE_LIMIT = 200;
 const tableHtmlCache = new Map();
@@ -222,6 +225,52 @@ class TableWidget extends WidgetType {
       view.focus();
     });
     return wrapper;
+  }
+
+  ignoreEvent() {
+    return true;
+  }
+}
+
+// A review-book diff hunk. Its controls write to the document; clicking the
+// path reveals the fence for editing.
+class HunkWidget extends WidgetType {
+  constructor(info, body) {
+    super();
+    this.info = info;
+    this.body = body;
+  }
+
+  eq(other) {
+    return other.info === this.info && other.body === this.body;
+  }
+
+  toDOM(view) {
+    let element = null;
+    const fenceHere = () => hunkFenceAt(view.state, view.posAtDOM(element));
+    element = buildHunkElement(view.dom.ownerDocument, {
+      meta: reviewHunkMeta(this.info),
+      body: this.body,
+      hljs: view.dom.ownerDocument.defaultView?.hljs ?? null,
+      onToggleReviewed: reviewed => {
+        const found = fenceHere();
+        if (found) setFenceReviewed(view, found, reviewed);
+      },
+      onLineComment: index => {
+        const found = fenceHere();
+        if (!found) return;
+        view.focus();
+        if (selectHunkLine(view, found, index)) startComment(view);
+      }
+    });
+    element.classList.add("cm-lp-hunk");
+    element.querySelector(".diff-hunk-path").addEventListener("mousedown", event => {
+      if (!isPrimaryClick(event, view)) return;
+      event.preventDefault();
+      view.dispatch({ selection: EditorSelection.cursor(view.posAtDOM(element)) });
+      view.focus();
+    });
+    return element;
   }
 
   ignoreEvent() {
@@ -449,7 +498,12 @@ function isMermaidFence(state, node) {
   return info !== null && state.doc.sliceString(info.from, info.to).trim().toLowerCase() === "mermaid";
 }
 
-function mermaidSource(state, node) {
+function fenceInfo(state, node) {
+  const info = node.getChild("CodeInfo");
+  return info ? state.doc.sliceString(info.from, info.to) : "";
+}
+
+function fenceBody(state, node) {
   const text = node.getChild("CodeText");
   return text ? state.doc.sliceString(text.from, text.to) : "";
 }
@@ -465,7 +519,9 @@ function buildBlocks(state, focused) {
       if (TABLE_CONTAINERS.has(ref.name)) return true;
       const isTable = ref.name === "Table";
       const isMermaid = mermaid && ref.name === "FencedCode" && isMermaidFence(state, ref.node);
-      if (!isTable && !isMermaid) return false;
+      const hunkInfo = ref.name === "FencedCode" && !isMermaid ? fenceInfo(state, ref.node) : "";
+      const isHunk = hunkInfo !== "" && reviewHunkMeta(hunkInfo) !== null;
+      if (!isTable && !isMermaid && !isHunk) return false;
       const start = doc.lineAt(ref.from);
       const end = doc.lineAt(ref.to);
       const prefix = doc.sliceString(start.from, ref.from);
@@ -478,7 +534,14 @@ function buildBlocks(state, focused) {
         }
         return false;
       }
-      const source = mermaidSource(state, ref.node);
+      if (isHunk) {
+        if (!inside) {
+          const widget = new HunkWidget(hunkInfo, fenceBody(state, ref.node));
+          ranges.push(Decoration.replace({ widget, block: true }).range(start.from, end.to));
+        }
+        return false;
+      }
+      const source = fenceBody(state, ref.node);
       if (inside) {
         ranges.push(Decoration.widget({ widget: new MermaidWidget(source, mermaid, "preview"), block: true, side: 1 }).range(end.to));
       } else {

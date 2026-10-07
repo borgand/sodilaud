@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { HUNK_ID, addHeadingAnchors, decodeFragment, hunkIdFromInfo } from "./anchors.js";
+import { HUNK_LINES, HUNK_PATH, reviewHunkMeta } from "./diff-hunk.js";
 
 const MARKDOWN_ALLOWED_TAGS = new Set([
   "a", "blockquote", "br", "code", "del", "em", "h1", "h2", "h3", "h4",
@@ -16,13 +17,21 @@ const MARKDOWN_DROP_CONTENT_TAGS = new Set([
 
 const MARKDOWN_ALLOWED_ATTRIBUTES = {
   a: new Set(["href", "title"]),
-  code: new Set(["class", "data-hunk"]),
+  code: new Set(["class", "data-hunk", "data-path", "data-lines", "data-reviewed", "data-elided"]),
   img: new Set(["alt", "src", "title"]),
   input: new Set(["checked", "disabled", "type"]),
   ol: new Set(["start"]),
   td: new Set(["align"]),
   th: new Set(["align"])
 };
+
+const CODE_DATA_PATTERNS = [
+  ["data-hunk", HUNK_ID],
+  ["data-path", HUNK_PATH],
+  ["data-lines", HUNK_LINES],
+  ["data-reviewed", /^$/],
+  ["data-elided", /^$/]
+];
 
 export function isSafeMarkdownUrl(value, isImage = false) {
   const compact = value.trim().replace(/[\u0000-\u0020\u007f]+/g, "").toLowerCase();
@@ -149,8 +158,10 @@ export function sanitizeMarkdownHtml(html) {
       }
     }
 
-    if (tag === "code" && element.hasAttribute("data-hunk") && !HUNK_ID.test(element.getAttribute("data-hunk"))) {
-      element.removeAttribute("data-hunk");
+    if (tag === "code") {
+      for (const [name, valid] of CODE_DATA_PATTERNS) {
+        if (element.hasAttribute(name) && !valid.test(element.getAttribute(name))) element.removeAttribute(name);
+      }
     }
 
     if (tag === "code" && element.hasAttribute("class")) {
@@ -241,16 +252,27 @@ export function keepTableValuesWhole(root) {
   });
 }
 
+const escapeAttribute = value => String(value).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+
 // Marked keeps only the first word of a fence's info string; a review-book
-// hunk also needs its id on the element so links can reach it.
+// hunk also needs its id, path, line range and reviewed mark on the element.
 function hunkRenderer(markedApi) {
   if (typeof markedApi.Renderer !== "function") return null;
   const renderer = new markedApi.Renderer();
   const code = renderer.code;
   renderer.code = function (token) {
     const html = code.call(this, token);
+    const attributes = [];
     const hunk = hunkIdFromInfo(token.lang);
-    return hunk ? html.replace("<code", `<code data-hunk="${hunk}"`) : html;
+    if (hunk) attributes.push(`data-hunk="${hunk}"`);
+    const meta = reviewHunkMeta(token.lang);
+    if (meta) {
+      attributes.push(`data-path="${escapeAttribute(meta.path)}"`);
+      if (meta.lines) attributes.push(`data-lines="${meta.lines}"`);
+      if (meta.reviewed) attributes.push("data-reviewed");
+      if (meta.elided) attributes.push("data-elided");
+    }
+    return attributes.length ? html.replace("<code", `<code ${attributes.join(" ")}`) : html;
   };
   return renderer;
 }
