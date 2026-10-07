@@ -1,23 +1,25 @@
-# Sodilaud v0.13.0
+# Sodilaud v0.14.0
 
-Open files from a terminal with `sodilaud notes.md`, and tables keep dates and IDs on one line.
+Review a finished change as a book: chapters that explain it, with the diff hunks inside, marked reviewed one by one and discussed with the agent in threads.
 
 ## Highlights
 
-- **`sodilaud` command.** Run `sodilaud notes.md` in a terminal to open a file in the main window. Sodilaud starts if it is not running, and the command returns at once. Relative paths resolve from the terminal's folder, and a missing `.md`, `.markdown` or `.txt` file is created empty. Install it from **Command Line Tool…** in the Sodilaud menu (on macOS also in the app menu).
-- **Table columns that fit their values.** Short values such as dates, IDs and times (`2026-09-30`, `LB-01`, `14:00`) stay on one line, while long text columns wrap. This applies in Live mode, Reading mode and **Copy rendered HTML**.
-- **Wide tables scroll.** A table too wide for the window scrolls sideways instead of breaking its values across lines.
+- **Review book skill.** **Agent Access** now also installs the `review-book` skill for Claude Code. When a change is done, the agent writes a folder of Markdown chapters under `.claude/review/<branch>/`: an overview with a diagram, one chapter per functionality, and every diff hunk placed in exactly one chapter. A bundled checker confirms that the book covers the whole diff.
+- **Diff hunks in place.** A ` ```diff path=... ` block shows as a diff with old and new line numbers and syntax highlighting by file type. Its header stays in view while you scroll. **Reviewed** marks a hunk done, and a hunk can be collapsed. Select code inside a hunk to comment on it, and **Next unreviewed** jumps ahead.
+- **Discussion threads.** Comments become threads. Reply to the agent and the agent replies back, with a **New** marker on unread agent replies. The MCP server has a new `reply_comment` tool.
+- **Links between files.** Headings get anchors. `#heading` links scroll, and `chapter.md#heading` links open a file next to the current one. Point at a link to get an arrow that follows it, also inside tables. **Back** and **Forward** in the title bar (`Cmd/Ctrl + [` and `]`, or a mouse's side buttons) return along the links you followed.
+- **Folding and outline.** Fold a section by its heading in Live and Reading mode. The outline panel lists the headings with reviewed-over-total counts, and the status bar shows how many hunks are reviewed.
+- **Files open at the top** and keep their scroll position when you switch between them. Triple-click selects a line without its line break.
 
 ## Limits
 
-- The `sodilaud` command works on macOS and Linux. It has no `--wait` option yet, so it cannot be used as `$EDITOR` or as the editor for commit messages.
-- On macOS the command can be installed only from Sodilaud.app in the Applications folder, not from a development build or a copy macOS still runs from a temporary location.
-- If `~/.local/bin` is not on your PATH, the install dialog shows the line to add to your shell's startup file.
-- Find in Reading mode does not match text that runs from a date or ID in a table into the text next to it.
+- Links to other files, Back and Forward, the outline and the reviewed count work in files, not in Quick Notes.
+- Commenting by clicking a hunk's line number works in Live mode only.
+- The review book needs Claude Code with Sodilaud's MCP server connected.
 
 ## Compatibility
 
-- Installing the command writes one file, `~/.local/bin/sodilaud`. **Command Line Tool…** also updates or removes it, and never changes a file there that Sodilaud did not install.
-- Copied HTML wraps each table in a `div` and short table values in `span` elements, with inline styles so the layout holds when pasted elsewhere.
+- **Indent and outdent move** to `Cmd/Ctrl + Alt + ]` and `[`. `Cmd/Ctrl + [` and `]` now go back and forward.
+- Folds are kept for the session only and never change the file. The **Reviewed** toggle writes a `reviewed` word into the hunk's fence line.
 - Notes, files, settings and workspaces carry over unchanged.
 - Builds are not production-signed; macOS and Windows may display a security warning.
