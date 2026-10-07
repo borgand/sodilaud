@@ -1,0 +1,55 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sodilaud icon: old vs new</title>
+<style>
+  body { margin: 0; padding: 40px; width: 1620px; background: #fff; color: #181e21; font: 14px/1.4 system-ui, sans-serif; }
+  h1 { margin: 0 0 24px; font: 500 22px/1.2 ui-monospace, Menlo, monospace; }
+  .band { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; padding: 24px; margin-bottom: 24px; }
+  .band.light { background: #e4e6eb; }
+  .band.dark { background: #2b2f36; color: #e8eaee; }
+  h2 { margin: 0 0 16px; font: 600 14px/1.2 ui-monospace, Menlo, monospace; text-transform: uppercase; letter-spacing: .04em; }
+  .row { display: flex; align-items: flex-end; gap: 28px; }
+  figure { margin: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+  figcaption { font: 12px ui-monospace, Menlo, monospace; opacity: .75; white-space: nowrap; }
+  img { display: block; }
+</style>
+</head>
+<body>
+<h1>Old icon vs new icon at 16, 32, 128 and 512 px</h1>
+<div class="band light">
+  <section><h2>Old · light Dock / taskbar</h2><div class="row" id="old-light"></div></section>
+  <section><h2>New · light Dock / taskbar</h2><div class="row" id="new-light"></div></section>
+</div>
+<div class="band dark">
+  <section><h2>Old · dark Dock / taskbar</h2><div class="row" id="old-dark"></div></section>
+  <section><h2>New · dark Dock / taskbar</h2><div class="row" id="new-dark"></div></section>
+</div>
+<script>
+  const sizes = [16, 32, 128, 512];
+  const sources = {
+    old: () => "../../images/logo.png",
+    new: (size) => `../icon/png/macos/icon-macos-${size}.png`,
+  };
+  for (const which of ["old", "new"]) {
+    for (const theme of ["light", "dark"]) {
+      const row = document.getElementById(`${which}-${theme}`);
+      for (const size of sizes) {
+        const figure = document.createElement("figure");
+        const img = document.createElement("img");
+        img.src = sources[which](size);
+        img.width = size;
+        img.height = size;
+        img.alt = "";
+        const caption = document.createElement("figcaption");
+        caption.textContent = `${size} px`;
+        figure.append(img, caption);
+        row.append(figure);
+      }
+    }
+  }
+</script>
+</body>
+</html>

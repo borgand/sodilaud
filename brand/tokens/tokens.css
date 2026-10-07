@@ -1,0 +1,186 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+/*
+ * Sodilaud design tokens. Source of truth: tokens.json (same values).
+ *
+ * Everything is namespaced --sod-* so it can sit beside the app's existing
+ * variables and never fights a user theme: brand colours are constants, the
+ * semantic roles (--sod-bg, --sod-text ...) are what a theme may override.
+ * Contrast ratios in the comments were measured with WCAG 2.x.
+ */
+
+:root {
+  /* ---- Brand constants (never themed) -------------------------------- */
+  --sod-ink: #181e21;          /* icon outlines, dark ground */
+  --sod-ink-raised: #242e2e;   /* raised dark surface (Executive sidebar) */
+  --sod-umber: #543529;        /* dark hairlines (Executive border) */
+  --sod-amber: #fdc78e;        /* the scrap; dark-mode text. 11.0:1 on ink */
+  --sod-teal: #1e959d;         /* accent. 4.7:1 on ink; ink on teal 4.7:1 */
+  --sod-teal-deep: #1b676b;    /* dark selection (Executive selection) */
+  --sod-coral: #ee5a3c;        /* the icon tile. ink on coral 4.9:1 */
+  --sod-paper: #f6f2ea;        /* light ground. ink on paper 15.1:1 */
+  --sod-paper-raised: #ece6db;
+  --sod-teal-ink: #146a71;     /* teal for text on paper. 5.7:1 */
+  --sod-coral-ink: #b8351b;    /* coral for text on paper. 5.3:1 */
+
+  /* ---- Type ---------------------------------------------------------- */
+  --sod-font-mono: "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+  --sod-font-sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --sod-text-xs: 11px;
+  --sod-text-sm: 12px;
+  --sod-text-base: 14px;
+  --sod-text-md: 16px;
+  --sod-text-lg: 20px;
+  --sod-text-xl: 28px;
+  --sod-text-2xl: 44px;
+  --sod-leading-tight: 1.15;
+  --sod-leading-base: 1.5;
+  --sod-weight-regular: 400;
+  --sod-weight-medium: 500;    /* wordmark, headings in mono */
+  --sod-weight-strong: 600;
+
+  /* ---- Shape --------------------------------------------------------- */
+  --sod-radius-0: 0;           /* tile content: strict geometry, mitered corners */
+  --sod-radius-1: 2px;         /* kbd, inputs, chips */
+  --sod-radius-2: 4px;         /* buttons, list rows */
+  --sod-radius-3: 8px;         /* popovers, panels */
+  --sod-radius-tile: 22.4%;    /* app icon tile, as a share of its side */
+  --sod-stroke-mark: 6%;       /* icon outline weight, as a share of the tile */
+  --sod-stroke-ui: 2px;        /* UI glyphs on a 24px grid (as today) */
+  --sod-stroke-hairline: 1px;  /* borders and dividers */
+  --sod-focus-ring: 2px solid var(--sod-accent);
+  --sod-focus-offset: 2px;
+
+  /* ---- Spacing (4px base) -------------------------------------------- */
+  --sod-space-1: 2px;
+  --sod-space-2: 4px;
+  --sod-space-3: 8px;
+  --sod-space-4: 12px;
+  --sod-space-5: 16px;
+  --sod-space-6: 24px;
+  --sod-space-7: 32px;
+  --sod-space-8: 48px;
+  --sod-space-9: 64px;
+
+  /* ---- Elevation: flat. Hairlines first, one soft shadow for popovers. */
+  --sod-elevation-0: none;
+  --sod-glow: none;            /* no glow, anywhere */
+
+  /* ---- Motion --------------------------------------------------------- */
+  --sod-ease: cubic-bezier(0.16, 1, 0.3, 1); /* same curve as --transition-easing today */
+  --sod-duration-fast: 90ms;
+  --sod-duration-base: 140ms;  /* panel summon: fade + 2% scale */
+  --sod-duration-slow: 220ms;
+
+  /* ---- Roles, dark (default). Values are the built-in Executive theme. */
+  color-scheme: dark;
+  --sod-bg: var(--sod-ink);
+  --sod-surface: var(--sod-ink-raised);
+  --sod-text: var(--sod-amber);     /* 11.0:1 on bg, 9.1:1 on surface */
+  --sod-text-muted: #bfa285;        /* 7.0:1 on bg, 5.8:1 on surface */
+  --sod-accent: var(--sod-teal);    /* graphics, fills, focus ring; not text on surface (3.9:1) */
+  --sod-accent-fg: var(--sod-ink);
+  --sod-brand: var(--sod-coral);
+  --sod-brand-fg: var(--sod-ink);
+  --sod-selection: var(--sod-teal-deep);
+  --sod-selection-fg: var(--sod-paper); /* 5.9:1 on selection; amber on it is only 4.3:1 */
+  --sod-border: var(--sod-umber);
+  --sod-elevation-1: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+/* ---- Roles, light. */
+:root[data-theme="light"],
+:root.theme-light {   /* the class src/themes.js already toggles */
+  color-scheme: light;
+  --sod-bg: var(--sod-paper);
+  --sod-surface: var(--sod-paper-raised);
+  --sod-text: var(--sod-ink);       /* 15.1:1 on bg */
+  --sod-text-muted: #5b6468;        /* 5.4:1 on bg, 4.9:1 on surface */
+  --sod-accent: var(--sod-teal-ink);
+  --sod-accent-fg: var(--sod-paper);
+  --sod-brand: var(--sod-coral-ink);
+  --sod-brand-fg: var(--sod-paper);
+  --sod-selection: #cde5e3;         /* ink on selection 12.8:1 */
+  --sod-selection-fg: var(--sod-ink);
+  --sod-border: #d4ccbf;
+  --sod-elevation-1: 0 8px 24px rgba(24, 30, 33, 0.16);
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]):not(.theme-dark) {
+    color-scheme: light;
+    --sod-bg: var(--sod-paper);
+    --sod-surface: var(--sod-paper-raised);
+    --sod-text: var(--sod-ink);
+    --sod-text-muted: #5b6468;
+    --sod-accent: var(--sod-teal-ink);
+    --sod-accent-fg: var(--sod-paper);
+    --sod-brand: var(--sod-coral-ink);
+    --sod-brand-fg: var(--sod-paper);
+    --sod-selection: #cde5e3;
+    --sod-selection-fg: var(--sod-ink);
+    --sod-border: #d4ccbf;
+    --sod-elevation-1: 0 8px 24px rgba(24, 30, 33, 0.16);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --sod-duration-fast: 0ms;
+    --sod-duration-base: 0ms;
+    --sod-duration-slow: 0ms;
+  }
+}
+
+/*
+ * ---- Optional: map the roles onto today's src/styles.css variables -------
+ * Apply by adding data-brand="sodilaud" to <html>. Imported or built-in user
+ * themes keep winning, because themes.js writes these same variables inline
+ * after load. The old --accent-glow is intentionally flattened to transparent.
+ */
+:root[data-brand="sodilaud"] {
+  --bg-app: var(--sod-bg);
+  --editor-bg: var(--sod-bg);
+  --preview-bg: var(--sod-bg);
+  --bg-sidebar: var(--sod-surface);
+  --sidebar-bg: var(--sod-surface);
+  --topbar-bg: var(--sod-surface);
+  --statusbar-bg: var(--sod-surface);
+  --dropdown-bg: var(--sod-surface);
+  --bg-input: var(--sod-surface);
+  --border-color: var(--sod-border);
+  --text-primary: var(--sod-text);
+  --editor-text: var(--sod-text);
+  --preview-text: var(--sod-text);
+  --text-secondary: var(--sod-text-muted);
+  --text-muted: var(--sod-text-muted);
+  --accent-color: var(--sod-accent);
+  --accent-hover: var(--sod-brand);
+  --accent-glow: transparent;
+  --bg-note-active: var(--sod-selection);
+  --text-on-active: var(--sod-selection-fg);
+  --border-note-active: var(--sod-accent);
+  --preview-quote-border: var(--sod-accent);
+}
+
+/*
+ * ---- Optional: map onto site/styles.css (replaces the purple tokens) ------
+ * Paste into the site's :root. The site is dark-only today.
+ */
+/*
+:root {
+  --bg: var(--sod-ink);
+  --bg-soft: var(--sod-ink-raised);
+  --panel: var(--sod-ink-raised);
+  --panel-solid: var(--sod-ink-raised);
+  --text: var(--sod-amber);
+  --muted: #bfa285;
+  --subtle: #a8967f;
+  --purple: var(--sod-coral);        // rename to --accent when you next touch it
+  --purple-light: var(--sod-amber);
+  --purple-dark: var(--sod-teal-deep);
+  --border: var(--sod-umber);
+  --border-bright: var(--sod-teal);
+  --mono: var(--sod-font-mono);
+  --sans: var(--sod-font-sans);
+}
+*/
