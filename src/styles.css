@@ -3726,6 +3726,27 @@ kbd {
   cursor: pointer;
 }
 
+/* The gutter's comment dot, drawn on the commented row inside the widget.
+   The old-line cell is sticky, so the dot stays visible while scrolling sideways. */
+.diff-hunk .diff-comment-dot {
+  position: absolute;
+  left: 2px;
+  cursor: pointer;
+  font-size: 0.6rem;
+}
+
+.diff-hunk .diff-meta > .diff-comment-dot {
+  position: static;
+  margin-right: 6px;
+}
+
+.diff-hunk .diff-comment-dot::before {
+  content: "●";
+}
+
+.diff-comment-dot-owner { color: var(--accent-color); }
+.diff-comment-dot-agent { color: #b07cd8; }
+
 .diff-hunk-comment-button {
   position: absolute;
   z-index: 3;
