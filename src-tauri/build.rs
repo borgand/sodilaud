@@ -27,6 +27,7 @@ fn main() {
             "comment_edit",
             "comment_delete",
             "comment_resolve",
+            "comment_mark_read",
             "comment_resend",
             "comments_send_review",
             "comments_clear_resolved",

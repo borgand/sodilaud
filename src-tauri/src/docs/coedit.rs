@@ -155,6 +155,18 @@ fn pending_view(doc: &DocRef, comment: &Comment, all: &[Comment], text: &str) ->
             .find(|parent| &parent.id == id)
             .map(|parent| json!({ "id": parent.id, "body": parent.body }))
     });
+    let thread: Vec<Value> = comments::thread(all, comment.root_id())
+        .into_iter()
+        .filter(|c| c.state != State::Held)
+        .map(|c| {
+            json!({
+                "id": c.id,
+                "author": c.author,
+                "body": c.body,
+                "createdAt": c.created_at,
+            })
+        })
+        .collect();
     let mut view = json!({
         "id": comment.id,
         "doc": doc.json(),
@@ -164,6 +176,7 @@ fn pending_view(doc: &DocRef, comment: &Comment, all: &[Comment], text: &str) ->
         "contextAfter": after,
         "body": comment.body,
         "createdAt": comment.created_at,
+        "thread": thread,
     });
     if let Some(reply_to) = reply_to {
         view["replyTo"] = reply_to;
@@ -171,23 +184,43 @@ fn pending_view(doc: &DocRef, comment: &Comment, all: &[Comment], text: &str) ->
     view
 }
 
-/// Resolves a comment and, for an answer to an agent's question, the question.
+/// Resolves a comment's whole thread; the note goes on the comment named.
 fn resolve_in(all: &mut [Comment], id: &str, note: Option<String>) -> Option<Comment> {
     let now = now_ms();
     let index = all.iter().position(|c| c.id == id)?;
-    let parent = all[index].reply_to.clone();
+    let root = all[index].root_id().to_string();
     if !all[index].is_resolved() {
-        all[index].state = State::Resolved;
         all[index].note = note;
-        all[index].updated_at = now;
     }
-    if let Some(parent) = parent.and_then(|id| all.iter_mut().find(|c| c.id == id)) {
-        if !parent.is_resolved() {
-            parent.state = State::Resolved;
-            parent.updated_at = now;
+    for comment in all.iter_mut().filter(|c| c.root_id() == root) {
+        if !comment.is_resolved() {
+            comment.state = State::Resolved;
+            comment.updated_at = now;
         }
     }
     Some(all[index].clone())
+}
+
+/// The unresolved thread a reply to `id` joins: its root's ID and range.
+fn open_thread(all: &[Comment], id: &str) -> Result<(String, (usize, usize)), String> {
+    let root = comments::thread_root(all, id).ok_or("The comment you are answering is gone")?;
+    if root.is_resolved() {
+        return Err("This thread is resolved; it can no longer be answered".into());
+    }
+    Ok((root.id.clone(), (root.from, root.to)))
+}
+
+/// A reply shows its root's anchor, even when the root lost its text.
+fn share_anchor(reply: &mut Comment, all: &[Comment]) {
+    if let Some(root) = reply
+        .reply_to
+        .as_deref()
+        .and_then(|id| all.iter().find(|c| c.id == id))
+    {
+        reply.anchored_text = root.anchored_text.clone();
+        reply.heading_path = root.heading_path.clone();
+        reply.orphaned = root.orphaned;
+    }
 }
 
 fn find_occurrence(
@@ -581,6 +614,47 @@ impl Registry {
         docs
     }
 
+    /// An agent's reply on the unresolved thread holding comment `id`,
+    /// wherever it is. The thread stays open.
+    pub(crate) fn coedit_reply(
+        &self,
+        id: &str,
+        body: &str,
+        request_id: &str,
+    ) -> Result<Value, String> {
+        let fingerprint = json!(["reply_comment", id, body]).to_string();
+        self.with_receipt(request_id, fingerprint, || {
+            for doc in self.documents() {
+                let replied = self.on_doc(&doc, |collab| {
+                    if !collab.comments.iter().any(|c| c.id == id) {
+                        return Ok(None);
+                    }
+                    let (root, range) = open_thread(&collab.comments, id)?;
+                    let mut reply = Comment::new(
+                        Author::Agent,
+                        State::Open,
+                        collab.text(),
+                        range,
+                        body.to_string(),
+                        Some(root),
+                        now_ms(),
+                    );
+                    share_anchor(&mut reply, &collab.comments);
+                    let view = agent_view(&reply, collab.text());
+                    collab.comments.push(reply);
+                    collab.comments_changed();
+                    Ok(Some(view))
+                })?;
+                if let Some(view) = replied {
+                    return Ok(json!({ "comment": view }));
+                }
+            }
+            Err(format!(
+                "No comment with id `{id}` is in an open document; it may have been deleted"
+            ))
+        })
+    }
+
     /// Resolves a comment by ID wherever it is, with a note for the owner.
     pub(crate) fn coedit_resolve(&self, id: &str, note: &str) -> Result<Value, String> {
         for doc in self.documents() {
@@ -671,8 +745,8 @@ impl Registry {
         })
     }
 
-    /// The owner's comment on `from..to` of the text at `version`, or an
-    /// answer to an agent's comment, which takes that comment's range.
+    /// The owner's comment on `from..to` of the text at `version`, or a reply
+    /// on the unresolved thread holding `reply_to`, which takes its range.
     pub(crate) fn comment_add(
         &self,
         page: &PageDoc,
@@ -688,17 +762,10 @@ impl Registry {
         let doc = self.page_doc(page)?;
         let hold = self.coedit().hold.load(Ordering::SeqCst);
         let comment = self.on_doc(&doc, |collab| {
-            let range = match reply_to {
-                Some(parent) => {
-                    let parent = collab
-                        .comments
-                        .iter()
-                        .find(|c| c.id == parent)
-                        .ok_or("The comment you are answering is gone")?;
-                    if parent.author != Author::Agent || parent.is_resolved() {
-                        return Err("Only an open agent comment can be answered".into());
-                    }
-                    (parent.from, parent.to)
+            let (root, range) = match reply_to {
+                Some(id) => {
+                    let (root, range) = open_thread(&collab.comments, id)?;
+                    (Some(root), range)
                 }
                 None => {
                     let since = collab
@@ -713,18 +780,19 @@ impl Registry {
                     if end <= start || end > changes::utf16_len(collab.text()) {
                         return Err("The selected text changed; select it again".into());
                     }
-                    (start, end)
+                    (None, (start, end))
                 }
             };
-            let comment = Comment::new(
+            let mut comment = Comment::new(
                 Author::Owner,
                 if hold { State::Held } else { State::Queued },
                 collab.text(),
                 range,
                 body.to_string(),
-                reply_to.map(str::to_string),
+                root,
                 now_ms(),
             );
+            share_anchor(&mut comment, &collab.comments);
             collab.comments.push(comment.clone());
             collab.comments_changed();
             Ok(comment)
@@ -799,6 +867,29 @@ impl Registry {
         self.change_comment(page, id, |all, _| {
             resolve_in(all, id, None);
             Ok(false)
+        })
+    }
+
+    /// The owner opened the thread holding `id`: its agent comments are read.
+    pub(crate) fn comment_mark_read(&self, page: &PageDoc, id: &str) -> Result<(), String> {
+        let doc = self.page_doc(page)?;
+        self.on_doc(&doc, |collab| {
+            let root = comments::thread_root(&collab.comments, id)
+                .map(|root| root.id.clone())
+                .ok_or("This comment no longer exists")?;
+            let mut changed = false;
+            for comment in collab
+                .comments
+                .iter_mut()
+                .filter(|c| c.unread && c.root_id() == root)
+            {
+                comment.unread = false;
+                changed = true;
+            }
+            if changed {
+                collab.comments_changed();
+            }
+            Ok(())
         })
     }
 
@@ -1062,6 +1153,103 @@ mod tests {
         assert!(registry
             .comment_add(&page(&collection, "a"), 0, (0, 1), "x", Some(&reply.id))
             .is_err());
+    }
+
+    #[test]
+    fn a_thread_takes_replies_from_both_sides_until_either_resolves_it() {
+        let (registry, _, collection) = shared(&[note("a", "Use a queue here.", 1)]);
+        let doc = DocRef::Note("a".into());
+        let page = page(&collection, "a");
+        let root = registry
+            .comment_add(&page, 0, (6, 11), "Why a queue?", None)
+            .unwrap();
+        assert_eq!(registry.coedit_take_pending(None).len(), 1);
+        let answer = registry
+            .coedit_reply(&root.id, "Bursts outrun the writer.", "r1")
+            .unwrap();
+        let answer_id = answer["comment"]["id"].as_str().unwrap().to_string();
+        assert_eq!(answer["comment"]["replyTo"], json!(root.id));
+        assert_eq!(answer["comment"]["anchoredText"], "queue");
+        assert_eq!(
+            registry
+                .coedit_reply(&root.id, "Bursts outrun the writer.", "r1")
+                .unwrap(),
+            answer,
+            "a retry returns the first reply"
+        );
+        // The owner answers the agent's reply; it joins the root's thread.
+        registry.set_hold_for_review(true);
+        let held = registry
+            .comment_add(&page, 0, (0, 0), "How big are bursts?", Some(&answer_id))
+            .unwrap();
+        assert_eq!(held.state, State::Held);
+        assert_eq!(held.reply_to.as_deref(), Some(root.id.as_str()));
+        assert_eq!((held.from, held.to), (root.from, root.to));
+        assert!(registry.coedit_take_pending(None).is_empty());
+        assert_eq!(registry.comments_send_review(&page).unwrap(), 1);
+        let pending = registry.coedit_take_pending(Some(&doc));
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0]["id"], json!(held.id));
+        assert_eq!(pending[0]["replyTo"]["id"], json!(root.id));
+        let thread: Vec<_> = pending[0]["thread"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| (c["author"].clone(), c["body"].clone()))
+            .collect();
+        assert_eq!(
+            thread,
+            vec![
+                (json!("owner"), json!("Why a queue?")),
+                (json!("agent"), json!("Bursts outrun the writer.")),
+                (json!("owner"), json!("How big are bursts?")),
+            ]
+        );
+        let read = registry.coedit_read(&doc, 0, 100).unwrap();
+        assert_eq!(read["comments"].as_array().unwrap().len(), 3);
+        // The owner resolves from the panel: the whole thread closes.
+        registry.comment_resolve(&page, &answer_id).unwrap();
+        let all = registry.comments_get(&page).unwrap().comments;
+        assert!(all.iter().all(Comment::is_resolved));
+        assert!(registry.coedit_reply(&root.id, "late", "r2").is_err());
+        assert!(registry
+            .comment_add(&page, 0, (0, 0), "late", Some(&root.id))
+            .is_err());
+    }
+
+    #[test]
+    fn agent_comments_are_unread_until_the_owner_opens_the_thread() {
+        let (registry, _, collection) = shared(&[note("a", "alpha beta", 1)]);
+        let doc = DocRef::Note("a".into());
+        let page = page(&collection, "a");
+        let asked = registry
+            .coedit_add_comment(&doc, "beta", None, "Why beta?", "c1")
+            .unwrap();
+        let id = asked["comment"]["id"].as_str().unwrap().to_string();
+        let owner = registry
+            .comment_add(&page, 0, (0, 0), "Because.", Some(&id))
+            .unwrap();
+        assert!(!owner.unread);
+        registry.coedit_reply(&owner.id, "Thanks", "r1").unwrap();
+        let unread = |registry: &Registry| {
+            registry
+                .comments_get(&page)
+                .unwrap()
+                .comments
+                .iter()
+                .filter(|c| c.unread)
+                .count()
+        };
+        assert_eq!(unread(&registry), 2);
+        registry.comment_mark_read(&page, &owner.id).unwrap();
+        assert_eq!(unread(&registry), 0);
+        assert!(registry.comment_mark_read(&page, "c_gone").is_err());
+        let legacy: Comment = serde_json::from_value(json!({
+            "id": "c_old", "author": "agent", "state": "open", "from": 0, "to": 5,
+            "anchoredText": "alpha", "body": "old", "createdAt": 1, "updatedAt": 1
+        }))
+        .unwrap();
+        assert!(!legacy.unread, "stored comments without the flag are read");
     }
 
     #[test]

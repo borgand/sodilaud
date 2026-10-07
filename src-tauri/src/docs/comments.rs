@@ -49,8 +49,13 @@ pub(crate) struct Comment {
     pub(crate) body: String,
     #[serde(default)]
     pub(crate) note: Option<String>,
+    /// The root of the thread this comment answers. Always a root, never
+    /// another reply.
     #[serde(default)]
     pub(crate) reply_to: Option<String>,
+    /// An agent's comment the owner has not opened yet.
+    #[serde(default)]
+    pub(crate) unread: bool,
     pub(crate) created_at: i64,
     pub(crate) updated_at: i64,
 }
@@ -77,6 +82,7 @@ impl Comment {
             body,
             note: None,
             reply_to,
+            unread: author == Author::Agent,
             created_at: now,
             updated_at: now,
         }
@@ -98,6 +104,25 @@ impl Comment {
     pub(crate) fn is_resolved(&self) -> bool {
         self.state == State::Resolved
     }
+
+    /// The ID of the thread's root: its own for a root.
+    pub(crate) fn root_id(&self) -> &str {
+        self.reply_to.as_deref().unwrap_or(&self.id)
+    }
+}
+
+/// The root a comment's thread hangs from, by the ID of any comment in it.
+pub(crate) fn thread_root<'a>(all: &'a [Comment], id: &str) -> Option<&'a Comment> {
+    let comment = all.iter().find(|c| c.id == id)?;
+    let root = comment.root_id();
+    all.iter().find(|c| c.id == root)
+}
+
+/// The root and every reply, oldest first.
+pub(crate) fn thread<'a>(all: &'a [Comment], root: &str) -> Vec<&'a Comment> {
+    let mut found: Vec<&Comment> = all.iter().filter(|c| c.root_id() == root).collect();
+    found.sort_by_key(|c| (c.reply_to.is_some(), c.created_at));
+    found
 }
 
 /// A document's comments as they are now, for the window that shows it.
