@@ -15,8 +15,25 @@ import { modeFacet } from "./editor-view.js";
 import { isSafeMarkdownUrl, renderMarkdown, resolveLinkAction } from "./markdown.js";
 import { scrollToAnchor } from "./editor-anchors.js";
 import { buildHunkElement, reviewHunkMeta } from "./diff-hunk.js";
-import { hunkFenceAt, selectHunkLine, setFenceReviewed } from "./editor-hunks.js";
-import { startComment } from "./editor-comments.js";
+import { paintMarks, setHunkComposer } from "./hunk-comments.js";
+import {
+  hunkFenceAt,
+  hunkLineRange,
+  hunkMarks,
+  hunkOffsetPosition,
+  hunkSpanRange,
+  reviewHunkFence,
+  setFenceReviewed
+} from "./editor-hunks.js";
+import {
+  activeComment,
+  commentComposer,
+  commentsDiffer,
+  createComposerElement,
+  selectComment,
+  shownComments,
+  startCommentAt
+} from "./editor-comments.js";
 
 const TABLE_CACHE_LIMIT = 200;
 const tableHtmlCache = new Map();
@@ -244,22 +261,64 @@ class TableWidget extends WidgetType {
   }
 }
 
+// What a hunk widget shows of the comments: marks on commented code and the
+// open composer, when it is for code in this hunk. CodeMirror's own comment
+// decorations and composer cannot show inside a replacing widget.
+function hunkReview(state, found) {
+  const active = activeComment(state);
+  const ranges = shownComments(state)
+    .filter(comment => !comment.orphaned && comment.state !== "resolved" && comment.to > comment.from)
+    .map(comment => ({
+      id: comment.id,
+      from: comment.from,
+      to: comment.to,
+      className: `cm-comment cm-comment-${comment.author}${comment.id === active ? " cm-comment-active" : ""}`
+    }));
+  const composer = commentComposer(state);
+  const hosted = composer?.hosted ? hunkMarks(state, found, [{ ...composer, className: "cm-comment cm-comment-draft" }]) : [];
+  return {
+    marks: [...hunkMarks(state, found, ranges), ...hosted],
+    composer: hosted.length ? { key: composer.key, row: hunkOffsetPosition(state, found, composer.to).row } : null
+  };
+}
+
+const sameReview = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+function showReview(dom, view, review) {
+  paintMarks(dom, review.marks);
+  const resized = setHunkComposer(dom, review.composer, () => createComposerElement(view, review.composer.key));
+  if (resized) view.requestMeasure();
+}
+
 // A review-book diff hunk. Its controls write to the document; clicking the
-// path reveals the fence for editing.
+// path reveals the fence for editing. Code is selected inside the widget and
+// commented on there, so reading a hunk never turns it back into source.
 class HunkWidget extends WidgetType {
-  constructor(info, body) {
+  constructor(info, body, review) {
     super();
     this.info = info;
     this.body = body;
+    this.review = review;
   }
 
   eq(other) {
-    return other.info === this.info && other.body === this.body;
+    return other.info === this.info && other.body === this.body && sameReview(other.review, this.review);
+  }
+
+  // Comments changing must not rebuild the widget: a rebuilt widget far above
+  // the viewport moves the reader (see dispatchChange in editor-hunks.js).
+  updateDOM(dom, view) {
+    if (dom.hunkInfo !== this.info || dom.hunkBody !== this.body) return false;
+    showReview(dom, view, this.review);
+    return true;
   }
 
   toDOM(view) {
     let element = null;
     const fenceHere = () => hunkFenceAt(view.state, view.posAtDOM(element));
+    const comment = range => {
+      if (range) startCommentAt(view, range.from, range.to, { hosted: true });
+    };
     element = buildHunkElement(view.dom.ownerDocument, {
       meta: reviewHunkMeta(this.info),
       body: this.body,
@@ -270,13 +329,26 @@ class HunkWidget extends WidgetType {
       },
       onLineComment: index => {
         const found = fenceHere();
-        if (!found) return;
-        view.focus();
-        if (selectHunkLine(view, found, index)) startComment(view);
+        if (found) comment(hunkLineRange(view.state, found, index));
       },
       // Collapsing changes the widget's height behind CodeMirror's back.
-      onToggleCollapsed: () => view.requestMeasure()
+      onToggleCollapsed: () => view.requestMeasure(),
+      codeComments: {
+        // A focused editor would take the selection as a caret at the widget
+        // and reveal the fence.
+        onStart: () => {
+          if (view.hasFocus) view.contentDOM.blur();
+        },
+        onComment: span => {
+          const found = fenceHere();
+          if (found) comment(hunkSpanRange(view.state, found, span));
+        },
+        onMarkClick: id => selectComment(view, id)
+      }
     });
+    element.hunkInfo = this.info;
+    element.hunkBody = this.body;
+    showReview(element, view, this.review);
     element.classList.add("cm-lp-hunk");
     element.querySelector(".diff-hunk-path").addEventListener("mousedown", event => {
       if (!isPrimaryClick(event, view)) return;
@@ -550,7 +622,8 @@ function buildBlocks(state, focused) {
       }
       if (isHunk) {
         if (!inside) {
-          const widget = new HunkWidget(hunkInfo, fenceBody(state, ref.node));
+          const review = hunkReview(state, reviewHunkFence(state, ref.node));
+          const widget = new HunkWidget(hunkInfo, fenceBody(state, ref.node), review);
           ranges.push(Decoration.replace({ widget, block: true }).range(start.from, end.to));
         }
         return false;
@@ -580,6 +653,7 @@ const blockField = StateField.define({
       refreshed ||
       tr.docChanged ||
       tr.selection !== undefined ||
+      commentsDiffer(tr.startState, tr.state) ||
       tr.startState.facet(modeFacet) !== tr.state.facet(modeFacet) ||
       syntaxTree(tr.startState) !== syntaxTree(tr.state);
     if (!changed) return value;
