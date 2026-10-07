@@ -15,6 +15,7 @@ import { findReadingAnchor, scrollToReadingAnchor } from "./anchors.js";
 import { documentAnchors, scrollToAnchor } from "./editor-anchors.js";
 import { highlightPreviewCode } from "./syntax-highlighting.js";
 import { renderHunkWidgets } from "./diff-hunk.js";
+import { createNavHistory } from "./nav-history.js";
 import { reviewHunkFences, setHunkReviewed } from "./editor-hunks.js";
 import { foldedSections, revealAnchor, sectionFolding, setSectionFolded } from "./editor-folds.js";
 import {
@@ -62,6 +63,8 @@ export function createFileEditor({
   const outlineToggle = $("outline-toggle-btn");
   const outlineList = $("outline-list");
   const reviewStatus = $("review-progress");
+  const backButton = $("nav-back-btn");
+  const forwardButton = $("nav-forward-btn");
   const banner = $("file-banner");
   const bannerText = $("file-banner-text");
   const bannerPrimary = $("file-banner-primary-btn");
@@ -79,6 +82,7 @@ export function createFileEditor({
   let shownId = null;
   let recent = [];
   let outlineTimer = null;
+  const navHistory = createNavHistory();
 
   const editor = createMarkdownEditor({
     parent: $("editor-host"),
@@ -89,7 +93,7 @@ export function createFileEditor({
     lineNumbers: appearance.lineNumbers,
     extensions: [
       markdownEditingCommands(),
-      livePreview({ onOpenLink: followLink, mermaid }),
+      livePreview({ onOpenLink: followLink, onFollowAnchor: jumpTo, mermaid }),
       sectionFolding(),
       commentsExtension({
         onSubmit: (view, comment) => comments.submit(view, comment),
@@ -284,7 +288,7 @@ export function createFileEditor({
     const hunks = buffer ? reviewHunkFences(state) : [];
     const entries = buffer ? outlineEntries(documentAnchors(state), hunks, state.doc.length) : [];
     outlineSection.hidden = entries.length === 0;
-    if (entries.length) renderOutlineList(outlineList, entries, scrollToFragment);
+    if (entries.length) renderOutlineList(outlineList, entries, jumpTo);
     const progress = reviewProgress(hunks);
     reviewStatus.hidden = progress.total === 0;
     reviewStatus.textContent = reviewProgressText(progress);
@@ -329,6 +333,7 @@ export function createFileEditor({
     renderTitle();
     renderSidebar();
     renderOutline();
+    renderNav();
     renderBanner();
     renderMenu();
   }
@@ -507,7 +512,7 @@ export function createFileEditor({
       return;
     }
     if (action.kind === "anchor") {
-      scrollToFragment(action.fragment);
+      await jumpTo(action.fragment);
       return;
     }
     const fromPath = showingStartPage ? null : model.active()?.path;
@@ -519,8 +524,55 @@ export function createFileEditor({
       console.warn(`Not opening ${action.path}`, error);
       return;
     }
-    const buffer = await openPath(target.path);
-    if (buffer && action.fragment) scrollToFragment(action.fragment);
+    await jump(async () => {
+      const buffer = await openPath(target.path);
+      if (buffer && action.fragment) scrollToFragment(action.fragment);
+    }, action.fragment);
+  }
+
+  // ----------------------------------------------------
+  // Back and forward
+  // ----------------------------------------------------
+  const scroller = () => (layoutMode === "reading" ? preview : editor.view.scrollDOM);
+
+  function currentPlace() {
+    const path = showingStartPage ? null : model.active()?.path;
+    return path ? { path, top: Math.round(scroller().scrollTop) } : null;
+  }
+
+  function jumpTo(fragment) {
+    return jump(() => scrollToFragment(fragment), fragment);
+  }
+
+  // Records a link jump so Back returns to where it started.
+  async function jump(go, anchor) {
+    const from = currentPlace();
+    await go();
+    const to = currentPlace();
+    navHistory.visit(from, to && anchor ? { ...to, anchor } : to);
+    renderNav();
+  }
+
+  async function goTo(place) {
+    renderNav();
+    if (!place) return;
+    if (showingStartPage || model.active()?.path !== place.path) {
+      if (!(await openPath(place.path))) return;
+    }
+    const restore = () => { scroller().scrollTop = place.top; };
+    restore();
+    preview.ownerDocument.defaultView?.requestAnimationFrame?.(restore);
+  }
+
+  const goBack = () => goTo(navHistory.back(currentPlace()));
+  const goForward = () => goTo(navHistory.forward(currentPlace()));
+
+  function renderNav() {
+    const hidden = model.list().length === 0;
+    backButton.hidden = hidden;
+    forwardButton.hidden = hidden;
+    backButton.disabled = !navHistory.canBack();
+    forwardButton.disabled = !navHistory.canForward();
   }
 
   async function openRecent(file) {
@@ -736,6 +788,15 @@ export function createFileEditor({
     }
     sidebarToggle.addEventListener("click", toggleSidebar);
     outlineToggle.addEventListener("click", toggleOutline);
+    backButton.addEventListener("click", goBack);
+    forwardButton.addEventListener("click", goForward);
+    // The side buttons of a mouse, as in a browser.
+    $("file-editor").addEventListener("mouseup", (event) => {
+      if (event.button !== 3 && event.button !== 4) return;
+      event.preventDefault();
+      if (event.button === 3) goBack();
+      else goForward();
+    });
     preview.addEventListener("click", (event) => {
       const link = event.target.closest("a[href]");
       if (!link) return;
@@ -769,6 +830,9 @@ export function createFileEditor({
     // Ctrl+Cmd+S toggles the sidebar on macOS.
     else if (key === "s" && !event.shiftKey && !(event.ctrlKey && event.metaKey) && model.active()) action = () => save();
     else if (key === "w" && !event.shiftKey && model.active() && !showingStartPage) action = () => closeFile();
+    // Cmd+[ and Cmd+] go Back and Forward, as in a browser.
+    else if (event.key === "[" && !event.shiftKey && model.list().length) action = goBack;
+    else if (event.key === "]" && !event.shiftKey && model.list().length) action = goForward;
     if (!action) return false;
     event.preventDefault();
     action();

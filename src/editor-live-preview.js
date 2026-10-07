@@ -126,6 +126,12 @@ class ImageWidget extends WidgetType {
 const MERMAID_TYPING_PAUSE_MS = 300;
 
 const mermaidFacet = Facet.define({ combine: values => values.find(Boolean) ?? null });
+const followFacet = Facet.define({ combine: values => values.find(Boolean) ?? null });
+
+function followHref(view, href) {
+  const follow = view.state.facet(followFacet);
+  if (follow) follow(view, href);
+}
 
 function showMermaid(wrapper, view, widget) {
   const { renderer, source } = widget;
@@ -218,6 +224,12 @@ class TableWidget extends WidgetType {
     wrapper.className = "cm-lp-table markdown-preview";
     wrapper.innerHTML = tableHtml(this.source);
     wrapper.addEventListener("mousedown", event => {
+      const link = eventElement(event)?.closest("a[href]");
+      if (link && isOpenLinkClick(event, view)) {
+        event.preventDefault();
+        followHref(view, link.getAttribute("href"));
+        return;
+      }
       if (!isPrimaryClick(event, view)) return;
       event.preventDefault();
       const anchor = view.posAtDOM(wrapper);
@@ -625,12 +637,23 @@ function isPrimaryClick(event, view) {
  * unless the mode facet is "live".
  *
  * @param {object} [options]
- * @param {(href: string) => void} [options.onOpenLink] called on Cmd-click (Ctrl-click off macOS) of a link;
- *   `#anchor` links scroll the editor instead
+ * @param {(href: string) => void} [options.onOpenLink] called when a link is followed: Cmd-click
+ *   (Ctrl-click off macOS) or its hover button; `#anchor` links go to onFollowAnchor instead
+ * @param {(fragment: string) => void} [options.onFollowAnchor] called for `#anchor` links; without
+ *   one, the editor scrolls to the anchor itself
  * @param {object} [options.mermaid] a renderer from createMermaidRenderer; without one,
  *   mermaid blocks stay code blocks
  */
-export function livePreview({ onOpenLink, mermaid } = {}) {
+export function livePreview({ onOpenLink, onFollowAnchor, mermaid } = {}) {
+  const follow = (view, href) => {
+    const action = resolveLinkAction(href);
+    if (action.kind === "anchor") {
+      if (onFollowAnchor) onFollowAnchor(action.fragment);
+      else scrollToAnchor(view, action.fragment);
+    } else if (action.kind !== "ignore") {
+      onOpenLink?.(href);
+    }
+  };
   const handlers = EditorView.domEventHandlers({
     mousedown(event, view) {
       if (!isLive(view.state)) return false;
@@ -657,10 +680,7 @@ export function livePreview({ onOpenLink, mermaid } = {}) {
         const link = element.closest(".cm-lp-link");
         if (link) {
           event.preventDefault();
-          const href = link.getAttribute("data-href") ?? "";
-          const action = resolveLinkAction(href);
-          if (action.kind === "anchor") scrollToAnchor(view, action.fragment);
-          else onOpenLink?.(href);
+          follow(view, link.getAttribute("data-href") ?? "");
           return true;
         }
       }
@@ -668,5 +688,96 @@ export function livePreview({ onOpenLink, mermaid } = {}) {
     }
   });
 
-  return [mermaidFacet.of(mermaid ?? null), blockField, blockFocusSync, mermaidThemeSync, inlinePreview, handlers];
+  return [
+    mermaidFacet.of(mermaid ?? null),
+    followFacet.of(follow),
+    blockField,
+    blockFocusSync,
+    mermaidThemeSync,
+    inlinePreview,
+    followButton,
+    handlers
+  ];
 }
+
+const FOLLOW_HIDE_DELAY_MS = 300;
+const linkHref = link => link.getAttribute("data-href") ?? link.getAttribute("href") ?? "";
+
+// A plain click places the cursor and reveals a link's Markdown, so hovering a
+// rendered link shows a button that follows it without touching the cursor.
+// It sits outside the content DOM, where CodeMirror's own handlers never see it.
+const followButton = ViewPlugin.fromClass(class {
+  constructor(view) {
+    this.view = view;
+    this.link = null;
+    this.hideTimer = null;
+    const document = view.dom.ownerDocument;
+    this.button = document.createElement("button");
+    this.button.type = "button";
+    this.button.className = "cm-lp-follow";
+    this.button.setAttribute("aria-label", "Follow link");
+    this.button.hidden = true;
+    this.button.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17L17 7M9 7h8v8" /></svg>';
+    this.button.addEventListener("mousedown", event => event.preventDefault());
+    this.button.addEventListener("click", event => {
+      event.preventDefault();
+      const href = this.link ? linkHref(this.link) : "";
+      this.hide();
+      if (href) followHref(view, href);
+    });
+    this.button.addEventListener("mouseenter", () => clearTimeout(this.hideTimer));
+    this.button.addEventListener("mouseleave", () => this.scheduleHide());
+    this.onOver = event => this.over(event);
+    this.onScroll = () => this.hide();
+    this.onLeave = () => this.scheduleHide();
+    view.dom.append(this.button);
+    view.dom.addEventListener("mouseover", this.onOver);
+    view.dom.addEventListener("mouseleave", this.onLeave);
+    view.scrollDOM.addEventListener("scroll", this.onScroll);
+  }
+
+  over(event) {
+    const element = eventElement(event);
+    if (!element || this.button.contains(element)) return;
+    const link = isLive(this.view.state) ? element.closest(".cm-lp-link, .cm-lp-table a[href]") : null;
+    if (!link) {
+      if (this.link) this.scheduleHide();
+      return;
+    }
+    clearTimeout(this.hideTimer);
+    if (link === this.link && !this.button.hidden) return;
+    const href = linkHref(link);
+    if (resolveLinkAction(href).kind === "ignore") return;
+    this.link = link;
+    const rects = link.getClientRects();
+    const rect = rects.length ? rects[rects.length - 1] : link.getBoundingClientRect();
+    const host = this.view.dom.getBoundingClientRect();
+    this.button.style.left = `${rect.right - host.left + 2}px`;
+    this.button.style.top = `${rect.top - host.top + (rect.height - 18) / 2}px`;
+    this.button.title = `Follow link: ${href}`;
+    this.button.hidden = false;
+  }
+
+  scheduleHide() {
+    clearTimeout(this.hideTimer);
+    this.hideTimer = setTimeout(() => this.hide(), FOLLOW_HIDE_DELAY_MS);
+  }
+
+  hide() {
+    clearTimeout(this.hideTimer);
+    this.link = null;
+    this.button.hidden = true;
+  }
+
+  update(update) {
+    if (update.docChanged || update.viewportChanged) this.hide();
+  }
+
+  destroy() {
+    clearTimeout(this.hideTimer);
+    this.view.dom.removeEventListener("mouseover", this.onOver);
+    this.view.dom.removeEventListener("mouseleave", this.onLeave);
+    this.view.scrollDOM.removeEventListener("scroll", this.onScroll);
+    this.button.remove();
+  }
+});
