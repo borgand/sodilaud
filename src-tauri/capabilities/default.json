@@ -28,6 +28,7 @@
     "allow-file-forget-recent",
     "allow-file-confirm-discard",
     "allow-file-doc-open",
+    "allow-file-doc-open-sibling",
     "allow-file-doc-push",
     "allow-file-doc-pull",
     "allow-file-doc-close",

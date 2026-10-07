@@ -11,6 +11,8 @@ import { markdownEditingCommands, runFormatAction } from "./editor-commands.js";
 import { livePreview } from "./editor-live-preview.js";
 import { createFormatToolbar } from "./format-toolbar.js";
 import { renderMarkdown, resolveLinkAction } from "./markdown.js";
+import { scrollToReadingAnchor } from "./anchors.js";
+import { scrollToAnchor } from "./editor-anchors.js";
 import { highlightPreviewCode } from "./syntax-highlighting.js";
 import { normalizeLayoutMode } from "./view-preferences.js";
 import { createDocSync } from "./doc-sync.js";
@@ -69,7 +71,7 @@ export function createFileEditor({
     lineNumbers: appearance.lineNumbers,
     extensions: [
       markdownEditingCommands(),
-      livePreview({ onOpenLink: openExternal, mermaid }),
+      livePreview({ onOpenLink: followLink, mermaid }),
       commentsExtension({
         onSubmit: (view, comment) => comments.submit(view, comment),
         onSelect: id => comments.select(id)
@@ -419,6 +421,36 @@ export function createFileEditor({
     }
   }
 
+  function scrollToFragment(fragment) {
+    if (layoutMode === "reading") scrollToReadingAnchor(preview, fragment);
+    else scrollToAnchor(editor.view, fragment);
+  }
+
+  // A link to `chapter.md#heading` opens a file next to the shown one; Rust
+  // refuses anything outside its folder, and then the click does nothing.
+  async function followLink(href) {
+    const action = resolveLinkAction(href);
+    if (action.kind === "external") {
+      openExternal(href);
+      return;
+    }
+    if (action.kind === "anchor") {
+      scrollToFragment(action.fragment);
+      return;
+    }
+    const fromPath = showingStartPage ? null : model.active()?.path;
+    if (action.kind !== "sibling" || !fromPath) return;
+    let target;
+    try {
+      target = await invoke("file_doc_open_sibling", { fromPath, relative: action.path });
+    } catch (error) {
+      console.warn(`Not opening ${action.path}`, error);
+      return;
+    }
+    const buffer = await openPath(target.path);
+    if (buffer && action.fragment) scrollToFragment(action.fragment);
+  }
+
   async function openRecent(file) {
     if (!file.exists) {
       notify(`${file.name} is no longer on disk, so it was removed from Recent.`);
@@ -632,7 +664,7 @@ export function createFileEditor({
       const link = event.target.closest("a[href]");
       if (!link) return;
       event.preventDefault();
-      if (resolveLinkAction(link.getAttribute("href")).kind === "external") openExternal(link.getAttribute("href"));
+      followLink(link.getAttribute("href"));
     });
     $("start-new-file-btn").addEventListener("click", newFile);
     $("start-open-file-btn").addEventListener("click", openDialog);

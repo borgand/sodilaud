@@ -11,6 +11,7 @@ import { LOCAL_TRASH_KEY, readTrash } from "./trash.js";
 import { createTrashUi } from "./trash-ui.js";
 import { applyUpdatesToText, createNoteSync } from "./note-sync.js";
 import { renderMarkdown, resolveLinkAction, sanitizeMarkdownHtml } from "./markdown.js";
+import { scrollToReadingAnchor } from "./anchors.js";
 import { getNotePreview } from "./note-preview.js";
 import { createThemes } from "./themes.js";
 import { createAppearance } from "./appearance.js";
@@ -2153,15 +2154,18 @@ function attachEventListeners() {
 // ----------------------------------------------------
 // Utilities
 // ----------------------------------------------------
-// Sanitized Markdown links carry target="_blank", but the desktop webview has
+// Sanitized external links carry target="_blank", but the desktop webview has
 // no default handling for it, so clicking one would otherwise do nothing. Send
-// external links to the user's browser; everything else stays put.
+// external links to the user's browser and scroll to in-note anchors. Notes
+// have no folder, so links to sibling files stay put.
 function handlePreviewLinkClick(event) {
   const link = event.target.closest("a[href]");
   if (!link) return;
 
   event.preventDefault();
-  openExternalHref(link.getAttribute("href"));
+  const action = resolveLinkAction(link.getAttribute("href"));
+  if (action.kind === "anchor") scrollToReadingAnchor(event.currentTarget, action.fragment);
+  else openExternalHref(link.getAttribute("href"));
 }
 
 // Live-preview links arrive unfiltered (autolinks carry raw text), so they take
