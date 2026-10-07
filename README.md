@@ -70,6 +70,7 @@ Clipboard history is off by default. Turn it on in **Sodilaud menu → Clipboard
 - Multiple notes with automatic saving, titles derived from the first line, and quick creation by double-clicking empty sidebar space
 - Live, Source, and Reading editing modes, with inline Markdown rendering and per-line raw source in Live mode
 - Optional Markdown editor coloring and language-aware fenced-code highlighting in Reading mode
+- Review books: diff hunks with line numbers and highlighting, a Reviewed toggle, folding by heading, an outline with review progress, and links between files with Back and Forward
 - Mermaid diagrams from ` ```mermaid ` blocks in Live and Reading modes and in copied HTML, in the active theme's colors, rendered offline
 - Optional, theme-aware source line numbers in either editor pane
 - Markdown-aware continuation for lists, task lists, blockquotes, code fences, and tables
@@ -129,11 +130,13 @@ On a new installation, all eight read permissions are on and all thirteen write 
 | Permission group | Functions |
 | --- | --- |
 | Read | List folders, list notes, search notes, read note content, list trash metadata, list documents, read document, get pending comments |
-| Write | Create note, create folder, append to note, rename note, move note, rename folder, delete note to trash, delete empty folder, push quick note, open document, apply edit, add comment, resolve comment |
+| Write | Create note, create folder, append to note, rename note, move note, rename folder, delete note to trash, delete empty folder, push quick note, open document, apply edit, add comment, reply to comment, resolve comment |
 
 Writes to existing items check the current revision before changing anything. Request IDs make retries safe after a timeout or failed save. An agent's changes show up in an open editor without moving your cursor or losing what you are typing. Agents cannot replace an entire note, read trashed note bodies, restore notes, or empty trash. Access applies to all connected local clients and to the collection currently open in Sodilaud, including what you typed moments ago.
 
 To work on a document together, select text and press `Cmd+Option+M` (`Ctrl+Alt+M` on Windows and Linux) to leave a comment; an agent running `/sodilaud` picks it up, edits the document while you keep typing, and resolves the comment. See [co-editing with an agent](docs/coedit.md).
+
+To review a finished change, ask Claude Code to use the `review-book` skill (installed from Agent Access with `/sodilaud`). It writes the change up as a book of Markdown chapters under `.claude/review/<branch>/`, with every diff hunk shown in place. Mark each hunk **Reviewed**, follow the links between chapters, and discuss the design with the agent in comment threads.
 
 See the [MCP reference](docs/mcp.md) for client setup, tool arguments, limits, retry behavior, and the privacy boundary.
 

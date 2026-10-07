@@ -261,7 +261,7 @@ Depends on: 5.
 
 ## 10. Review book: skill and checker
 
-Status: built on `feat/review-book`, not released (spec
+Status: done, shipped in 0.14.0 (#41) (spec
 [`docs/superpowers/specs/2026-10-07-review-book-design.md`](docs/superpowers/specs/2026-10-07-review-book-design.md))
 
 Items 10 to 14 build a guided code review in Sodilaud: after a feature is complete, the agent
@@ -284,7 +284,7 @@ Depends on: 5.
 
 ## 11. Review book: links and anchors
 
-Status: built on `feat/review-book`, not released
+Status: done, shipped in 0.14.0 (#41)
 
 Heading ids in Reading and Live mode, `#heading` links that scroll, and `chapter.md#heading`
 links that open a sibling file. A new command resolves the sibling against the current file's
@@ -299,7 +299,7 @@ Depends on: 10.
 
 ## 12. Review book: diff hunk widget
 
-Status: built on `feat/review-book`, not released
+Status: done, shipped in 0.14.0 (#41)
 
 A `diff` fence with `path=` renders as a widget in Live and Reading mode: path and line range
 header, old and new line numbers, syntax highlighting by file extension, a Reviewed toggle
@@ -314,7 +314,7 @@ Depends on: 11.
 
 ## 13. Review book: discussion threads
 
-Status: built on `feat/review-book`
+Status: done, shipped in 0.14.0 (#41)
 
 Comment threads of any depth and either author. New MCP tool `reply_comment`, thread context
 in `get_pending_comments`, a nested comments panel with a reply box on every open thread, and
@@ -324,7 +324,7 @@ Depends on: 5. Item 9 can follow this one.
 
 ## 14. Review book: folding and outline
 
-Status: built on `feat/review-book`, not released
+Status: done, shipped in 0.14.0 (#41)
 
 Section folding by heading in Live and Reading mode, an outline panel listing headings with
 reviewed-over-total counts, and an "n/m reviewed" status bar item.
