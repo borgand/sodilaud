@@ -240,3 +240,23 @@ Later: `--wait` (block until the opened files are closed, so the command works a
 as the editor for commit messages; exit non-zero if Sodilaud quits first). That reply is the
 only reason VS Code and Zed run their own IPC, so it waits until there is demand. It would
 likely use the local server MCP already runs.
+
+## 9. Comments on tables and in Reading mode
+
+Status: not started
+
+Seen 2026-10-07 while reviewing a document with the co-edit comments (item 5). Comments work
+on prose but fail around tables:
+
+- Selecting text inside a rendered Live table enters the raw source (correct), but the text
+  moves, and after it is re-found and selected, the comment button or `⌘⌥M` blurs the editor.
+  The table renders again and no comment entry appears.
+- Commenting works only on the last row of a table: the rendered table returns and the popup
+  shows below it. On any other row nothing appears.
+- Commenting is disabled in Reading mode. It should be possible there too, since reviewing is
+  mostly done in Reading mode.
+
+Goal: a comment can be anchored to any table cell text from Live, Source or Reading mode, and
+the entry popup stays open while the table widget re-renders.
+
+Depends on: 5.
