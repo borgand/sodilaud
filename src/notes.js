@@ -11,6 +11,7 @@ import { LOCAL_TRASH_KEY, readTrash } from "./trash.js";
 import { createTrashUi } from "./trash-ui.js";
 import { applyUpdatesToText, createNoteSync } from "./note-sync.js";
 import { renderMarkdown, resolveLinkAction, sanitizeMarkdownHtml } from "./markdown.js";
+import { scrollToReadingAnchor } from "./anchors.js";
 import { getNotePreview } from "./note-preview.js";
 import { createThemes } from "./themes.js";
 import { createAppearance } from "./appearance.js";
@@ -27,6 +28,8 @@ import { createFormatToolbar } from "./format-toolbar.js";
 import { livePreview } from "./editor-live-preview.js";
 import { getMarkdownTemplateEdit } from "./markdown-insert.js";
 import { escapeHTML, highlightPreviewCode } from "./syntax-highlighting.js";
+import { exportHunks, renderHunkWidgets } from "./diff-hunk.js";
+import { setHunkReviewed } from "./editor-hunks.js";
 import { WELCOME_NOTE_CONTENT, WELCOME_NOTE_TITLE } from "./welcome-note.js";
 import {
   canMoveNote,
@@ -1534,6 +1537,13 @@ function setSavedState() {
   saveStatus.classList.remove("unsaved");
 }
 
+function renderPreviewHunks(container, editor) {
+  renderHunkWidgets(container, {
+    hljs: appearance.syntaxHighlighting ? window.hljs : null,
+    onToggleReviewed: (target, reviewed) => setHunkReviewed(editor.view, target, reviewed)
+  });
+}
+
 function updateMarkdownPreview() {
   if (currentLayoutMode !== "reading" || isSplitNoteMode) return; // don't render if not visible or in dual-note split mode
 
@@ -1550,6 +1560,7 @@ function updateMarkdownPreview() {
         throw new Error("window.marked is neither a function nor contains a parse function");
       }
       markdownPreview.innerHTML = html;
+      renderPreviewHunks(markdownPreview, primaryEditor);
       highlightPreviewCode(markdownPreview, window.hljs, appearance.syntaxHighlighting);
       mermaid.renderBlocks(markdownPreview);
     } catch (e) {
@@ -1678,11 +1689,14 @@ function copyMarkdownToClipboard() {
 async function renderedHtmlForCopy() {
   if (currentLayoutMode === "reading") {
     await mermaid.renderBlocks(markdownPreview);
-    return markdownPreview.innerHTML;
+    const copy = markdownPreview.cloneNode(true);
+    exportHunks(copy, window.hljs);
+    return copy.innerHTML;
   }
   const container = document.createElement("div");
   container.innerHTML = renderMarkdown(primaryEditor.getText());
   await mermaid.renderBlocks(container);
+  exportHunks(container, window.hljs);
   return container.innerHTML;
 }
 
@@ -2153,15 +2167,18 @@ function attachEventListeners() {
 // ----------------------------------------------------
 // Utilities
 // ----------------------------------------------------
-// Sanitized Markdown links carry target="_blank", but the desktop webview has
+// Sanitized external links carry target="_blank", but the desktop webview has
 // no default handling for it, so clicking one would otherwise do nothing. Send
-// external links to the user's browser; everything else stays put.
+// external links to the user's browser and scroll to in-note anchors. Notes
+// have no folder, so links to sibling files stay put.
 function handlePreviewLinkClick(event) {
   const link = event.target.closest("a[href]");
   if (!link) return;
 
   event.preventDefault();
-  openExternalHref(link.getAttribute("href"));
+  const action = resolveLinkAction(link.getAttribute("href"));
+  if (action.kind === "anchor") scrollToReadingAnchor(event.currentTarget, action.fragment);
+  else openExternalHref(link.getAttribute("href"));
 }
 
 // Live-preview links arrive unfiltered (autolinks carry raw text), so they take
@@ -3365,6 +3382,7 @@ function updateSecondaryMarkdownPreview() {
   if (currentLayoutMode !== "reading") return;
   if (window.marked) {
     secondaryMarkdownPreview.innerHTML = renderMarkdown(secondaryEditor.getText());
+    renderPreviewHunks(secondaryMarkdownPreview, secondaryEditor);
     highlightPreviewCode(secondaryMarkdownPreview, window.hljs, appearance.syntaxHighlighting);
     mermaid.renderBlocks(secondaryMarkdownPreview);
   }

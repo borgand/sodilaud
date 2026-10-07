@@ -31,6 +31,7 @@ const WRITE_FUNCTIONS = [
   ["open_document", "Open document", "Open a Markdown or text file in the main window. Returns no content."],
   ["apply_edit", "Apply edit", "Merge edits into a co-edited file or note around your typing."],
   ["add_comment", "Add comment", "Leave a question on a passage for you to answer."],
+  ["reply_comment", "Reply to comment", "Answer in a comment thread without resolving it."],
   ["resolve_comment", "Resolve comment", "Mark a comment addressed with a one-line note."]
 ];
 export const MCP_READ_TOOLS = READ_FUNCTIONS.map(([tool]) => tool);
@@ -112,7 +113,7 @@ const MODAL = `
 
       <section class="mcp-permissions coedit-integration" aria-labelledby="coedit-integration-heading">
         <h4 id="coedit-integration-heading">Claude Code integration</h4>
-        <p class="mcp-permissions-description">Adds the <code>/sodilaud</code> command and the <code>sodilaud</code> skill to Claude Code, and a hook that sends Claude Code's own edits of files you co-edit here through Sodilaud. Name this server <code>sodilaud</code> in Claude Code. Nothing changes until you confirm.</p>
+        <p class="mcp-permissions-description">Adds the <code>/sodilaud</code> command, the <code>sodilaud</code> skill and the <code>review-book</code> skill to Claude Code, and a hook that sends Claude Code's own edits of files you co-edit here through Sodilaud. Name this server <code>sodilaud</code> in Claude Code. Nothing changes until you confirm.</p>
         <p class="mcp-permissions-summary" id="coedit-integration-summary" role="status">Checking…</p>
         <ul class="coedit-integration-changes" id="coedit-integration-changes" hidden></ul>
         <div class="coedit-integration-actions">

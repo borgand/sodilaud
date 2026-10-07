@@ -109,7 +109,7 @@ test("only the main window can reach user files", async () => {
   for (const command of [
     "file_open_dialog", "file_save_as_dialog", "file_lists",
     "file_set_open", "file_take_pending", "file_forget_recent", "file_confirm_discard",
-    "file_doc_open", "file_doc_push", "file_doc_pull", "file_doc_close", "file_doc_save", "file_doc_resolve"
+    "file_doc_open", "file_doc_open_sibling", "file_doc_push", "file_doc_pull", "file_doc_close", "file_doc_save", "file_doc_resolve"
   ]) {
     assert.deepEqual(holders(command), ["default"], `${command} must be granted to the main window only`);
   }
@@ -131,7 +131,7 @@ test("file contents are sent to the main window only", async () => {
 test("both windows comment, each only on its own documents", async () => {
   const caps = await capabilities();
   const holders = (command) => caps.filter(cap => cap.permissions.includes(grant(command))).map(cap => cap.identifier).sort();
-  for (const command of ["comments_get", "comment_add", "comment_edit", "comment_delete", "comment_resolve", "comment_resend", "comments_send_review", "comments_clear_resolved", "coedit_get_state", "coedit_set_hold"]) {
+  for (const command of ["comments_get", "comment_add", "comment_edit", "comment_delete", "comment_resolve", "comment_mark_read", "comment_resend", "comments_send_review", "comments_clear_resolved", "coedit_get_state", "coedit_set_hold"]) {
     assert.deepEqual(holders(command), ["default", "quicknotes"], command);
   }
   const commands = await readFile("src-tauri/src/docs/commands.rs", "utf8");

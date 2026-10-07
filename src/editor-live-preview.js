@@ -12,7 +12,28 @@ import {
   syntaxTree
 } from "./vendor/codemirror.js";
 import { modeFacet } from "./editor-view.js";
-import { isSafeMarkdownUrl, renderMarkdown } from "./markdown.js";
+import { isSafeMarkdownUrl, renderMarkdown, resolveLinkAction } from "./markdown.js";
+import { scrollToAnchor } from "./editor-anchors.js";
+import { buildHunkElement, reviewHunkMeta } from "./diff-hunk.js";
+import { paintDots, paintMarks, setHunkComposer } from "./hunk-comments.js";
+import {
+  hunkFenceAt,
+  hunkLineRange,
+  hunkMarks,
+  hunkOffsetPosition,
+  hunkSpanRange,
+  reviewHunkFence,
+  setFenceReviewed
+} from "./editor-hunks.js";
+import {
+  activeComment,
+  commentComposer,
+  commentsDiffer,
+  createComposerElement,
+  selectComment,
+  shownComments,
+  startCommentAt
+} from "./editor-comments.js";
 
 const TABLE_CACHE_LIMIT = 200;
 const tableHtmlCache = new Map();
@@ -122,6 +143,12 @@ class ImageWidget extends WidgetType {
 const MERMAID_TYPING_PAUSE_MS = 300;
 
 const mermaidFacet = Facet.define({ combine: values => values.find(Boolean) ?? null });
+const followFacet = Facet.define({ combine: values => values.find(Boolean) ?? null });
+
+function followHref(view, href) {
+  const follow = view.state.facet(followFacet);
+  if (follow) follow(view, href);
+}
 
 function showMermaid(wrapper, view, widget) {
   const { renderer, source } = widget;
@@ -214,6 +241,12 @@ class TableWidget extends WidgetType {
     wrapper.className = "cm-lp-table markdown-preview";
     wrapper.innerHTML = tableHtml(this.source);
     wrapper.addEventListener("mousedown", event => {
+      const link = eventElement(event)?.closest("a[href]");
+      if (link && isOpenLinkClick(event, view)) {
+        event.preventDefault();
+        followHref(view, link.getAttribute("href"));
+        return;
+      }
       if (!isPrimaryClick(event, view)) return;
       event.preventDefault();
       const anchor = view.posAtDOM(wrapper);
@@ -221,6 +254,129 @@ class TableWidget extends WidgetType {
       view.focus();
     });
     return wrapper;
+  }
+
+  ignoreEvent() {
+    return true;
+  }
+}
+
+// What a hunk widget shows of the comments: marks on commented code and the
+// open composer, when it is for code in this hunk. CodeMirror's own comment
+// decorations and composer cannot show inside a replacing widget.
+function hunkReview(state, found) {
+  const active = activeComment(state);
+  const ranges = shownComments(state)
+    .filter(comment => !comment.orphaned && comment.state !== "resolved" && comment.to > comment.from)
+    .map(comment => ({
+      id: comment.id,
+      author: comment.author,
+      from: comment.from,
+      to: comment.to,
+      className: `cm-comment cm-comment-${comment.author}${comment.id === active ? " cm-comment-active" : ""}`
+    }));
+  // One dot per row, for the earliest comment starting there, like the gutter.
+  const dots = [];
+  for (const range of [...ranges].sort((a, b) => a.from - b.from)) {
+    const [mark] = hunkMarks(state, found, [range]);
+    if (mark && !dots.some(dot => dot.row === mark.start.row)) dots.push({ row: mark.start.row, id: range.id, author: range.author });
+  }
+  const composer = commentComposer(state);
+  const hosted = composer?.hosted ? hunkMarks(state, found, [{ ...composer, className: "cm-comment cm-comment-draft" }]) : [];
+  return {
+    marks: [...hunkMarks(state, found, ranges), ...hosted],
+    dots,
+    composer: hosted.length ? { key: composer.key, row: hunkOffsetPosition(state, found, composer.to).row } : null
+  };
+}
+
+const sameReview = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+// A click in the editor's margin level with a hunk widget would put the cursor
+// inside the fence and reveal it. Revealing is for the path click only.
+function besideHunk(view, element, y) {
+  if (element.closest(".cm-lp-hunk")) return false;
+  for (const hunk of view.contentDOM.querySelectorAll(".cm-lp-hunk")) {
+    const box = hunk.getBoundingClientRect();
+    if (box.height > 0 && y >= box.top && y <= box.bottom) return true;
+  }
+  return false;
+}
+
+function showReview(dom, view, review) {
+  paintMarks(dom, review.marks);
+  paintDots(dom, review.dots);
+  const resized = setHunkComposer(dom, review.composer, () => createComposerElement(view, review.composer.key));
+  if (resized) view.requestMeasure();
+}
+
+// A review-book diff hunk. Its controls write to the document; clicking the
+// path reveals the fence for editing. Code is selected inside the widget and
+// commented on there, so reading a hunk never turns it back into source.
+class HunkWidget extends WidgetType {
+  constructor(info, body, review) {
+    super();
+    this.info = info;
+    this.body = body;
+    this.review = review;
+  }
+
+  eq(other) {
+    return other.info === this.info && other.body === this.body && sameReview(other.review, this.review);
+  }
+
+  // Comments changing must not rebuild the widget: a rebuilt widget far above
+  // the viewport moves the reader (see dispatchChange in editor-hunks.js).
+  updateDOM(dom, view) {
+    if (dom.hunkInfo !== this.info || dom.hunkBody !== this.body) return false;
+    showReview(dom, view, this.review);
+    return true;
+  }
+
+  toDOM(view) {
+    let element = null;
+    const fenceHere = () => hunkFenceAt(view.state, view.posAtDOM(element));
+    const comment = range => {
+      if (range) startCommentAt(view, range.from, range.to, { hosted: true });
+    };
+    element = buildHunkElement(view.dom.ownerDocument, {
+      meta: reviewHunkMeta(this.info),
+      body: this.body,
+      hljs: view.dom.ownerDocument.defaultView?.hljs ?? null,
+      onToggleReviewed: reviewed => {
+        const found = fenceHere();
+        if (found) setFenceReviewed(view, found, reviewed);
+      },
+      onLineComment: index => {
+        const found = fenceHere();
+        if (found) comment(hunkLineRange(view.state, found, index));
+      },
+      // Collapsing changes the widget's height behind CodeMirror's back.
+      onToggleCollapsed: () => view.requestMeasure(),
+      codeComments: {
+        // A focused editor would take the selection as a caret at the widget
+        // and reveal the fence.
+        onStart: () => {
+          if (view.hasFocus) view.contentDOM.blur();
+        },
+        onComment: span => {
+          const found = fenceHere();
+          if (found) comment(hunkSpanRange(view.state, found, span));
+        },
+        onMarkClick: id => selectComment(view, id)
+      }
+    });
+    element.hunkInfo = this.info;
+    element.hunkBody = this.body;
+    showReview(element, view, this.review);
+    element.classList.add("cm-lp-hunk");
+    element.querySelector(".diff-hunk-path").addEventListener("mousedown", event => {
+      if (!isPrimaryClick(event, view)) return;
+      event.preventDefault();
+      view.dispatch({ selection: EditorSelection.cursor(view.posAtDOM(element)) });
+      view.focus();
+    });
+    return element;
   }
 
   ignoreEvent() {
@@ -448,7 +604,12 @@ function isMermaidFence(state, node) {
   return info !== null && state.doc.sliceString(info.from, info.to).trim().toLowerCase() === "mermaid";
 }
 
-function mermaidSource(state, node) {
+function fenceInfo(state, node) {
+  const info = node.getChild("CodeInfo");
+  return info ? state.doc.sliceString(info.from, info.to) : "";
+}
+
+function fenceBody(state, node) {
   const text = node.getChild("CodeText");
   return text ? state.doc.sliceString(text.from, text.to) : "";
 }
@@ -464,7 +625,9 @@ function buildBlocks(state, focused) {
       if (TABLE_CONTAINERS.has(ref.name)) return true;
       const isTable = ref.name === "Table";
       const isMermaid = mermaid && ref.name === "FencedCode" && isMermaidFence(state, ref.node);
-      if (!isTable && !isMermaid) return false;
+      const hunkInfo = ref.name === "FencedCode" && !isMermaid ? fenceInfo(state, ref.node) : "";
+      const isHunk = hunkInfo !== "" && reviewHunkMeta(hunkInfo) !== null;
+      if (!isTable && !isMermaid && !isHunk) return false;
       const start = doc.lineAt(ref.from);
       const end = doc.lineAt(ref.to);
       const prefix = doc.sliceString(start.from, ref.from);
@@ -477,7 +640,15 @@ function buildBlocks(state, focused) {
         }
         return false;
       }
-      const source = mermaidSource(state, ref.node);
+      if (isHunk) {
+        if (!inside) {
+          const review = hunkReview(state, reviewHunkFence(state, ref.node));
+          const widget = new HunkWidget(hunkInfo, fenceBody(state, ref.node), review);
+          ranges.push(Decoration.replace({ widget, block: true }).range(start.from, end.to));
+        }
+        return false;
+      }
+      const source = fenceBody(state, ref.node);
       if (inside) {
         ranges.push(Decoration.widget({ widget: new MermaidWidget(source, mermaid, "preview"), block: true, side: 1 }).range(end.to));
       } else {
@@ -502,6 +673,7 @@ const blockField = StateField.define({
       refreshed ||
       tr.docChanged ||
       tr.selection !== undefined ||
+      commentsDiffer(tr.startState, tr.state) ||
       tr.startState.facet(modeFacet) !== tr.state.facet(modeFacet) ||
       syntaxTree(tr.startState) !== syntaxTree(tr.state);
     if (!changed) return value;
@@ -561,16 +733,33 @@ function isPrimaryClick(event, view) {
  * unless the mode facet is "live".
  *
  * @param {object} [options]
- * @param {(href: string) => void} [options.onOpenLink] called on Cmd-click (Ctrl-click off macOS) of a link
+ * @param {(href: string) => void} [options.onOpenLink] called when a link is followed: Cmd-click
+ *   (Ctrl-click off macOS) or its hover button; `#anchor` links go to onFollowAnchor instead
+ * @param {(fragment: string) => void} [options.onFollowAnchor] called for `#anchor` links; without
+ *   one, the editor scrolls to the anchor itself
  * @param {object} [options.mermaid] a renderer from createMermaidRenderer; without one,
  *   mermaid blocks stay code blocks
  */
-export function livePreview({ onOpenLink, mermaid } = {}) {
+export function livePreview({ onOpenLink, onFollowAnchor, mermaid } = {}) {
+  const follow = (view, href) => {
+    const action = resolveLinkAction(href);
+    if (action.kind === "anchor") {
+      if (onFollowAnchor) onFollowAnchor(action.fragment);
+      else scrollToAnchor(view, action.fragment);
+    } else if (action.kind !== "ignore") {
+      onOpenLink?.(href);
+    }
+  };
   const handlers = EditorView.domEventHandlers({
     mousedown(event, view) {
       if (!isLive(view.state)) return false;
       const element = eventElement(event);
       if (!element) return false;
+
+      if (isPrimaryClick(event, view) && besideHunk(view, element, event.clientY)) {
+        event.preventDefault();
+        return true;
+      }
 
       const task = element.closest(".cm-lp-task");
       if (task) {
@@ -592,7 +781,7 @@ export function livePreview({ onOpenLink, mermaid } = {}) {
         const link = element.closest(".cm-lp-link");
         if (link) {
           event.preventDefault();
-          onOpenLink?.(link.getAttribute("data-href") ?? "");
+          follow(view, link.getAttribute("data-href") ?? "");
           return true;
         }
       }
@@ -600,5 +789,96 @@ export function livePreview({ onOpenLink, mermaid } = {}) {
     }
   });
 
-  return [mermaidFacet.of(mermaid ?? null), blockField, blockFocusSync, mermaidThemeSync, inlinePreview, handlers];
+  return [
+    mermaidFacet.of(mermaid ?? null),
+    followFacet.of(follow),
+    blockField,
+    blockFocusSync,
+    mermaidThemeSync,
+    inlinePreview,
+    followButton,
+    handlers
+  ];
 }
+
+const FOLLOW_HIDE_DELAY_MS = 300;
+const linkHref = link => link.getAttribute("data-href") ?? link.getAttribute("href") ?? "";
+
+// A plain click places the cursor and reveals a link's Markdown, so hovering a
+// rendered link shows a button that follows it without touching the cursor.
+// It sits outside the content DOM, where CodeMirror's own handlers never see it.
+const followButton = ViewPlugin.fromClass(class {
+  constructor(view) {
+    this.view = view;
+    this.link = null;
+    this.hideTimer = null;
+    const document = view.dom.ownerDocument;
+    this.button = document.createElement("button");
+    this.button.type = "button";
+    this.button.className = "cm-lp-follow";
+    this.button.setAttribute("aria-label", "Follow link");
+    this.button.hidden = true;
+    this.button.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17L17 7M9 7h8v8" /></svg>';
+    this.button.addEventListener("mousedown", event => event.preventDefault());
+    this.button.addEventListener("click", event => {
+      event.preventDefault();
+      const href = this.link ? linkHref(this.link) : "";
+      this.hide();
+      if (href) followHref(view, href);
+    });
+    this.button.addEventListener("mouseenter", () => clearTimeout(this.hideTimer));
+    this.button.addEventListener("mouseleave", () => this.scheduleHide());
+    this.onOver = event => this.over(event);
+    this.onScroll = () => this.hide();
+    this.onLeave = () => this.scheduleHide();
+    view.dom.append(this.button);
+    view.dom.addEventListener("mouseover", this.onOver);
+    view.dom.addEventListener("mouseleave", this.onLeave);
+    view.scrollDOM.addEventListener("scroll", this.onScroll);
+  }
+
+  over(event) {
+    const element = eventElement(event);
+    if (!element || this.button.contains(element)) return;
+    const link = isLive(this.view.state) ? element.closest(".cm-lp-link, .cm-lp-table a[href]") : null;
+    if (!link) {
+      if (this.link) this.scheduleHide();
+      return;
+    }
+    clearTimeout(this.hideTimer);
+    if (link === this.link && !this.button.hidden) return;
+    const href = linkHref(link);
+    if (resolveLinkAction(href).kind === "ignore") return;
+    this.link = link;
+    const rects = link.getClientRects();
+    const rect = rects.length ? rects[rects.length - 1] : link.getBoundingClientRect();
+    const host = this.view.dom.getBoundingClientRect();
+    this.button.style.left = `${rect.right - host.left + 2}px`;
+    this.button.style.top = `${rect.top - host.top + (rect.height - 18) / 2}px`;
+    this.button.title = `Follow link: ${href}`;
+    this.button.hidden = false;
+  }
+
+  scheduleHide() {
+    clearTimeout(this.hideTimer);
+    this.hideTimer = setTimeout(() => this.hide(), FOLLOW_HIDE_DELAY_MS);
+  }
+
+  hide() {
+    clearTimeout(this.hideTimer);
+    this.link = null;
+    this.button.hidden = true;
+  }
+
+  update(update) {
+    if (update.docChanged || update.viewportChanged) this.hide();
+  }
+
+  destroy() {
+    clearTimeout(this.hideTimer);
+    this.view.dom.removeEventListener("mouseover", this.onOver);
+    this.view.dom.removeEventListener("mouseleave", this.onLeave);
+    this.view.scrollDOM.removeEventListener("scroll", this.onScroll);
+    this.button.remove();
+  }
+});

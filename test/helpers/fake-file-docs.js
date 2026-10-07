@@ -107,19 +107,29 @@ export function createFakeFileDocs({ emit, disk = {} }) {
   function addComment(path, doc, { from, to, body, author = "owner", replyTo = null }) {
     const comment = {
       id: `c_${(commentCounter += 1)}`, author, state: author === "agent" ? "open" : hold ? "held" : "queued", orphaned: false,
-      from, to, anchoredText: doc.text.slice(from, to), headingPath: [], body, note: null, replyTo, createdAt: commentCounter, updatedAt: commentCounter
+      from, to, anchoredText: doc.text.slice(from, to), headingPath: [], body, note: null, replyTo, unread: author === "agent", createdAt: commentCounter, updatedAt: commentCounter
     };
     doc.comments.push(comment);
     changedComments(path, doc);
     return comment;
   }
+  const rootOf = (doc, id) => {
+    const comment = doc.comments.find(c => c.id === id);
+    return doc.comments.find(c => c.id === (comment?.replyTo ?? id));
+  };
+  const resolveThread = (doc, comment, note = null) => {
+    const root = comment.replyTo ?? comment.id;
+    if (note) comment.note = note;
+    doc.comments.filter(c => (c.replyTo ?? c.id) === root).forEach(c => { c.state = "resolved"; });
+  };
   const commentCommands = {
     comments_get: ({ doc: { path, docId } }) => commentsEvent(path, find(path, docId)),
     comment_add: ({ doc: { path, docId }, comment: { version: at, from, to, body, replyTo } }) => {
       const doc = find(path, docId);
       if (replyTo) {
-        const parent = doc.comments.find(c => c.id === replyTo);
-        return addComment(path, doc, { from: parent.from, to: parent.to, body, replyTo });
+        const root = rootOf(doc, replyTo);
+        if (!root || root.state === "resolved") throw new Error("This thread is resolved; it can no longer be answered");
+        return addComment(path, doc, { from: root.from, to: root.to, body, replyTo: root.id });
       }
       if (at !== version(doc)) throw new Error("The selected text changed; select it again");
       return addComment(path, doc, { from, to, body });
@@ -128,9 +138,13 @@ export function createFakeFileDocs({ emit, disk = {} }) {
     comment_delete: (args) => { const { path, doc, comment } = commentOf(args); doc.comments = doc.comments.filter(c => c !== comment); changedComments(path, doc); },
     comment_resolve: (args) => {
       const { path, doc, comment } = commentOf(args);
-      comment.state = "resolved";
-      const parent = doc.comments.find(c => c.id === comment.replyTo);
-      if (parent) parent.state = "resolved";
+      resolveThread(doc, comment);
+      changedComments(path, doc);
+    },
+    comment_mark_read: (args) => {
+      const { path, doc, comment } = commentOf(args);
+      const root = comment.replyTo ?? comment.id;
+      doc.comments.filter(c => (c.replyTo ?? c.id) === root).forEach(c => { c.unread = false; });
       changedComments(path, doc);
     },
     comment_resend: (args) => { const { path, doc, comment } = commentOf(args); comment.state = "queued"; changedComments(path, doc); },
@@ -231,6 +245,11 @@ export function createFakeFileDocs({ emit, disk = {} }) {
       const from = doc.text.indexOf(anchor);
       return addComment(path, doc, { from, to: from + anchor.length, body, author: "agent" });
     },
+    agentReply(path, id, body) {
+      const doc = docs.get(path);
+      const root = rootOf(doc, id);
+      return addComment(path, doc, { from: root.from, to: root.to, body, author: "agent", replyTo: root.id });
+    },
     /** An agent took the queued comments. */
     take(path) {
       const doc = docs.get(path);
@@ -242,7 +261,7 @@ export function createFakeFileDocs({ emit, disk = {} }) {
     resolveAsAgent(path, id, note) {
       const doc = docs.get(path);
       const comment = doc.comments.find(c => c.id === id);
-      Object.assign(comment, { state: "resolved", note });
+      resolveThread(doc, comment, note);
       changedComments(path, doc);
     },
     /** What `file_save_as_dialog` does to a document open at the chosen path. */

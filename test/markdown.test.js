@@ -7,6 +7,7 @@ import { marked } from "marked";
 import {
   isSafeMarkdownUrl,
   keepTableValuesWhole,
+  parseSiblingHref,
   renderMarkdown,
   resolveLinkAction,
   sanitizeMarkdownHtml
@@ -88,10 +89,68 @@ test("preview links route external schemes to the browser", () => {
   });
 });
 
-test("preview links leave in-document anchors alone", () => {
-  // Nothing generates heading ids and the sanitizer strips them, so an anchor
-  // has no target. What matters is that it is never treated as external.
-  assert.deepEqual(resolveLinkAction("#a-heading"), { kind: "ignore" });
+test("preview links scroll to in-document anchors", () => {
+  assert.deepEqual(resolveLinkAction("#a-heading"), { kind: "anchor", fragment: "a-heading" });
+  assert.deepEqual(resolveLinkAction("#caf%C3%A9"), { kind: "anchor", fragment: "café" });
+  assert.deepEqual(resolveLinkAction("#"), { kind: "ignore" });
+});
+
+test("preview links open sibling documents by relative path", () => {
+  assert.deepEqual(resolveLinkAction("01-mcp-tools.md#h3f2a1"), {
+    kind: "sibling", path: "01-mcp-tools.md", fragment: "h3f2a1"
+  });
+  assert.deepEqual(resolveLinkAction("notes/Read%20me.TXT"), {
+    kind: "sibling", path: "notes/Read me.TXT", fragment: ""
+  });
+  assert.deepEqual(resolveLinkAction("./b.markdown#x"), {
+    kind: "sibling", path: "./b.markdown", fragment: "x"
+  });
+});
+
+test("sibling links reject anything that could leave the folder or is not text", () => {
+  const rejected = [
+    "../secret.md",
+    "a/../../b.md",
+    "%2e%2e/secret.md",
+    "a/%2e%2e/%2e%2e/b.md",
+    "..%2fsecret.md",
+    "/etc/notes.md",
+    "//host/notes.md",
+    "file:notes.md",
+    "C:\\notes.md",
+    "a\\b.md",
+    "notes.md?x=1",
+    "picture.png",
+    "notes.md.exe",
+    "notes",
+    "a//b.md",
+    "%ZZ.md",
+    "notes .md"
+  ];
+  rejected.forEach(href => {
+    assert.equal(parseSiblingHref(href), null, `expected ${href} to be rejected`);
+    assert.equal(resolveLinkAction(href).kind, "ignore", `expected ${href} to be ignored`);
+  });
+});
+
+test("sanitizer keeps sibling and anchor links without opening a new window", () => {
+  const html = sanitizeMarkdownHtml('<a href="02-merge.md#engine">a</a><a href="#top">b</a><a href="../x.md">c</a>');
+  assert.equal(html, '<a href="02-merge.md#engine">a</a><a href="#top">b</a><a>c</a>');
+});
+
+test("sanitizer gives headings GitHub-style anchors after sanitizing", () => {
+  const html = sanitizeMarkdownHtml('<h1 id="evil" data-anchor="x">Merge engine</h1><h2>Merge engine</h2><h3>What’s new?</h3>');
+  assert.equal(
+    html,
+    '<h1 data-anchor="merge-engine">Merge engine</h1><h2 data-anchor="merge-engine-1">Merge engine</h2><h3 data-anchor="whats-new">What’s new?</h3>'
+  );
+});
+
+test("rendered review hunks carry their id and nothing forged survives", () => {
+  const html = renderMarkdown("```diff path=src/a.rs hunk=h3f2a1 lines=1-2\n+x\n```\n\n```diff hunk=nope\n+y\n```", "", marked);
+  assert.match(html, /<code data-hunk="h3f2a1" data-path="src\/a.rs" data-lines="1-2" class="language-diff">/);
+  assert.doesNotMatch(html, /nope/);
+  assert.equal(sanitizeMarkdownHtml('<code data-hunk="h12345x" data-path="../a">z</code>'), "<code>z</code>");
 });
 
 test("preview links never hand an unsupported scheme to the system", () => {

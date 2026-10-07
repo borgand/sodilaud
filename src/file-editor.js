@@ -11,7 +11,22 @@ import { markdownEditingCommands, runFormatAction } from "./editor-commands.js";
 import { livePreview } from "./editor-live-preview.js";
 import { createFormatToolbar } from "./format-toolbar.js";
 import { renderMarkdown, resolveLinkAction } from "./markdown.js";
+import { HUNK_ID, findReadingAnchor, scrollToReadingAnchor } from "./anchors.js";
+import { documentAnchors, scrollToAnchor } from "./editor-anchors.js";
 import { highlightPreviewCode } from "./syntax-highlighting.js";
+import { renderHunkWidgets } from "./diff-hunk.js";
+import { createNavHistory } from "./nav-history.js";
+import { reviewHunkFences, setHunkReviewed } from "./editor-hunks.js";
+import { foldedSections, revealAnchor, sectionFolding, setSectionFolded } from "./editor-folds.js";
+import {
+  applyReadingFolds,
+  nextUnreviewed,
+  outlineEntries,
+  readingFoldsHiding,
+  renderOutlineList,
+  reviewProgress,
+  reviewProgressText
+} from "./outline.js";
 import { normalizeLayoutMode } from "./view-preferences.js";
 import { createDocSync } from "./doc-sync.js";
 import { createFilesModel, isDirty, needsPrompt } from "./files.js";
@@ -19,6 +34,8 @@ import { commentsExtension } from "./editor-comments.js";
 import { createComments } from "./comments-panel.js";
 
 const LAYOUT_KEY = "sodilaud_layout_mode";
+// The outline reparses the whole file, so it waits for typing to pause.
+const OUTLINE_DELAY_MS = 150;
 
 const editorModeFor = (mode) => (mode === "source" ? "source" : "live");
 
@@ -43,6 +60,13 @@ export function createFileEditor({
   const title = $("main-title");
   const status = $("file-status");
   const preview = $("markdown-preview");
+  const outlineSection = $("outline-section");
+  const outlineToggle = $("outline-toggle-btn");
+  const outlineList = $("outline-list");
+  const reviewStatus = $("review-progress");
+  const reviewNext = $("review-next-btn");
+  const backButton = $("nav-back-btn");
+  const forwardButton = $("nav-forward-btn");
   const banner = $("file-banner");
   const bannerText = $("file-banner-text");
   const bannerPrimary = $("file-banner-primary-btn");
@@ -59,6 +83,8 @@ export function createFileEditor({
   let sidebarHidden = false;
   let shownId = null;
   let recent = [];
+  let outlineTimer = null;
+  const navHistory = createNavHistory();
 
   const editor = createMarkdownEditor({
     parent: $("editor-host"),
@@ -69,7 +95,8 @@ export function createFileEditor({
     lineNumbers: appearance.lineNumbers,
     extensions: [
       markdownEditingCommands(),
-      livePreview({ onOpenLink: openExternal, mermaid }),
+      livePreview({ onOpenLink: followLink, onFollowAnchor: jumpTo, mermaid }),
+      sectionFolding(),
       commentsExtension({
         onSubmit: (view, comment) => comments.submit(view, comment),
         onSelect: id => comments.select(id)
@@ -233,12 +260,86 @@ export function createFileEditor({
     if (layoutMode !== "reading" || !model.active()) return;
     try {
       preview.innerHTML = renderMarkdown(editor.getText(), "*Empty file*");
-      highlightPreviewCode(preview, document.defaultView.hljs, appearance.syntaxHighlighting);
+      const hljs = document.defaultView.hljs;
+      renderHunkWidgets(preview, {
+        hljs: appearance.syntaxHighlighting ? hljs : null,
+        onToggleReviewed: (target, reviewed) => setHunkReviewed(editor.view, target, reviewed)
+      });
+      highlightPreviewCode(preview, hljs, appearance.syntaxHighlighting);
       mermaid?.renderBlocks(preview);
+      renderReadingFolds();
     } catch (error) {
       console.error("Could not render the file", error);
       preview.textContent = editor.getText();
     }
+  }
+
+  // Reading mode shows the folds Live mode keeps in the editor state.
+  function renderReadingFolds() {
+    applyReadingFolds(preview, foldedSections(editor.view.state), (id, folded) => {
+      setSectionFolded(editor.view, id, folded);
+      renderReadingFolds();
+    });
+  }
+
+  function renderOutline() {
+    clearTimeout(outlineTimer);
+    outlineTimer = null;
+    const buffer = showingStartPage ? null : model.active();
+    const { state } = editor.view;
+    const hunks = buffer ? reviewHunkFences(state) : [];
+    const entries = buffer ? outlineEntries(documentAnchors(state), hunks, state.doc.length) : [];
+    outlineSection.hidden = entries.length === 0;
+    if (entries.length) renderOutlineList(outlineList, entries, jumpTo);
+    const progress = reviewProgress(hunks);
+    reviewStatus.hidden = progress.total === 0;
+    reviewStatus.textContent = reviewProgressText(progress);
+    reviewStatus.classList.toggle("complete", progress.total > 0 && progress.reviewed === progress.total);
+    reviewNext.hidden = progress.reviewed === progress.total;
+  }
+
+  // A hunk this close below the top of the view counts as the one being read,
+  // so a hunk a jump just scrolled to is not picked again.
+  const TOP_SLACK_PX = 8;
+
+  function nextUnreviewedHunk() {
+    if (layoutMode === "reading") {
+      const widgets = [...preview.querySelectorAll(".diff-hunk[data-hunk]")];
+      const top = preview.getBoundingClientRect().top + TOP_SLACK_PX;
+      let current = -1;
+      widgets.forEach((widget, index) => {
+        const rect = widget.getBoundingClientRect();
+        if (rect.height > 0 && rect.top <= top) current = index;
+      });
+      const hunks = widgets.map((widget, index) => ({
+        id: widget.dataset.hunk,
+        reviewed: widget.classList.contains("diff-hunk-is-reviewed"),
+        at: index
+      }));
+      return nextUnreviewed(hunks, current);
+    }
+    const { view } = editor;
+    const top = view.lineBlockAtHeight(view.scrollDOM.getBoundingClientRect().top - view.documentTop + TOP_SLACK_PX).from;
+    const hunks = reviewHunkFences(view.state)
+      .filter(fence => HUNK_ID.test(fence.meta.hunk ?? ""))
+      .map(fence => ({ id: fence.meta.hunk, reviewed: fence.meta.reviewed, at: fence.from }));
+    return nextUnreviewed(hunks, top);
+  }
+
+  function goToNextUnreviewed() {
+    const id = nextUnreviewedHunk();
+    if (id) jumpTo(id);
+  }
+
+  function scheduleOutline() {
+    clearTimeout(outlineTimer);
+    outlineTimer = setTimeout(renderOutline, OUTLINE_DELAY_MS);
+  }
+
+  function toggleOutline() {
+    const expanded = outlineToggle.getAttribute("aria-expanded") !== "true";
+    outlineToggle.setAttribute("aria-expanded", String(expanded));
+    outlineList.hidden = !expanded;
   }
 
   function renderMenu() {
@@ -256,17 +357,28 @@ export function createFileEditor({
     editorSection.hidden = !showEditor;
     toolbar.hidden = !showEditor;
     if (showEditor && shownId !== buffer.id) {
+      // The editor and the preview are shared by every file, so each file
+      // keeps its own scroll position; one shown for the first time starts
+      // at the top instead of where the last file was.
       const previous = model.get(shownId);
-      if (previous) previous.editorState = editor.getState();
+      if (previous) {
+        previous.editorState = editor.getState();
+        previous.scroll = editor.scrollPlace();
+        previous.previewTop = preview.scrollTop;
+      }
       if (buffer.editorState) editor.restoreState(buffer.editorState);
       else loadBuffer(buffer);
       shownId = buffer.id;
       renderPreview();
+      editor.restoreScroll(buffer.scroll);
+      preview.scrollTop = buffer.previewTop ?? 0;
     }
     if (showEditor) formatToolbar.layout();
     comments.shown();
     renderTitle();
     renderSidebar();
+    renderOutline();
+    renderNav();
     renderBanner();
     renderMenu();
   }
@@ -280,6 +392,7 @@ export function createFileEditor({
     model.edit(buffer.id, text);
     renderTitle();
     renderSidebar();
+    scheduleOutline();
   }
 
   // Sends everything typed, then has Rust write the file now. A file that
@@ -419,6 +532,94 @@ export function createFileEditor({
     }
   }
 
+  // A target inside a folded section unfolds it first.
+  function scrollToFragment(fragment) {
+    if (layoutMode !== "reading") {
+      revealAnchor(editor.view, fragment);
+      scrollToAnchor(editor.view, fragment);
+      return;
+    }
+    const target = findReadingAnchor(preview, fragment);
+    const hiding = target ? readingFoldsHiding(preview, target, foldedSections(editor.view.state)) : [];
+    if (hiding.length) {
+      for (const id of hiding) setSectionFolded(editor.view, id, false);
+      renderReadingFolds();
+    }
+    scrollToReadingAnchor(preview, fragment);
+  }
+
+  // A link to `chapter.md#heading` opens a file next to the shown one; Rust
+  // refuses anything outside its folder, and then the click does nothing.
+  async function followLink(href) {
+    const action = resolveLinkAction(href);
+    if (action.kind === "external") {
+      openExternal(href);
+      return;
+    }
+    if (action.kind === "anchor") {
+      await jumpTo(action.fragment);
+      return;
+    }
+    const fromPath = showingStartPage ? null : model.active()?.path;
+    if (action.kind !== "sibling" || !fromPath) return;
+    let target;
+    try {
+      target = await invoke("file_doc_open_sibling", { fromPath, relative: action.path });
+    } catch (error) {
+      console.warn(`Not opening ${action.path}`, error);
+      return;
+    }
+    await jump(async () => {
+      const buffer = await openPath(target.path);
+      if (buffer && action.fragment) scrollToFragment(action.fragment);
+    }, action.fragment);
+  }
+
+  // ----------------------------------------------------
+  // Back and forward
+  // ----------------------------------------------------
+  const scroller = () => (layoutMode === "reading" ? preview : editor.view.scrollDOM);
+
+  function currentPlace() {
+    const path = showingStartPage ? null : model.active()?.path;
+    return path ? { path, top: Math.round(scroller().scrollTop) } : null;
+  }
+
+  function jumpTo(fragment) {
+    return jump(() => scrollToFragment(fragment), fragment);
+  }
+
+  // Records a link jump so Back returns to where it started.
+  async function jump(go, anchor) {
+    const from = currentPlace();
+    await go();
+    const to = currentPlace();
+    navHistory.visit(from, to && anchor ? { ...to, anchor } : to);
+    renderNav();
+  }
+
+  async function goTo(place) {
+    renderNav();
+    if (!place) return;
+    if (showingStartPage || model.active()?.path !== place.path) {
+      if (!(await openPath(place.path))) return;
+    }
+    const restore = () => { scroller().scrollTop = place.top; };
+    restore();
+    preview.ownerDocument.defaultView?.requestAnimationFrame?.(restore);
+  }
+
+  const goBack = () => goTo(navHistory.back(currentPlace()));
+  const goForward = () => goTo(navHistory.forward(currentPlace()));
+
+  function renderNav() {
+    const hidden = model.list().length === 0;
+    backButton.hidden = hidden;
+    forwardButton.hidden = hidden;
+    backButton.disabled = !navHistory.canBack();
+    forwardButton.disabled = !navHistory.canForward();
+  }
+
   async function openRecent(file) {
     if (!file.exists) {
       notify(`${file.name} is no longer on disk, so it was removed from Recent.`);
@@ -521,7 +722,10 @@ export function createFileEditor({
     if (!event?.path) return;
     sync.receive(event);
     const buffer = model.docUpdated(event);
-    if (buffer && buffer.id === shownId) renderPreview();
+    if (buffer && buffer.id === shownId) {
+      renderPreview();
+      scheduleOutline();
+    }
     renderTitle();
     renderSidebar();
   }
@@ -628,11 +832,22 @@ export function createFileEditor({
       button.addEventListener("click", () => setLayoutMode(mode));
     }
     sidebarToggle.addEventListener("click", toggleSidebar);
+    outlineToggle.addEventListener("click", toggleOutline);
+    reviewNext.addEventListener("click", goToNextUnreviewed);
+    backButton.addEventListener("click", goBack);
+    forwardButton.addEventListener("click", goForward);
+    // The side buttons of a mouse, as in a browser.
+    $("file-editor").addEventListener("mouseup", (event) => {
+      if (event.button !== 3 && event.button !== 4) return;
+      event.preventDefault();
+      if (event.button === 3) goBack();
+      else goForward();
+    });
     preview.addEventListener("click", (event) => {
       const link = event.target.closest("a[href]");
       if (!link) return;
       event.preventDefault();
-      if (resolveLinkAction(link.getAttribute("href")).kind === "external") openExternal(link.getAttribute("href"));
+      followLink(link.getAttribute("href"));
     });
     $("start-new-file-btn").addEventListener("click", newFile);
     $("start-open-file-btn").addEventListener("click", openDialog);
@@ -661,6 +876,9 @@ export function createFileEditor({
     // Ctrl+Cmd+S toggles the sidebar on macOS.
     else if (key === "s" && !event.shiftKey && !(event.ctrlKey && event.metaKey) && model.active()) action = () => save();
     else if (key === "w" && !event.shiftKey && model.active() && !showingStartPage) action = () => closeFile();
+    // Cmd+[ and Cmd+] go Back and Forward, as in a browser.
+    else if (event.key === "[" && !event.shiftKey && model.list().length) action = goBack;
+    else if (event.key === "]" && !event.shiftKey && model.list().length) action = goForward;
     if (!action) return false;
     event.preventDefault();
     action();

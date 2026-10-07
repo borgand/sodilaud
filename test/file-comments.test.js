@@ -78,18 +78,43 @@ test("a comment on a file: composer, panel, review mode, replies and agent edits
   assert.ok(items().every(item => item.querySelector(".comment-resend")));
 
   // The agent asks a question; the owner answers in place.
-  app.fileDocs.agentComment(PATH, "# Spec", "Which audience?");
+  const asked = app.fileDocs.agentComment(PATH, "# Spec", "Which audience?");
   await app.settle();
-  const question = items().find(item => item.classList.contains("comment-agent"));
-  question.querySelector(".comment-reply").click();
+  assert.equal($("comments-count-btn").textContent, "3 comments, 1 new");
+  const question = () => items().find(item => item.dataset.commentId === asked.id);
+  assert.ok(question().classList.contains("comment-unread"));
+  question().querySelector(".comment-reply").click();
   await app.settle();
-  const answer = question.parentElement.querySelector(".comment-inline-editor textarea") ?? $("comments-panel").querySelector(".comment-inline-editor textarea");
+  assert.equal($("comments-count-btn").textContent, "3 comments", "opening the thread reads it");
+  const answer = question().querySelector(".comment-inline-editor textarea");
   answer.value = "Developers";
-  $("comments-panel").querySelector(".comment-save").click();
+  question().querySelector(".comment-save").click();
   await app.settle(200);
   const reply = app.fileDocs.comments(PATH).at(-1);
   assert.equal(reply.body, "Developers");
-  assert.equal(reply.replyTo, app.fileDocs.comments(PATH).find(c => c.author === "agent").id);
+  assert.equal(reply.replyTo, asked.id);
+
+  // The agent answers in the thread; the owner replies to that reply and the
+  // new one joins the same thread, nested under the question.
+  const followUp = app.fileDocs.agentReply(PATH, reply.id, "Backend or frontend?");
+  await app.settle();
+  assert.equal(followUp.replyTo, asked.id);
+  assert.equal($("comments-count-btn").textContent, "3 comments, 1 new", "a reply counts its thread once");
+  const nested = [...question().querySelectorAll(".comment-replies .comment-item")].map(item => item.querySelector(".comment-body").textContent);
+  assert.deepEqual(nested, ["Developers", "Backend or frontend?"]);
+  question().querySelector(".comment-replies .comment-agent").click();
+  await app.settle();
+  assert.ok(!app.fileDocs.comments(PATH).some(c => c.unread));
+  question().querySelector(":scope > .comment-actions .comment-reply").click();
+  await app.settle();
+  question().querySelector(".comment-inline-editor textarea").value = "Backend";
+  question().querySelector(".comment-save").click();
+  await app.settle(200);
+  assert.equal(app.fileDocs.comments(PATH).at(-1).replyTo, asked.id);
+  question().querySelector(":scope > .comment-actions .comment-resolve").click();
+  await app.settle();
+  assert.ok(app.fileDocs.comments(PATH).filter(c => (c.replyTo ?? c.id) === asked.id).every(c => c.state === "resolved"), "resolve closes the thread");
+  assert.equal(question().querySelector(".comment-reply"), null, "a resolved thread takes no reply");
 
   // An agent's edit is highlighted for a moment; the owner's are not.
   app.fileDocs.agentEdit(PATH, [7, [0, "Agent line."], app.fileDocs.text(PATH).length - 7]);

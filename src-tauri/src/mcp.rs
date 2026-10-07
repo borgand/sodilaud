@@ -117,7 +117,7 @@ const READ_TOOLS: [&str; 8] = [
     "read_document",
     "get_pending_comments",
 ];
-const WRITE_TOOLS: [&str; 13] = [
+const WRITE_TOOLS: [&str; 14] = [
     "create_note",
     "create_folder",
     "append_to_note",
@@ -130,6 +130,7 @@ const WRITE_TOOLS: [&str; 13] = [
     "open_document",
     "apply_edit",
     "add_comment",
+    "reply_comment",
     "resolve_comment",
 ];
 const MAX_WAIT_SECONDS: u32 = 1800;
@@ -1050,6 +1051,17 @@ struct AddCommentArgs {
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct ReplyCommentArgs {
+    /// ID of any comment in the thread, from get_pending_comments or read_document.
+    comment_id: String,
+    /// The reply, 1-2000 characters.
+    body: String,
+    /// Unique retry key (1-128 characters). Reuse with identical arguments on retry.
+    request_id: String,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct ResolveCommentArgs {
     /// Comment ID from get_pending_comments or read_document.
     id: String,
@@ -1903,7 +1915,7 @@ impl SodilaudServer {
         )
     }
 
-    /// Take the user's comments that wait for an agent, oldest first, and mark them sent. Each has its document, the anchored text with its heading path and two lines of context each side, and the comment. An answer to one of your own comments carries replyTo with your comment. With waitSeconds it waits up to that long (at most 1800) for a comment and returns as soon as one arrives; timedOut is true when none came. Your own comments are never returned. After addressing a comment, call resolve_comment.
+    /// Take the user's comments that wait for an agent, oldest first, and mark them sent. Each has its document, the anchored text with its heading path and two lines of context each side, and the comment. A reply in a thread carries replyTo with the thread's first comment, and every comment carries thread: the first comment and each reply so far, oldest first, as {id, author, body, createdAt}. With waitSeconds it waits up to that long (at most 1800) for a comment and returns as soon as one arrives; timedOut is true when none came. Your own comments are never returned. To discuss, answer with reply_comment; after addressing a comment, call resolve_comment.
     #[tool(annotations(
         title = "Get pending comments",
         read_only_hint = true,
@@ -1965,7 +1977,7 @@ impl SodilaudServer {
         }
     }
 
-    /// Leave a comment on a document for the user, to start a review: ask about open questions in a document you wrote or opened. anchorText is exact text in the document now; when it occurs more than once, occurrence (from 1) picks one. The user answers in place, and only the answers come back through get_pending_comments, with replyTo naming your comment. The document becomes co-edited. Retry identical arguments with the same requestId after a failure.
+    /// Leave a comment on a document for the user, to start a review: ask about open questions in a document you wrote or opened. anchorText is exact text in the document now; when it occurs more than once, occurrence (from 1) picks one. The user answers in place, and only the answers come back through get_pending_comments, with replyTo naming your comment and the whole thread; continue the discussion with reply_comment. The document becomes co-edited. Retry identical arguments with the same requestId after a failure.
     #[tool(annotations(
         title = "Add comment",
         read_only_hint = false,
@@ -2007,7 +2019,39 @@ impl SodilaudServer {
         ))
     }
 
-    /// Mark a comment addressed, with a one-line note for the user naming what changed, including any other places you changed for consistency. Resolving an answer to your own comment resolves your comment too. Safe to repeat.
+    /// Reply in a comment thread without resolving it: answer the user's question with your reasoning, or ask a follow-up. commentId names the thread's first comment or any reply; the reply joins that thread and its anchor. The user's answers arrive through get_pending_comments with the whole thread. Fails on a resolved thread. Retry identical arguments with the same requestId after a failure.
+    #[tool(annotations(
+        title = "Reply to comment",
+        read_only_hint = false,
+        destructive_hint = false,
+        idempotent_hint = true,
+        open_world_hint = false
+    ))]
+    async fn reply_comment(
+        &self,
+        Parameters(args): Parameters<ReplyCommentArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        if let Some(denied) = self.denied("reply_comment")? {
+            return Ok(denied);
+        }
+        check_request_id(&args.request_id)?;
+        let body = args.body.trim();
+        if args.comment_id.trim().is_empty()
+            || body.is_empty()
+            || body.chars().count() > coedit::MAX_BODY_CHARS
+        {
+            return Err(McpError::invalid_params(
+                "commentId is required and body must contain 1-2000 characters",
+                None,
+            ));
+        }
+        outcome(
+            self.registry
+                .coedit_reply(&args.comment_id, body, &args.request_id),
+        )
+    }
+
+    /// Mark a comment addressed, with a one-line note for the user naming what changed, including any other places you changed for consistency. Resolving closes the whole thread, your comments and the user's replies alike. Safe to repeat.
     #[tool(annotations(
         title = "Resolve comment",
         read_only_hint = false,
@@ -2189,7 +2233,7 @@ impl ServerHandler for SodilaudServer {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new("sodilaud-mcp", env!("CARGO_PKG_VERSION")))
             .with_instructions(
-                "Access to the notes collection currently open in Sodilaud, as the editor shows it. Each function requires its permission enabled in MCP Configuration. Read functions start enabled and write functions disabled until the user selects them; choices are remembered across restarts. push_quick_note puts a note into the user's Quick Notes (the From agents folder) and needs no collectionId. open_document opens an absolute .md, .markdown or .txt path in the main window and returns no content. Co-editing: read_document returns a file's or note's live text and version and makes it co-edited; change it only with apply_edit (oldText/newText against that version; the user's typing wins conflicts), never with native file tools. get_pending_comments (with waitSeconds to wait) returns the user's comments anchored to text; address each, then resolve_comment with a one-line note. add_comment asks the user a question on a passage; their answers arrive through get_pending_comments. delete_note moves a note to persistent trash and requires expectedRevision from get_note. delete_folder requires expectedRevision from list_folders and rejects nonempty folders. list_trash lists recovery metadata; only the user can restore or empty trash through the UI. rename_note and move_note require expectedRevision from get_note. rename_folder requires expectedRevision from list_folders. All edits preserve content except append_to_note, which requires the expectedRevision from get_note, appends exact text, and never adds separators; line breaks are stored as \\n. A revision conflict requires rereading; after a failure or timeout, retry identical arguments with the same requestId, which never applies a write twice. Get collectionId from a read result and supply a unique requestId for each write; reuse identical arguments on retries. Retry keys last for this collection session; a switch or app restart invalidates collectionId. Results are paginated; follow nextOffset until it is null. get_note offsets count Unicode characters, not bytes.",
+                "Access to the notes collection currently open in Sodilaud, as the editor shows it. Each function requires its permission enabled in MCP Configuration. Read functions start enabled and write functions disabled until the user selects them; choices are remembered across restarts. push_quick_note puts a note into the user's Quick Notes (the From agents folder) and needs no collectionId. open_document opens an absolute .md, .markdown or .txt path in the main window and returns no content. Co-editing: read_document returns a file's or note's live text and version and makes it co-edited; change it only with apply_edit (oldText/newText against that version; the user's typing wins conflicts), never with native file tools. get_pending_comments (with waitSeconds to wait) returns the user's comments anchored to text; address each, then resolve_comment with a one-line note, which closes the whole thread. reply_comment answers in a thread without resolving it, for discussion. add_comment asks the user a question on a passage; their answers arrive through get_pending_comments with the thread so far. delete_note moves a note to persistent trash and requires expectedRevision from get_note. delete_folder requires expectedRevision from list_folders and rejects nonempty folders. list_trash lists recovery metadata; only the user can restore or empty trash through the UI. rename_note and move_note require expectedRevision from get_note. rename_folder requires expectedRevision from list_folders. All edits preserve content except append_to_note, which requires the expectedRevision from get_note, appends exact text, and never adds separators; line breaks are stored as \\n. A revision conflict requires rereading; after a failure or timeout, retry identical arguments with the same requestId, which never applies a write twice. Get collectionId from a read result and supply a unique requestId for each write; reuse identical arguments on retries. Retry keys last for this collection session; a switch or app restart invalidates collectionId. Results are paginated; follow nextOffset until it is null. get_note offsets count Unicode characters, not bytes.",
             )
     }
 
@@ -2678,7 +2722,12 @@ pub(crate) mod tests {
         assert!(
             error_text(server.apply_edit(args(apply.clone())).await.unwrap()).contains("disabled")
         );
-        for tool in ["apply_edit", "add_comment", "resolve_comment"] {
+        for tool in [
+            "apply_edit",
+            "add_comment",
+            "reply_comment",
+            "resolve_comment",
+        ] {
             permissions.write().unwrap().insert(tool.into());
         }
         let applied = structured(server.apply_edit(args(apply)).await.unwrap());
@@ -2693,6 +2742,38 @@ pub(crate) mod tests {
                 .unwrap(),
         );
         let id = comment["comment"]["id"].as_str().unwrap().to_string();
+        let note = crate::docs::coedit::PageDoc::Note {
+            collection_id: "test-collection".into(),
+            note_id: "two".into(),
+        };
+        let answer = server
+            .registry
+            .comment_add(&note, 0, (0, 0), "Why ask?", Some(&id))
+            .unwrap();
+        let pending = structured(
+            server
+                .get_pending_comments(args(serde_json::json!({})), CancellationToken::new())
+                .await
+                .unwrap(),
+        );
+        let thread = &pending["comments"][0]["thread"];
+        assert_eq!(thread[0]["body"], "Is this right?");
+        assert_eq!(thread[0]["author"], "agent");
+        assert_eq!(thread[1]["id"], serde_json::json!(answer.id));
+        let reply = structured(
+            server
+                .reply_comment(args(serde_json::json!({ "commentId": answer.id,
+                    "body": "To check the merge.", "requestId": "rc1" })))
+                .await
+                .unwrap(),
+        );
+        assert_eq!(reply["comment"]["replyTo"], serde_json::json!(id));
+        assert_eq!(reply["comment"]["state"], "open");
+        assert!(server
+            .reply_comment(args(serde_json::json!({ "commentId": id, "body": " ",
+                "requestId": "rc2" })))
+            .await
+            .is_err());
         let listed = structured(
             server
                 .list_documents(args(serde_json::json!({})))
@@ -2985,7 +3066,7 @@ pub(crate) mod tests {
         .await;
         let tools = receive_json(&mut client).await;
         let tools = tools["result"]["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 21);
+        assert_eq!(tools.len(), 22);
         for forbidden in ["empty_trash", "purge_trash", "restore_note"] {
             assert!(!tools.iter().any(|tool| tool["name"] == forbidden));
         }
@@ -3225,7 +3306,7 @@ pub(crate) mod tests {
         )
         .await;
         let tools = receive_json(&mut client).await;
-        assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 21);
+        assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 22);
         cancellation.cancel();
         server.await.unwrap();
     }
