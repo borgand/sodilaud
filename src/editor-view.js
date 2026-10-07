@@ -74,8 +74,13 @@ const emptyLineMarkers = new RangeSetBuilder().finish();
 
 // Alt+Up/Down belongs to the app (note move); editor-commands handles list moves.
 // Mod-i (selectParentSyntax) is the italic shortcut in editor-commands.
-const reservedKeys = new Set(["Alt-ArrowUp", "Alt-ArrowDown", "Shift-Alt-ArrowUp", "Shift-Alt-ArrowDown", "Mod-i"]);
-const baseKeymap = defaultKeymap.filter(binding => !reservedKeys.has(binding.key));
+// Mod-[ and Mod-] are Back and Forward, as in a browser; indenting moves to Mod-Alt-[ and Mod-Alt-].
+const reservedKeys = new Set(["Alt-ArrowUp", "Alt-ArrowDown", "Shift-Alt-ArrowUp", "Shift-Alt-ArrowDown", "Mod-i", "Mod-[", "Mod-]"]);
+const movedKeys = [["Mod-[", "Mod-Alt-["], ["Mod-]", "Mod-Alt-]"]].flatMap(([from, to]) => {
+  const binding = defaultKeymap.find(candidate => candidate.key === from);
+  return binding ? [{ ...binding, key: to }] : [];
+});
+const baseKeymap = [...defaultKeymap.filter(binding => !reservedKeys.has(binding.key)), ...movedKeys];
 const findMatchMark = Decoration.mark({ class: "cm-find-match" });
 const findActiveMark = Decoration.mark({ class: "cm-find-match cm-find-active" });
 

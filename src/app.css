@@ -191,6 +191,21 @@
   flex: 0 1 auto;
 }
 
+.main-topbar-left .icon-btn[hidden] {
+  display: none;
+}
+
+.main-topbar-left .icon-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+  background: none;
+}
+
+.main-topbar-left #nav-back-btn,
+.main-topbar-left #nav-forward-btn {
+  width: 28px;
+}
+
 .main-topbar .topbar-center[hidden] {
   display: none;
 }

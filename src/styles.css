@@ -3352,6 +3352,37 @@ kbd {
   text-decoration-thickness: 1px;
 }
 
+.cm-lp-follow {
+  position: absolute;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background-color: var(--bg-input);
+  color: var(--accent-color);
+  cursor: pointer;
+}
+
+.cm-lp-follow[hidden] {
+  display: none;
+}
+
+.cm-lp-follow:hover,
+.cm-lp-follow:focus-visible {
+  background-color: var(--accent-color);
+  color: var(--bg-app);
+}
+
+.cm-lp-follow svg {
+  width: 12px;
+  height: 12px;
+}
+
 .cm-mode-live .cm-lp-quote {
   border-left: 4px solid var(--preview-quote-border);
   background-color: var(--preview-quote-bg);
