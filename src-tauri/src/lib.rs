@@ -434,6 +434,7 @@ pub fn run(context: tauri::Context<tauri::Wry>) {
             docs::commands::comment_edit,
             docs::commands::comment_delete,
             docs::commands::comment_resolve,
+            docs::commands::comment_mark_read,
             docs::commands::comment_resend,
             docs::commands::comments_send_review,
             docs::commands::comments_clear_resolved,

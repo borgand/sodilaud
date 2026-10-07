@@ -359,8 +359,8 @@ pub(crate) fn comments_get(
     registry.comments_get(&page_doc(&window, doc)?)
 }
 
-/// A new owner comment on `from..to` of the text at `version`, or an answer
-/// to the agent comment `replyTo`, which takes that comment's range.
+/// A new owner comment on `from..to` of the text at `version`, or a reply on
+/// the unresolved thread holding `replyTo`, which takes the thread's range.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct NewComment {
@@ -419,6 +419,16 @@ pub(crate) fn comment_resolve(
     id: String,
 ) -> Result<(), String> {
     registry.comment_resolve(&page_doc(&window, doc)?, &id)
+}
+
+#[tauri::command]
+pub(crate) fn comment_mark_read(
+    window: Window,
+    registry: tauri::State<'_, SharedRegistry>,
+    doc: DocAddress,
+    id: String,
+) -> Result<(), String> {
+    registry.comment_mark_read(&page_doc(&window, doc)?, &id)
 }
 
 #[tauri::command]

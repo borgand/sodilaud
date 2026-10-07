@@ -245,7 +245,15 @@ export function createFakeRegistry({ emit, seed = {}, files = {}, open = DEFAULT
     comment_resolve: ({ doc, id: commentId }) => {
       check(doc.collectionId);
       const comment = commentsOf(doc.noteId).find(c => c.id === commentId);
-      comment.state = "resolved";
+      const root = comment.replyTo ?? comment.id;
+      commentsOf(doc.noteId).filter(c => (c.replyTo ?? c.id) === root).forEach(c => { c.state = "resolved"; });
+      changedComments(doc.noteId);
+    },
+    comment_mark_read: ({ doc, id: commentId }) => {
+      check(doc.collectionId);
+      const comment = commentsOf(doc.noteId).find(c => c.id === commentId);
+      const root = comment.replyTo ?? comment.id;
+      commentsOf(doc.noteId).filter(c => (c.replyTo ?? c.id) === root).forEach(c => { c.unread = false; });
       changedComments(doc.noteId);
     },
     coedit_get_state: () => ({ holdForReview: false, listening: false })
@@ -275,7 +283,7 @@ export function createFakeRegistry({ emit, seed = {}, files = {}, open = DEFAULT
     comments: commentsOf,
     agentComment(noteId, anchor, body) {
       const from = note(noteId).content.indexOf(anchor);
-      return addComment(noteId, { author: "agent", state: "open", from, to: from + anchor.length, body });
+      return addComment(noteId, { author: "agent", state: "open", from, to: from + anchor.length, body, unread: true });
     },
     agentTrash(noteId) {
       trashNote(noteId);

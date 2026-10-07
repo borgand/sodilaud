@@ -24,15 +24,17 @@ from the agent are shown in a different color.
 
 ## The comments panel
 
-The count in the status bar ("3 comments") opens the comments panel. It lists each comment
-with the text it is on, who wrote it, its state and the agent's note. Click a comment to jump
-to its text.
+The count in the status bar ("3 comments") opens the comments panel. It lists each thread
+with the text it is on, then its replies indented below, each with who wrote it, its state
+and the agent's note. Click a comment to jump to its text. A new comment or reply from an
+agent shows a **New** marker, and the count reads "3 comments, 1 new", until you open its
+thread.
 
 | State | Meaning | You can |
 |---|---|---|
 | Held for review | Waiting for **Send review** | Edit, Delete |
 | Waiting for an agent | Queued; the next agent that asks gets it | Edit, Delete |
-| Sent to an agent | An agent took it | Resend, Resolve |
+| Sent to an agent | An agent took it | Resend, Reply, Resolve |
 | Open | A question from the agent | Reply, Resolve |
 | Resolved | Done; the agent's note says what changed | Clear resolved |
 | Text gone | Its text was deleted; the comment and its snippet are kept | Delete |
@@ -41,8 +43,10 @@ to its text.
   **Hold for review** keeps them until you choose **Send review (N)**, so you can read
   through a whole document first. The choice is remembered.
 - **Resend** puts back a comment an agent took but never resolved.
-- **Reply** answers a question the agent left on your document. Only your answer goes to the
-  agent, together with its question. Resolving the answer resolves the question too.
+- **Reply** answers in a thread that is not resolved, yours or the agent's. Your reply goes
+  to the agent with the whole thread, and the agent can answer back in the same thread, so
+  a design question can go back and forth before anything changes. **Resolve**, from either
+  side, closes the whole thread.
 - The green **Agent listening** dot shows while an agent is waiting for comments.
 
 Comments are kept across restarts. Comments on notes are stored in the workspace file;
