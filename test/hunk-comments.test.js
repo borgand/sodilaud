@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 import { JSDOM } from "jsdom";
 import { buildHunkElement, reviewHunkMeta } from "../src/diff-hunk.js";
-import { charPoint, paintMarks, selectedSpan, setHunkComposer, spanText } from "../src/hunk-comments.js";
+import { charPoint, paintDots, paintMarks, selectedSpan, setHunkComposer, spanText } from "../src/hunk-comments.js";
 import { polyfillLayout } from "./helpers/cm-dom.js";
 
 const dom = new JSDOM("<!doctype html><html><body></body></html>");
@@ -177,4 +177,33 @@ test("copying selected code gives the code without markers or line numbers", () 
   document.body.dispatchEvent(event);
   assert.deepEqual(copied, ["text/plain", "let b = \"two\";"]);
   assert.equal(event.defaultPrevented, true);
+});
+
+test("comment dots sit in the old line-number cell, or before the header text, and replace earlier dots", () => {
+  const root = widget({ onLineComment: () => {}, codeComments: { onComment: () => {} } });
+  paintDots(root, [{ row: 0, id: "c0", author: "owner" }, { row: 3, id: "c3", author: "agent" }]);
+  paintDots(root, [{ row: 0, id: "c0", author: "owner" }, { row: 3, id: "c3", author: "agent" }]);
+  const dots = [...root.querySelectorAll(".diff-comment-dot")];
+  assert.deepEqual(dots.map(dot => dot.getAttribute("data-comment-id")), ["c0", "c3"]);
+  assert.ok(dots[0].parentElement.classList.contains("diff-meta"));
+  assert.ok(dots[1].parentElement.classList.contains("diff-ln-old"));
+  assert.ok(dots[1].classList.contains("diff-comment-dot-agent"));
+  assert.equal(dots[0].textContent, "", "a dot adds no text to the row");
+  assert.equal(spanText(root, { start: { row: 0, char: 0 }, end: { row: 0, char: 2 } }), "@@");
+
+  paintDots(root, []);
+  assert.equal(root.querySelector(".diff-comment-dot"), null);
+});
+
+test("clicking a comment dot selects its thread without starting a selection", () => {
+  const selected = [];
+  let started = 0;
+  const root = widget({
+    onLineComment: () => { throw new Error("a dot is not a line-number click"); },
+    codeComments: { onStart: () => { started += 1; }, onComment: () => {}, onMarkClick: id => selected.push(id) }
+  });
+  paintDots(root, [{ row: 0, id: "c0", author: "owner" }, { row: 3, id: "c3", author: "agent" }]);
+  for (const dot of root.querySelectorAll(".diff-comment-dot")) mouse(dot, "mousedown");
+  assert.deepEqual(selected, ["c0", "c3"]);
+  assert.equal(started, 0);
 });

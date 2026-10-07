@@ -115,6 +115,27 @@ export function paintMarks(root, marks) {
 }
 
 /**
+ * Puts a comment dot on each row in `dots` ({row, id, author}), replacing
+ * earlier ones. The editor's gutter shows one line for the whole widget, so
+ * the widget marks its own commented rows. A dot has no text of its own, so
+ * it never becomes part of a row's code.
+ */
+export function paintDots(root, dots) {
+  for (const old of root.querySelectorAll(".diff-comment-dot")) old.remove();
+  const rows = rowsOf(root);
+  for (const dot of dots) {
+    const tr = rows[dot.row];
+    const cell = tr?.querySelector(".diff-ln-old") ?? (tr && cellOf(tr));
+    if (!cell) continue;
+    const span = root.ownerDocument.createElement("span");
+    span.className = `diff-comment-dot diff-comment-dot-${dot.author === "agent" ? "agent" : "owner"}`;
+    span.setAttribute("data-comment-id", dot.id);
+    span.title = "Open this comment";
+    cell.prepend(span);
+  }
+}
+
+/**
  * Shows a composer below `composer.row`, or removes it for null. `create`
  * builds the composer's element; an open one with the same key is kept.
  * Returns whether the widget's height changed.
@@ -268,6 +289,13 @@ export function enableCodeSelection(root, { onStart = () => {}, onComment, onMar
   root.addEventListener("mousedown", event => {
     const target = event.target;
     if (event.button !== 0 || event.metaKey || event.ctrlKey || !target?.closest) return;
+    const dot = target.closest(".diff-comment-dot");
+    if (dot && root.contains(dot)) {
+      event.preventDefault();
+      event.stopPropagation();
+      onMarkClick(dot.getAttribute("data-comment-id"));
+      return;
+    }
     if (target.closest("button, .diff-hunk-header, .diff-composer-row, .diff-ln")) return;
     const tr = target.closest("tr.diff-row");
     if (!tr || !root.contains(tr)) return;

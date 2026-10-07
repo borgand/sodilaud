@@ -193,3 +193,51 @@ test("comments on fence text show as marks in the widget, and clicking one selec
     assert.ok(widget.querySelector(".diff-mark").classList.contains("cm-comment-active"));
   } finally { t.done(); }
 });
+
+test("a commented row in the widget shows the gutter's comment dot, which opens the thread", async () => {
+  const t = await setup(DOC);
+  try {
+    const widget = t.widget();
+    const from = DOC.indexOf("let b = 3");
+    const header = DOC.indexOf("@@ -10");
+    t.view.dispatch({ effects: t.comments.setComments.of([
+      { id: "late", author: "owner", state: "queued", from: from + 4, to: from + 5, body: "second on the row" },
+      { id: "c1", author: "agent", state: "open", from, to: from + 9, body: "?" },
+      { id: "h", author: "owner", state: "queued", from: header, to: header + 2, body: "header" },
+      { id: "gone", author: "owner", state: "resolved", from: DOC.indexOf("let a"), to: DOC.indexOf("let a") + 5, body: "done" }
+    ]) });
+    await settle();
+    assert.equal(t.widget(), widget, "dots change the widget in place");
+    const dots = [...widget.querySelectorAll(".diff-comment-dot")];
+    assert.deepEqual(dots.map(dot => dot.getAttribute("data-comment-id")), ["h", "c1"]);
+    assert.ok(dots[1].closest("tr").classList.contains("diff-row-add"));
+    assert.ok(dots[1].classList.contains("diff-comment-dot-agent"));
+
+    dots[1].dispatchEvent(new t.env.window.MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0, detail: 1 }));
+    assert.deepEqual(t.selected, ["c1"]);
+
+    t.view.dispatch({ effects: t.comments.setComments.of([]) });
+    await settle();
+    assert.equal(widget.querySelector(".diff-comment-dot"), null);
+  } finally { t.done(); }
+});
+
+test("a click in the margin level with a hunk widget leaves the fence rendered", async () => {
+  const t = await setup(DOC);
+  try {
+    const widget = t.widget();
+    const { window } = t.env;
+    widget.getBoundingClientRect = () => ({ top: 100, bottom: 300, left: 40, right: 600, width: 560, height: 200, x: 40, y: 100 });
+    const before = t.view.state.selection.main.head;
+    const click = y => {
+      const event = new window.MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0, detail: 1, clientX: 10, clientY: y });
+      t.view.contentDOM.dispatchEvent(event);
+      return event;
+    };
+    const beside = click(200);
+    assert.equal(beside.defaultPrevented, true);
+    await settle();
+    assert.equal(t.view.state.selection.main.head, before, "the cursor does not move into the fence");
+    assert.equal(t.widget(), widget, "the fence stays rendered");
+  } finally { t.done(); }
+});

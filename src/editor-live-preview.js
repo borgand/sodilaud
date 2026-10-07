@@ -15,7 +15,7 @@ import { modeFacet } from "./editor-view.js";
 import { isSafeMarkdownUrl, renderMarkdown, resolveLinkAction } from "./markdown.js";
 import { scrollToAnchor } from "./editor-anchors.js";
 import { buildHunkElement, reviewHunkMeta } from "./diff-hunk.js";
-import { paintMarks, setHunkComposer } from "./hunk-comments.js";
+import { paintDots, paintMarks, setHunkComposer } from "./hunk-comments.js";
 import {
   hunkFenceAt,
   hunkLineRange,
@@ -270,22 +270,42 @@ function hunkReview(state, found) {
     .filter(comment => !comment.orphaned && comment.state !== "resolved" && comment.to > comment.from)
     .map(comment => ({
       id: comment.id,
+      author: comment.author,
       from: comment.from,
       to: comment.to,
       className: `cm-comment cm-comment-${comment.author}${comment.id === active ? " cm-comment-active" : ""}`
     }));
+  // One dot per row, for the earliest comment starting there, like the gutter.
+  const dots = [];
+  for (const range of [...ranges].sort((a, b) => a.from - b.from)) {
+    const [mark] = hunkMarks(state, found, [range]);
+    if (mark && !dots.some(dot => dot.row === mark.start.row)) dots.push({ row: mark.start.row, id: range.id, author: range.author });
+  }
   const composer = commentComposer(state);
   const hosted = composer?.hosted ? hunkMarks(state, found, [{ ...composer, className: "cm-comment cm-comment-draft" }]) : [];
   return {
     marks: [...hunkMarks(state, found, ranges), ...hosted],
+    dots,
     composer: hosted.length ? { key: composer.key, row: hunkOffsetPosition(state, found, composer.to).row } : null
   };
 }
 
 const sameReview = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
+// A click in the editor's margin level with a hunk widget would put the cursor
+// inside the fence and reveal it. Revealing is for the path click only.
+function besideHunk(view, element, y) {
+  if (element.closest(".cm-lp-hunk")) return false;
+  for (const hunk of view.contentDOM.querySelectorAll(".cm-lp-hunk")) {
+    const box = hunk.getBoundingClientRect();
+    if (box.height > 0 && y >= box.top && y <= box.bottom) return true;
+  }
+  return false;
+}
+
 function showReview(dom, view, review) {
   paintMarks(dom, review.marks);
+  paintDots(dom, review.dots);
   const resized = setHunkComposer(dom, review.composer, () => createComposerElement(view, review.composer.key));
   if (resized) view.requestMeasure();
 }
@@ -735,6 +755,11 @@ export function livePreview({ onOpenLink, onFollowAnchor, mermaid } = {}) {
       if (!isLive(view.state)) return false;
       const element = eventElement(event);
       if (!element) return false;
+
+      if (isPrimaryClick(event, view) && besideHunk(view, element, event.clientY)) {
+        event.preventDefault();
+        return true;
+      }
 
       const task = element.closest(".cm-lp-task");
       if (task) {
