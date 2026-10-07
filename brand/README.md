@@ -72,16 +72,15 @@ theme has no coral, so confirm it if you want an exact match.
 - Coral is a **brand** colour, not a theme colour. It appears only in the icon, the lockups, the
   website and onboarding moments, never as an app-chrome accent that a theme would need to replace.
 - Brand surfaces (icon, wordmark, site) use the constants; they never change with the user theme.
-- Executive can become the default theme by changing which preset loads first; that is an app change
-  and is not made here.
+- Executive is the default theme for new installs. Users with a saved theme, including Default Dark,
+  keep it.
 
 ## Type
 
 - **Wordmark and code: JetBrains Mono Medium (500)**, mixed case "Sodilaud", outlined in the SVGs.
-  SIL OFL 1.1. The app already uses JetBrains Mono for `--font-mono`.
-- **UI and body: Inter** (OFL), as on the website today. `src/styles.css` currently sets
-  `--font-sans: 'Outfit'`, not Inter, and neither Outfit nor JetBrains Mono is bundled, so both fall
-  back to system fonts unless installed. Decide whether the app moves to Inter to match the site.
+  SIL OFL 1.1. The app bundles it for `--font-mono`.
+- **UI and body: Inter** (OFL). The app bundles it for `--font-sans`; the site names it and falls back
+  to system fonts.
 
 ## Shape, stroke, spacing
 
@@ -109,12 +108,18 @@ Focus is a 2 px solid accent ring with a 2 px offset.
 
 `tray-16` and `tray-18` are 1x, `tray-32` and `tray-36` are 2x (they also cut the `#` out of the
 scrap). Each is drawn on its own pixel grid so strokes are whole pixels. The app currently builds its
-tray glyph in Rust from an 18x18 ASCII clipboard bitmap scaled 2x (`src-tauri/src/clipboard/layout.rs`,
-`tray_glyph()`), so `tray-18` and `tray-36` are the drop-in sizes. Wiring them in is not done here.
+tray glyph in Rust as a 36x36 ASCII bitmap copied pixel for pixel from `tray-36.png`
+(`src-tauri/src/clipboard/layout.rs`, `tray_glyph()`).
+
+## Where it is applied
+
+- `src-tauri/icons/` (including `icon.icns`, `icon.ico`, iOS and Android) and `images/logo.png` use the
+  new icon, stepping detail down with size as above.
+- The app bundles Inter and JetBrains Mono (`src/vendor/fonts/`), shows the mark in the sidebar and
+  About dialog, and has no glow or blur.
+- The site uses the palette, the flat favicon and the amber horizontal lockup.
 
 ## Not done here
 
-- `src-tauri/icons/`, `images/logo.png`, `site/` and the Rust tray glyph still use the old art. This
-  change only adds `brand/`.
-- `icon.icns` and `icon.ico` are not generated. `icon/png/macos/icon-macos-1024.png` is the source.
 - The in-app UI icon set, social/OG image and DMG background are later items.
+- `images/preview.png` and `images/clipboard.png` are screenshots of the old purple UI.

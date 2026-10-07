@@ -6,6 +6,115 @@
    animations, and custom typography fallbacks.
    ---------------------------------------------------- */
 
+/* Inter and JetBrains Mono, bundled under the SIL OFL 1.1 (see vendor/fonts). */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("vendor/fonts/inter-latin-400-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("vendor/fonts/inter-latin-ext-400-normal.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("vendor/fonts/inter-latin-500-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("vendor/fonts/inter-latin-ext-500-normal.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("vendor/fonts/inter-latin-600-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("vendor/fonts/inter-latin-ext-600-normal.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("vendor/fonts/inter-latin-700-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("vendor/fonts/inter-latin-ext-700-normal.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("vendor/fonts/jetbrains-mono-latin-400-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("vendor/fonts/jetbrains-mono-latin-ext-400-normal.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("vendor/fonts/jetbrains-mono-latin-700-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("vendor/fonts/jetbrains-mono-latin-ext-700-normal.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
 :root {
   /* App Sizing */
   --sidebar-width: 280px;
@@ -13,7 +122,7 @@
   --topbar-height: 56px;
   
   /* Fonts */
-  --font-sans: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --font-mono: 'JetBrains Mono', "Fira Code", Menlo, Monaco, Consolas, "Courier New", monospace;
   --editor-font-size: 1rem;
   --editor-line-height: 1.6;
@@ -45,7 +154,6 @@
   
   --accent-color: #a855f7;
   --accent-hover: #7e22ce;
-  --accent-glow: rgba(168, 85, 247, 0.1);
   
   --bg-note-hover: #f1f5f9;
   --bg-note-active: #f3e8ff;
@@ -94,7 +202,6 @@
     
     --accent-color: #a855f7;
     --accent-hover: #c084fc;
-    --accent-glow: rgba(168, 85, 247, 0.18);
     
     --bg-note-hover: #1e2640;
     --bg-note-active: #2d1f46;
@@ -141,7 +248,6 @@ html.theme-light {
   
   --accent-color: #a855f7;
   --accent-hover: #7e22ce;
-  --accent-glow: rgba(168, 85, 247, 0.1);
   
   --bg-note-hover: #f1f5f9;
   --bg-note-active: #f3e8ff;
@@ -189,7 +295,6 @@ html.theme-dark {
   
   --accent-color: #a855f7;
   --accent-hover: #c084fc;
-  --accent-glow: rgba(168, 85, 247, 0.18);
   
   --bg-note-hover: #1e2640;
   --bg-note-active: #2d1f46;
@@ -328,7 +433,7 @@ body {
 .brand-icon {
   width: 22px;
   height: 22px;
-  color: var(--accent-color);
+  color: var(--text-primary);
 }
 
 .sidebar-header-actions {
@@ -367,7 +472,8 @@ body {
 
 #search-input:focus {
   border-color: var(--accent-color);
-  box-shadow: 0 0 0 3px var(--accent-glow);
+  outline: 2px solid var(--accent-color);
+  outline-offset: 2px;
 }
 
 .note-list-container {
@@ -699,8 +805,8 @@ body {
 }
 
 .sidebar-action-btn:focus-visible {
-  outline: 1px solid var(--accent-color);
-  outline-offset: 3px;
+  outline: 2px solid var(--accent-color);
+  outline-offset: 2px;
 }
 
 /* ----------------------------------------------------
@@ -1005,7 +1111,7 @@ body {
 
 .compare-notes-btn.active {
   border-color: color-mix(in srgb, var(--accent-color) 55%, var(--border-color));
-  background-color: var(--accent-glow);
+  background-color: color-mix(in srgb, var(--accent-color) 15%, transparent);
   color: var(--accent-color);
 }
 
@@ -1221,7 +1327,7 @@ button.view-setting-value:hover {
 
 .clipboard-settings-input:focus {
   outline: 2px solid var(--accent-color);
-  outline-offset: 1px;
+  outline-offset: 2px;
 }
 
 .view-setting-toggle[aria-pressed="true"] {
@@ -1292,8 +1398,6 @@ button.view-setting-value:hover {
   height: 100%;
   background: rgba(59, 130, 246, 0.08);
   border-left: 2px dashed var(--accent-color);
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
   z-index: 50;
   display: flex;
   align-items: center;
@@ -2279,8 +2383,6 @@ html:not(.editor-line-numbers-enabled) .app-container.compare-mode .editor-host 
   min-width: 170px;
   display: flex;
   flex-direction: column;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
   user-select: none;
 }
 
@@ -2406,8 +2508,6 @@ html:not(.editor-line-numbers-enabled) .app-container.compare-mode .editor-host 
   width: 100vw;
   height: 100vh;
   background-color: rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
   z-index: 10000;
   display: flex;
   align-items: center;
@@ -2693,7 +2793,7 @@ kbd {
 .about-modal-icon {
   width: 22px;
   height: 22px;
-  color: var(--accent-color);
+  color: var(--text-primary);
 }
 
 .about-modal-body {
@@ -2835,7 +2935,7 @@ kbd {
 
 .mcp-config-input:focus {
   outline: 2px solid var(--accent-color);
-  outline-offset: 1px;
+  outline-offset: 2px;
 }
 
 .mcp-config-copy-btn {
@@ -2936,7 +3036,7 @@ kbd {
 .mcp-permission-option code { display: block; margin: 3px 0; color: var(--text-muted); font-size: 0.7rem; overflow-wrap: anywhere; }
 .mcp-permission-option small { display: block; color: var(--text-secondary); font-size: 0.75rem; line-height: 1.4; }
 .mcp-permissions input[type="checkbox"] { flex: 0 0 auto; margin: 2px 0 0; accent-color: var(--accent-color); }
-.mcp-permissions input:focus-visible { outline: 2px solid var(--accent-color); outline-offset: 3px; }
+.mcp-permissions input:focus-visible { outline: 2px solid var(--accent-color); outline-offset: 2px; }
 .mcp-permission-status { margin: 8px 0 0; min-height: 1.5em; }
 @media (max-width: 520px) { .mcp-permission-groups { grid-template-columns: 1fr; } }
 

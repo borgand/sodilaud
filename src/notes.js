@@ -725,7 +725,7 @@ async function init() {
   await registerWorkspaceListeners();
   await onPreferenceChange(window, followPreferenceChange);
 
-  // 2. Load the saved theme (Default Dark on first launch) and layout mode
+  // 2. Load the saved theme (Executive on first launch) and layout mode
   themes.load();
   appearance.load();
   const savedLayoutMode = localStorage.getItem("sodilaud_layout_mode");

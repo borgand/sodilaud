@@ -11,6 +11,8 @@ import { escapeHTML } from "./syntax-highlighting.js";
 
 export const THEME_STORAGE_KEYS = ["sodilaud_active_theme", "sodilaud_custom_themes", "color-scheme"];
 
+export const DEFAULT_THEME_ID = "executive";
+
 const LEGACY_THEME_IDS = {
   "macintosh-system-7": "mac-os-9-platinum"
 };
@@ -35,7 +37,7 @@ export function createThemes({ document, storage, invoke, onApplied = () => {}, 
   const URL = window.URL;
 
   let customThemes = [];
-  let activeThemeId = "default-dark";
+  let activeThemeId = DEFAULT_THEME_ID;
   let isThemeModalOpen = false;
   let themeModalPreviousFocus = null;
 
@@ -112,7 +114,7 @@ export function createThemes({ document, storage, invoke, onApplied = () => {}, 
       }
       applyTheme(savedThemeId);
     } else {
-      applyTheme("default-dark");
+      applyTheme(DEFAULT_THEME_ID);
     }
   }
 
@@ -316,7 +318,7 @@ export function createThemes({ document, storage, invoke, onApplied = () => {}, 
     customThemes = customThemes.filter(t => t.id !== themeId);
     storage.setItem("sodilaud_custom_themes", JSON.stringify(customThemes));
     if (activeThemeId === themeId) {
-      applyTheme("default-dark");
+      applyTheme(DEFAULT_THEME_ID);
     } else {
       renderThemeGrid();
     }
@@ -484,7 +486,8 @@ export function createThemes({ document, storage, invoke, onApplied = () => {}, 
 
   function exportCurrentTheme() {
     const allThemes = [...PRESET_THEMES, ...customThemes];
-    const active = allThemes.find(t => t.id === activeThemeId) || PRESET_THEMES[0];
+    const active = allThemes.find(t => t.id === activeThemeId)
+      || PRESET_THEMES.find(t => t.id === DEFAULT_THEME_ID);
 
     const exportData = {
       name: active.name,

@@ -1,21 +1,34 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
+/* Values from brand/tokens/tokens.css. The site is dark-only. */
 :root {
   color-scheme: dark;
-  --bg: #090d16;
-  --bg-soft: #111625;
-  --panel: rgba(17, 22, 37, 0.82);
-  --panel-solid: #111625;
-  --text: #e8eaf2;
-  --muted: #969daf;
-  --subtle: #626a7e;
-  --purple: #a855f7;
-  --purple-light: #c084fc;
-  --purple-dark: #7e22ce;
-  --border: rgba(148, 163, 184, 0.16);
-  --border-bright: rgba(168, 85, 247, 0.42);
-  --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --ink: #181e21;
+  --ink-raised: #242e2e;
+  --umber: #543529;
+  --amber: #fdc78e;
+  --teal: #1e959d;
+  --teal-deep: #1b676b;
+  --coral: #ee5a3c;
+  --paper: #f6f2ea;
+
+  --bg: var(--ink);
+  --panel: var(--ink-raised);
+  --text: var(--amber);
+  --muted: #bfa285;
+  --subtle: #a8967f;
+  /* Teal and coral are under 4.5:1 on --panel: fills and graphics there, not text. */
+  --accent: var(--teal);
+  --accent-deep: var(--teal-deep);
+  --accent-fg: var(--ink);
+  --brand: var(--coral);
+  --brand-fg: var(--ink);
+  --border: var(--umber);
+  --border-accent: var(--teal);
+  --mono: "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
   --sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-fast: 90ms;
 }
 
 * {
@@ -29,13 +42,15 @@ html {
 body {
   margin: 0;
   min-width: 320px;
-  background:
-    radial-gradient(circle at 82% 8%, rgba(126, 34, 206, 0.18), transparent 28rem),
-    radial-gradient(circle at 10% 38%, rgba(88, 28, 135, 0.1), transparent 24rem),
-    var(--bg);
+  background: var(--bg);
   color: var(--text);
   font-family: var(--sans);
   line-height: 1.6;
+}
+
+::selection {
+  background: var(--accent-deep);
+  color: var(--paper);
 }
 
 a {
@@ -75,15 +90,13 @@ footer {
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: 11px;
-  font-size: 1rem;
-  font-weight: 700;
-  letter-spacing: -0.02em;
   text-decoration: none;
 }
 
 .brand img {
-  border-radius: 10px;
+  display: block;
+  width: auto;
+  height: 36px;
 }
 
 nav {
@@ -96,6 +109,7 @@ footer a {
   color: var(--muted);
   font-size: 0.82rem;
   text-decoration: none;
+  transition: color var(--duration-fast) var(--ease);
 }
 
 nav a:hover,
@@ -114,10 +128,10 @@ footer a:hover {
 
 .eyebrow,
 .section-kicker {
-  color: var(--purple-light);
+  color: var(--accent);
   font-family: var(--mono);
   font-size: 0.72rem;
-  font-weight: 700;
+  font-weight: 500;
   letter-spacing: 0.11em;
   text-transform: uppercase;
 }
@@ -128,8 +142,7 @@ footer a:hover {
   height: 7px;
   margin-right: 7px;
   border-radius: 50%;
-  background: #4ade80;
-  box-shadow: 0 0 12px rgba(74, 222, 128, 0.7);
+  background: var(--accent);
 }
 
 h1,
@@ -147,7 +160,7 @@ h1 {
 }
 
 h1 span {
-  color: var(--purple-light);
+  color: var(--accent);
 }
 
 .hero-intro {
@@ -160,10 +173,9 @@ h1 span {
 .download-panel {
   max-width: 470px;
   padding: 18px;
-  border: 1px solid var(--border-bright);
-  border-radius: 14px;
-  background: linear-gradient(145deg, rgba(30, 38, 64, 0.88), rgba(13, 17, 29, 0.9));
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.22);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
 }
 
 .release-line {
@@ -176,12 +188,12 @@ h1 span {
 
 .release-badge {
   padding: 2px 7px;
-  border-radius: 999px;
-  background: rgba(168, 85, 247, 0.17);
-  color: var(--purple-light);
+  border-radius: 2px;
+  background: var(--accent);
+  color: var(--accent-fg);
   font-family: var(--mono);
   font-size: 0.68rem;
-  font-weight: 700;
+  font-weight: 500;
 }
 
 #release-date {
@@ -194,27 +206,25 @@ h1 span {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 8px;
-  background: linear-gradient(135deg, var(--purple), var(--purple-dark));
-  color: white;
+  border-radius: 4px;
+  background: var(--brand);
+  color: var(--brand-fg);
   font-size: 0.94rem;
-  font-weight: 750;
+  font-weight: 700;
   text-decoration: none;
-  box-shadow: 0 10px 30px rgba(126, 34, 206, 0.28);
-  transition: transform 150ms ease, filter 150ms ease;
+  transition: background-color var(--duration-fast) var(--ease);
 }
 
 .primary-download:hover {
-  filter: brightness(1.08);
-  transform: translateY(-1px);
+  background: var(--text);
 }
 
 .primary-download:focus-visible,
 .download-link:focus-visible,
 summary:focus-visible,
 a:focus-visible {
-  outline: 2px solid var(--purple-light);
-  outline-offset: 3px;
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .primary-detail,
@@ -247,25 +257,12 @@ a:focus-visible {
   color: var(--muted);
 }
 
-.hero-visual {
-  position: relative;
-}
-
-.preview-glow {
-  position: absolute;
-  inset: 12% 8%;
-  background: rgba(126, 34, 206, 0.34);
-  filter: blur(70px);
-}
-
 .hero-visual img {
-  position: relative;
   width: 100%;
   height: auto;
   display: block;
-  border: 1px solid rgba(192, 132, 252, 0.26);
-  border-radius: 13px;
-  box-shadow: 0 35px 80px rgba(0, 0, 0, 0.46);
+  border: 1px solid var(--border);
+  border-radius: 8px;
 }
 
 .spotlight,
@@ -296,10 +293,10 @@ a:focus-visible {
 .spotlight kbd,
 .spotlight code {
   padding: 1px 6px;
-  border: 1px solid var(--border-bright);
-  border-radius: 6px;
-  background: rgba(168, 85, 247, 0.1);
-  color: var(--purple-light);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: var(--panel);
+  color: var(--text);
   font-family: var(--mono);
   font-size: 0.85em;
 }
@@ -314,7 +311,7 @@ a:focus-visible {
 
 .spotlight-points li {
   padding-left: 16px;
-  border-left: 2px solid var(--border-bright);
+  border-left: 2px solid var(--border-accent);
   color: var(--muted);
   font-size: 0.9rem;
 }
@@ -329,12 +326,7 @@ a:focus-visible {
   font-size: 0.82rem;
 }
 
-.spotlight-visual {
-  position: relative;
-}
-
 .spotlight-visual img {
-  position: relative;
   width: 100%;
   height: auto;
   display: block;
@@ -360,9 +352,9 @@ h2 {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: 8px;
   overflow: hidden;
-  background: rgba(17, 22, 37, 0.48);
+  background: var(--panel);
 }
 
 .feature-grid article {
@@ -388,13 +380,13 @@ h2 {
   height: 2rem;
   display: inline-grid;
   place-items: center;
-  border: 1px solid rgba(192, 132, 252, 0.34);
-  border-radius: 8px;
-  background: rgba(168, 85, 247, 0.1);
-  color: var(--purple-light);
+  border: 1px solid var(--border-accent);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
   font-family: var(--mono);
   font-size: 0.78rem;
-  font-weight: 700;
+  font-weight: 500;
   line-height: 1;
   letter-spacing: 0.025em;
 }
@@ -431,12 +423,12 @@ h2 {
 .release-notes {
   margin-top: 28px;
   padding-left: 14px;
-  border-left: 2px solid var(--purple-dark);
+  border-left: 2px solid var(--accent-deep);
 }
 
 .platform-details {
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 8px;
   background: var(--panel);
   overflow: hidden;
 }
@@ -471,8 +463,8 @@ summary {
   margin-bottom: 8px;
   padding: 13px 14px;
   border: 1px solid transparent;
-  border-radius: 8px;
-  background: rgba(9, 13, 22, 0.72);
+  border-radius: 4px;
+  background: var(--bg);
 }
 
 .download-card:hover {
@@ -503,16 +495,18 @@ summary {
 .download-link {
   flex: 0 0 auto;
   padding: 5px 9px;
-  border: 1px solid var(--border-bright);
-  border-radius: 5px;
-  color: var(--purple-light);
+  border: 1px solid var(--border-accent);
+  border-radius: 4px;
+  color: var(--accent);
   font-size: 0.7rem;
   font-weight: 700;
   text-decoration: none;
+  transition: background-color var(--duration-fast) var(--ease), color var(--duration-fast) var(--ease);
 }
 
 .download-link:hover {
-  background: rgba(168, 85, 247, 0.12);
+  background: var(--accent);
+  color: var(--accent-fg);
 }
 
 .checksum-row {
@@ -569,10 +563,11 @@ summary {
   color: var(--muted);
   font-size: 0.82rem;
   text-decoration: none;
+  transition: color var(--duration-fast) var(--ease);
 }
 
 .source-links a:hover {
-  color: var(--purple-light);
+  color: var(--accent);
 }
 
 footer {
@@ -643,6 +638,10 @@ footer {
 
   .site-header {
     min-height: 70px;
+  }
+
+  .brand img {
+    height: 32px;
   }
 
   nav a:not(:last-child) {
