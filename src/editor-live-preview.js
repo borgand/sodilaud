@@ -273,7 +273,9 @@ class HunkWidget extends WidgetType {
         if (!found) return;
         view.focus();
         if (selectHunkLine(view, found, index)) startComment(view);
-      }
+      },
+      // Collapsing changes the widget's height behind CodeMirror's back.
+      onToggleCollapsed: () => view.requestMeasure()
     });
     element.classList.add("cm-lp-hunk");
     element.querySelector(".diff-hunk-path").addEventListener("mousedown", event => {

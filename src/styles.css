@@ -3556,8 +3556,9 @@ kbd {
   border-color: var(--accent-color);
 }
 
-.diff-hunk-is-collapsed .diff-hunk-body,
-.diff-hunk-is-collapsed .diff-hunk-elided {
+/* Two classes, so it outranks the later `.diff-hunk .diff-hunk-body` block. */
+.diff-hunk.diff-hunk-is-collapsed .diff-hunk-body,
+.diff-hunk.diff-hunk-is-collapsed .diff-hunk-elided {
   display: none;
 }
 
