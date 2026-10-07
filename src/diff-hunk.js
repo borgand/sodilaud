@@ -119,6 +119,8 @@ export function splitHighlightedLines(html) {
 }
 
 function highlightSide(texts, language, hljs) {
+  // An added or deleted file has no lines on one side; highlighting "" would yield one line.
+  if (texts.length === 0) return [];
   try {
     const html = hljs.highlight(texts.join("\n"), { language, ignoreIllegals: true }).value;
     const lines = splitHighlightedLines(html);

@@ -115,6 +115,14 @@ test("a multi-line comment keeps its colors on every row", () => {
   assert.match(html[3], /hljs-comment/);
 });
 
+test("an added or a deleted file is highlighted too", () => {
+  const added = highlightRows(parseHunkBody("@@ -0,0 +1,2 @@\n+const a = 1;\n+// note"), "a.js", hljs);
+  assert.match(added[1], /hljs-keyword/);
+  assert.match(added[2], /hljs-comment/);
+  const deleted = highlightRows(parseHunkBody("@@ -1,1 +0,0 @@\n-const a = 1;"), "a.js", hljs);
+  assert.match(deleted[1], /hljs-keyword/);
+});
+
 test("the sanitizer keeps hunk attributes only when their values are valid", () => {
   const code = preview(`${HUNK.replace("lines=10-14", "lines=10-14 reviewed elided")}`).querySelector("code");
   assert.equal(code.getAttribute("data-path"), "src/main.rs");
