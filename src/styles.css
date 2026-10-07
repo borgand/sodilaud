@@ -1685,42 +1685,64 @@ html:not(.editor-line-numbers-enabled) .app-container.compare-mode .editor-host 
 /* Highlight.js token colors. Layout-affecting styles are intentionally omitted
    so highlighted code wraps and selects exactly like unhighlighted code. */
 .markdown-preview .hljs-comment,
-.markdown-preview .hljs-quote {
+.diff-hunk .hljs-comment,
+.markdown-preview .hljs-quote,
+.diff-hunk .hljs-quote {
   color: var(--syntax-muted);
 }
 
 .markdown-preview .hljs-keyword,
+.diff-hunk .hljs-keyword,
 .markdown-preview .hljs-selector-tag,
+.diff-hunk .hljs-selector-tag,
 .markdown-preview .hljs-literal,
-.markdown-preview .hljs-type {
+.diff-hunk .hljs-literal,
+.markdown-preview .hljs-type,
+.diff-hunk .hljs-type {
   color: var(--accent-color);
 }
 
 .markdown-preview .hljs-string,
+.diff-hunk .hljs-string,
 .markdown-preview .hljs-regexp,
+.diff-hunk .hljs-regexp,
 .markdown-preview .hljs-addition,
-.markdown-preview .hljs-attribute {
+.diff-hunk .hljs-addition,
+.markdown-preview .hljs-attribute,
+.diff-hunk .hljs-attribute {
   color: var(--syntax-string);
 }
 
 .markdown-preview .hljs-number,
+.diff-hunk .hljs-number,
 .markdown-preview .hljs-symbol,
+.diff-hunk .hljs-symbol,
 .markdown-preview .hljs-bullet,
+.diff-hunk .hljs-bullet,
 .markdown-preview .hljs-variable,
-.markdown-preview .hljs-template-variable {
+.diff-hunk .hljs-variable,
+.markdown-preview .hljs-template-variable,
+.diff-hunk .hljs-template-variable {
   color: var(--syntax-number);
 }
 
 .markdown-preview .hljs-title,
+.diff-hunk .hljs-title,
 .markdown-preview .hljs-section,
+.diff-hunk .hljs-section,
 .markdown-preview .hljs-selector-id,
+.diff-hunk .hljs-selector-id,
 .markdown-preview .hljs-selector-class,
-.markdown-preview .hljs-built_in {
+.diff-hunk .hljs-selector-class,
+.markdown-preview .hljs-built_in,
+.diff-hunk .hljs-built_in {
   color: var(--accent-hover);
 }
 
 .markdown-preview .hljs-deletion,
-.markdown-preview .hljs-meta {
+.diff-hunk .hljs-deletion,
+.markdown-preview .hljs-meta,
+.diff-hunk .hljs-meta {
   color: var(--syntax-danger);
 }
 
@@ -3401,6 +3423,243 @@ kbd {
   min-height: 3em;
   color: var(--text-secondary);
   font-family: var(--font-sans);
+  font-size: 0.85rem;
+}
+
+/* Review-book diff hunks, the same widget in Live and Reading mode. */
+.diff-hunk {
+  margin: 0 0 1em;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow: hidden;
+  background-color: var(--preview-bg);
+  color: var(--preview-text);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.cm-mode-live .diff-hunk.cm-lp-hunk {
+  margin: 4px 0;
+  cursor: default;
+}
+
+.diff-hunk-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  background-color: var(--preview-code-bg);
+  border-bottom: 1px solid var(--border-color);
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+}
+
+.diff-hunk-is-collapsed .diff-hunk-header {
+  border-bottom: none;
+}
+
+.diff-hunk-path {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+
+.cm-lp-hunk .diff-hunk-path {
+  cursor: text;
+}
+
+.diff-hunk-lines {
+  flex: 1 1 auto;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.diff-hunk-collapse,
+.diff-hunk-reviewed {
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.diff-hunk-collapse {
+  width: 1.6em;
+  padding: 0;
+  color: var(--text-secondary);
+}
+
+.diff-hunk-reviewed {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border-color: var(--border-color);
+  white-space: nowrap;
+}
+
+.diff-hunk-reviewed:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.diff-hunk-is-reviewed .diff-hunk-reviewed {
+  border-color: color-mix(in srgb, #22a559 60%, transparent);
+  background-color: color-mix(in srgb, #22a559 16%, transparent);
+}
+
+.diff-hunk-collapse:hover,
+.diff-hunk-reviewed:hover:not(:disabled) {
+  border-color: var(--accent-color);
+}
+
+.diff-hunk-is-collapsed .diff-hunk-body,
+.diff-hunk-is-collapsed .diff-hunk-elided {
+  display: none;
+}
+
+/* Section folding: the chevron hangs left of each heading. */
+.cm-heading-fold,
+.markdown-preview .heading-fold {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  margin-left: -1.25em;
+  margin-right: 0.25em;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  vertical-align: middle;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.cm-heading-fold::before,
+.markdown-preview .heading-fold::before {
+  content: "";
+  display: block;
+  width: 0.35em;
+  height: 0.35em;
+  margin: 0.25em auto 0;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg);
+}
+
+.cm-heading-fold.is-folded::before,
+.markdown-preview .is-section-folded > .heading-fold::before {
+  margin-top: 0.32em;
+  transform: rotate(-45deg);
+}
+
+.cm-line:hover .cm-heading-fold,
+.cm-heading-fold.is-folded,
+.markdown-preview :hover > .heading-fold,
+.markdown-preview .is-section-folded > .heading-fold,
+.markdown-preview .heading-fold:focus-visible {
+  opacity: 1;
+}
+
+.cm-heading-fold:hover,
+.markdown-preview .heading-fold:hover {
+  color: var(--accent-color);
+}
+
+.markdown-preview .section-fold-hidden {
+  display: none;
+}
+
+.cm-section-folded {
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.markdown-preview .is-section-folded::after {
+  content: " …";
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.diff-hunk .diff-hunk-body {
+  display: block;
+  overflow-x: auto;
+  width: 100%;
+  margin: 0;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+}
+
+.diff-hunk .diff-hunk-body td {
+  border: none;
+  padding: 0 8px;
+  vertical-align: top;
+  white-space: pre;
+}
+
+.diff-hunk .diff-row-add {
+  background-color: color-mix(in srgb, #22a559 14%, transparent);
+}
+
+.diff-hunk .diff-row-del {
+  background-color: color-mix(in srgb, #e05263 14%, transparent);
+}
+
+.diff-hunk .diff-meta {
+  color: var(--text-secondary);
+  background-color: color-mix(in srgb, var(--preview-code-bg) 50%, transparent);
+}
+
+.diff-hunk .diff-ln {
+  min-width: 3ch;
+  padding: 0 4px;
+  text-align: right;
+  color: var(--text-muted);
+  user-select: none;
+}
+
+.diff-ln-button {
+  border: none;
+  background: none;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.diff-ln-button:hover {
+  color: var(--accent-color);
+  text-decoration: underline;
+}
+
+.diff-hunk .diff-marker {
+  padding: 0 2px;
+  color: var(--text-secondary);
+  user-select: none;
+}
+
+.diff-hunk .diff-code {
+  width: 100%;
+}
+
+.diff-hunk-elided {
+  padding: 6px 12px;
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  font-style: italic;
+}
+
+.markdown-preview figure.diff-hunk-export {
+  margin: 0 0 1em;
+}
+
+.markdown-preview figure.diff-hunk-export figcaption {
+  margin-bottom: 4px;
   font-size: 0.85rem;
 }
 

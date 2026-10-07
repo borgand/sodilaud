@@ -74,8 +74,9 @@ export function addHeadingAnchors(root) {
 export function findReadingAnchor(root, fragment) {
   if (!fragment) return null;
   if (HUNK_ID.test(fragment)) {
-    const code = root.querySelector(`code[data-hunk="${fragment}"]`);
-    if (code) return code.closest("pre") ?? code;
+    // A plain code block, or the hunk widget that replaced it.
+    const hunk = root.querySelector(`[data-hunk="${fragment}"]`);
+    if (hunk) return hunk.closest("pre") ?? hunk;
   }
   for (const element of root.querySelectorAll(`[${ANCHOR_ATTRIBUTE}]`)) {
     if (element.getAttribute(ANCHOR_ATTRIBUTE) === fragment) return element;

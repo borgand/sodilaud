@@ -299,12 +299,16 @@ Depends on: 10.
 
 ## 12. Review book: diff hunk widget
 
-Status: not started
+Status: built on `feat/review-book`, not released
 
 A `diff` fence with `path=` renders as a widget in Live and Reading mode: path and line range
 header, old and new line numbers, syntax highlighting by file extension, a Reviewed toggle
 that writes a `reviewed` token into the fence, a collapse toggle, and a per-line comment
 button. Export emits a plain highlighted diff.
+
+As built: clicking a line number comments on that line's code, without its `+`, `-` or
+indent, and works in Live mode only until item 9. An `elided` hunk shows a note instead of
+its body. Copy as HTML emits a `figure` with the path as caption.
 
 Depends on: 11.
 
@@ -320,9 +324,14 @@ Depends on: 5. Item 9 can follow this one.
 
 ## 14. Review book: folding and outline
 
-Status: not started
+Status: built on `feat/review-book`, not released
 
 Section folding by heading in Live and Reading mode, an outline panel listing headings with
 reviewed-over-total counts, and an "n/m reviewed" status bar item.
+
+Folds are named by heading slug and kept in the editor state for the session, so Live, Source
+and Reading mode show the same ones and the file never changes. Following a link or an outline
+entry into a folded section unfolds it. The outline and the status bar count are for files;
+Quick Notes has neither yet.
 
 Depends on: 12.

@@ -28,6 +28,8 @@ import { createFormatToolbar } from "./format-toolbar.js";
 import { livePreview } from "./editor-live-preview.js";
 import { getMarkdownTemplateEdit } from "./markdown-insert.js";
 import { escapeHTML, highlightPreviewCode } from "./syntax-highlighting.js";
+import { exportHunks, renderHunkWidgets } from "./diff-hunk.js";
+import { setHunkReviewed } from "./editor-hunks.js";
 import { WELCOME_NOTE_CONTENT, WELCOME_NOTE_TITLE } from "./welcome-note.js";
 import {
   canMoveNote,
@@ -1535,6 +1537,13 @@ function setSavedState() {
   saveStatus.classList.remove("unsaved");
 }
 
+function renderPreviewHunks(container, editor) {
+  renderHunkWidgets(container, {
+    hljs: appearance.syntaxHighlighting ? window.hljs : null,
+    onToggleReviewed: (target, reviewed) => setHunkReviewed(editor.view, target, reviewed)
+  });
+}
+
 function updateMarkdownPreview() {
   if (currentLayoutMode !== "reading" || isSplitNoteMode) return; // don't render if not visible or in dual-note split mode
 
@@ -1551,6 +1560,7 @@ function updateMarkdownPreview() {
         throw new Error("window.marked is neither a function nor contains a parse function");
       }
       markdownPreview.innerHTML = html;
+      renderPreviewHunks(markdownPreview, primaryEditor);
       highlightPreviewCode(markdownPreview, window.hljs, appearance.syntaxHighlighting);
       mermaid.renderBlocks(markdownPreview);
     } catch (e) {
@@ -1679,11 +1689,14 @@ function copyMarkdownToClipboard() {
 async function renderedHtmlForCopy() {
   if (currentLayoutMode === "reading") {
     await mermaid.renderBlocks(markdownPreview);
-    return markdownPreview.innerHTML;
+    const copy = markdownPreview.cloneNode(true);
+    exportHunks(copy, window.hljs);
+    return copy.innerHTML;
   }
   const container = document.createElement("div");
   container.innerHTML = renderMarkdown(primaryEditor.getText());
   await mermaid.renderBlocks(container);
+  exportHunks(container, window.hljs);
   return container.innerHTML;
 }
 
@@ -3369,6 +3382,7 @@ function updateSecondaryMarkdownPreview() {
   if (currentLayoutMode !== "reading") return;
   if (window.marked) {
     secondaryMarkdownPreview.innerHTML = renderMarkdown(secondaryEditor.getText());
+    renderPreviewHunks(secondaryMarkdownPreview, secondaryEditor);
     highlightPreviewCode(secondaryMarkdownPreview, window.hljs, appearance.syntaxHighlighting);
     mermaid.renderBlocks(secondaryMarkdownPreview);
   }

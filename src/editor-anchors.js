@@ -12,6 +12,8 @@ const HIDDEN = new Set([
   "HeaderMark", "EmphasisMark", "CodeMark", "LinkMark", "URL", "LinkTitle",
   "LinkLabel", "Image", "StrikethroughMark", "HTMLTag", "Comment"
 ]);
+// Headings and fences only occur at the top level or inside these blocks.
+const CONTAINERS = new Set(["Document", "Blockquote", "BulletList", "OrderedList", "ListItem"]);
 const PARSE_TIMEOUT_MS = 200;
 
 function fullTree(state) {
@@ -44,17 +46,19 @@ function headingText(state, node) {
 
 /**
  * Every anchor in document order: headings with their slug, and diff fences
- * whose info string names a hunk id.
- * @returns {{ kind: "heading" | "hunk", id: string, from: number, to: number, level?: number }[]}
+ * whose info string names a hunk id. `full: false` reads only what is parsed
+ * so far, which is cheap enough to run on every change.
+ * @returns {{ kind: "heading" | "hunk", id: string, from: number, to: number, level?: number, text?: string }[]}
  */
-export function documentAnchors(state) {
+export function documentAnchors(state, { full = true } = {}) {
   const slug = createSlugger();
   const anchors = [];
-  fullTree(state).iterate({
+  (full ? fullTree(state) : syntaxTree(state)).iterate({
     enter: ref => {
       if (HEADING.test(ref.name)) {
         const level = Number(ref.name.slice(-1));
-        anchors.push({ kind: "heading", id: slug(headingText(state, ref.node)), from: ref.from, to: ref.to, level });
+        const text = headingText(state, ref.node);
+        anchors.push({ kind: "heading", id: slug(text), from: ref.from, to: ref.to, level, text: text.trim() });
         return false;
       }
       if (ref.name === "FencedCode") {
@@ -63,7 +67,7 @@ export function documentAnchors(state) {
         if (hunk) anchors.push({ kind: "hunk", id: hunk, from: ref.from, to: ref.to });
         return false;
       }
-      return undefined;
+      return CONTAINERS.has(ref.name) ? undefined : false;
     }
   });
   return anchors;
