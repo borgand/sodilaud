@@ -14,6 +14,8 @@ import { renderMarkdown, resolveLinkAction } from "./markdown.js";
 import { scrollToReadingAnchor } from "./anchors.js";
 import { scrollToAnchor } from "./editor-anchors.js";
 import { highlightPreviewCode } from "./syntax-highlighting.js";
+import { renderHunkWidgets } from "./diff-hunk.js";
+import { setHunkReviewed } from "./editor-hunks.js";
 import { normalizeLayoutMode } from "./view-preferences.js";
 import { createDocSync } from "./doc-sync.js";
 import { createFilesModel, isDirty, needsPrompt } from "./files.js";
@@ -235,7 +237,12 @@ export function createFileEditor({
     if (layoutMode !== "reading" || !model.active()) return;
     try {
       preview.innerHTML = renderMarkdown(editor.getText(), "*Empty file*");
-      highlightPreviewCode(preview, document.defaultView.hljs, appearance.syntaxHighlighting);
+      const hljs = document.defaultView.hljs;
+      renderHunkWidgets(preview, {
+        hljs: appearance.syntaxHighlighting ? hljs : null,
+        onToggleReviewed: (target, reviewed) => setHunkReviewed(editor.view, target, reviewed)
+      });
+      highlightPreviewCode(preview, hljs, appearance.syntaxHighlighting);
       mermaid?.renderBlocks(preview);
     } catch (error) {
       console.error("Could not render the file", error);

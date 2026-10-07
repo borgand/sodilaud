@@ -148,9 +148,9 @@ test("sanitizer gives headings GitHub-style anchors after sanitizing", () => {
 
 test("rendered review hunks carry their id and nothing forged survives", () => {
   const html = renderMarkdown("```diff path=src/a.rs hunk=h3f2a1 lines=1-2\n+x\n```\n\n```diff hunk=nope\n+y\n```", "", marked);
-  assert.match(html, /<code data-hunk="h3f2a1" class="language-diff">/);
+  assert.match(html, /<code data-hunk="h3f2a1" data-path="src\/a.rs" data-lines="1-2" class="language-diff">/);
   assert.doesNotMatch(html, /nope/);
-  assert.equal(sanitizeMarkdownHtml('<code data-hunk="h12345x" data-path="a">z</code>'), "<code>z</code>");
+  assert.equal(sanitizeMarkdownHtml('<code data-hunk="h12345x" data-path="../a">z</code>'), "<code>z</code>");
 });
 
 test("preview links never hand an unsupported scheme to the system", () => {
