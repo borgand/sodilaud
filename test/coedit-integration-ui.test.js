@@ -4,7 +4,7 @@ import test from "node:test";
 import { bootApp, settle } from "./helpers/app-harness.js";
 
 test("the Claude Code integration shows what changes before it installs, and can be removed", async () => {
-  const notInstalled = { installed: false, present: false, changes: ["Create ~/.claude/commands/sodilaud.md (the /sodilaud command)", "Create ~/.claude/skills/sodilaud/SKILL.md (the sodilaud skill)", "Add a PreToolUse hook"] };
+  const notInstalled = { installed: false, present: false, changes: ["Create ~/.claude/commands/sodilaud.md (the /sodilaud command)", "Create ~/.claude/skills/sodilaud/SKILL.md (the sodilaud skill)", "Create ~/.claude/skills/review-book/SKILL.md (the review-book skill)", "Create ~/.claude/skills/review-book/check-book.mjs (the review-book checker)", "Add a PreToolUse hook"] };
   let state = notInstalled;
   const app = await bootApp({ handlers: {
     coedit_integration_plan: () => state,
@@ -18,6 +18,7 @@ test("the Claude Code integration shows what changes before it installs, and can
   assert.equal($("coedit-integration-summary").textContent, "Not installed.");
   assert.equal($("coedit-integration-btn").hidden, false);
   assert.equal($("coedit-integration-remove-btn").hidden, true);
+  assert.match(document.querySelector(".coedit-integration .mcp-permissions-description").textContent, /review-book skill/);
 
   app.click("coedit-integration-btn");
   await settle();

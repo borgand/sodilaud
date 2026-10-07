@@ -261,7 +261,7 @@ Depends on: 5.
 
 ## 10. Review book: skill and checker
 
-Status: not started (spec
+Status: built on `feat/review-book`, not released (spec
 [`docs/superpowers/specs/2026-10-07-review-book-design.md`](docs/superpowers/specs/2026-10-07-review-book-design.md))
 
 Items 10 to 14 build a guided code review in Sodilaud: after a feature is complete, the agent
