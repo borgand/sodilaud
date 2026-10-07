@@ -43,6 +43,35 @@ export const externalChange = Annotation.define();
 
 export const modeFacet = Facet.define({ combine: values => values[0] ?? "live" });
 
+// Whole lines from the one holding `anchor` to the one holding `head`,
+// without the last line's break, so the selection never reaches into the
+// next line. Dragging upwards keeps the anchor at the end of its line.
+export function lineSelection(state, anchor, head) {
+  const anchorLine = state.doc.lineAt(anchor);
+  const headLine = state.doc.lineAt(head);
+  return head < anchor
+    ? EditorSelection.range(anchorLine.to, headLine.from)
+    : EditorSelection.range(anchorLine.from, headLine.to);
+}
+
+// Triple-click selects lines as above instead of CodeMirror's default, which
+// takes the line break too.
+export const tripleClickSelectsLines = EditorView.mouseSelectionStyle.of((view, event) => {
+  if (event.detail !== 3 || event.button !== 0 || event.shiftKey || event.altKey || event.metaKey || event.ctrlKey) {
+    return null;
+  }
+  let anchor = view.posAtCoords({ x: event.clientX, y: event.clientY }, false);
+  return {
+    get(current) {
+      const head = view.posAtCoords({ x: current.clientX, y: current.clientY }, false);
+      return EditorSelection.create([lineSelection(view.state, anchor, head)]);
+    },
+    update(update) {
+      if (update.docChanged) anchor = update.changes.mapPos(anchor);
+    }
+  };
+});
+
 const markdownHighlightStyle = HighlightStyle.define([
   { tag: tags.heading, class: "syntax-heading" },
   { tag: [tags.emphasis, tags.strong, tags.strikethrough], class: "syntax-emphasis" },
@@ -232,6 +261,7 @@ export function createMarkdownEditor(options) {
       markdownLanguage,
       history(),
       drawSelection(),
+      tripleClickSelectsLines,
       EditorView.lineWrapping,
       keymap.of([...historyKeymap, ...baseKeymap]),
       options.placeholder ? placeholder(options.placeholder) : [],
