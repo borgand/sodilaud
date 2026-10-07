@@ -3466,7 +3466,9 @@ kbd {
   margin: 0 0 1em;
   border: 1px solid var(--border-color);
   border-radius: 8px;
-  overflow: hidden;
+  /* clip, not hidden: hidden would make the widget a scroll container and
+     stop the header from sticking to the editor's viewport. */
+  overflow: clip;
   background-color: var(--preview-bg);
   color: var(--preview-text);
   font-size: 0.9rem;
@@ -3479,11 +3481,14 @@ kbd {
 }
 
 .diff-hunk-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 4px 8px;
-  background-color: var(--preview-code-bg);
+  background: linear-gradient(var(--preview-code-bg), var(--preview-code-bg)), var(--preview-bg);
   border-bottom: 1px solid var(--border-color);
   font-family: var(--font-sans);
   font-size: 0.85rem;
