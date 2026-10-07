@@ -28,6 +28,29 @@ export function shownState(comment) {
   return comment.orphaned ? "orphaned" : comment.state;
 }
 
+/** Each thread's root with its replies, oldest first. A reply whose root is gone stands alone. */
+export function threads(all) {
+  const ids = new Set(all.map(comment => comment.id));
+  const rootId = comment => comment.replyTo && ids.has(comment.replyTo) ? comment.replyTo : comment.id;
+  const found = new Map();
+  for (const comment of all) {
+    if (rootId(comment) === comment.id) found.set(comment.id, { root: comment, replies: [] });
+  }
+  for (const comment of all) {
+    const thread = found.get(rootId(comment));
+    if (thread.root !== comment) thread.replies.push(comment);
+  }
+  for (const thread of found.values()) thread.replies.sort((a, b) => a.createdAt - b.createdAt);
+  return [...found.values()];
+}
+
+export function countLabel(all) {
+  const open = threads(all).filter(thread => thread.root.state !== "resolved");
+  const fresh = open.filter(thread => [thread.root, ...thread.replies].some(comment => comment.unread)).length;
+  const count = open.length === 1 ? "1 comment" : open.length ? `${open.length} comments` : "No comments";
+  return fresh ? `${count}, ${fresh} new` : count;
+}
+
 /**
  * @param {object} options
  * @param {Document} options.document
@@ -56,7 +79,7 @@ export function createComments({ document, invoke, root, countButton, editors, a
       return;
     }
     if (synced === event.version) {
-      const comments = fromConfirmed(view.state, event.comments.map(c => ({
+      const comments = fromConfirmed(view.state, threads(event.comments).map(({ root: c }) => ({
         id: c.id, from: c.from, to: c.to, author: c.author, state: c.state, orphaned: Boolean(c.orphaned)
       })));
       view.dispatch({ effects: setComments.of(comments) });
@@ -142,6 +165,10 @@ export function createComments({ document, invoke, root, countButton, editors, a
   function select(id) {
     const editor = active();
     if (!editor) return;
+    const all = latest.get(docKey(editor.doc))?.comments ?? [];
+    const thread = threads(all).find(({ root, replies }) => root.id === id || replies.some(reply => reply.id === id));
+    if (thread) id = thread.root.id;
+    if (thread && [thread.root, ...thread.replies].some(comment => comment.unread)) act("comment_mark_read", { id });
     const comment = shownComments(editor.view.state).find(c => c.id === id);
     editor.view.dispatch({
       effects: setActiveComment.of(id),
@@ -151,7 +178,7 @@ export function createComments({ document, invoke, root, countButton, editors, a
     });
     if (!open) toggle(true);
     else render();
-    root.querySelector(`[data-comment-id="${CSS.escape(id)}"]`)?.scrollIntoView?.({ block: "nearest" });
+    [...root.querySelectorAll("[data-comment-id]")].find(element => element.dataset.commentId === id)?.scrollIntoView?.({ block: "nearest" });
   }
 
   function toggle(force = !open) {
@@ -215,56 +242,98 @@ export function createComments({ document, invoke, root, countButton, editors, a
     return box;
   }
 
-  function item(comment, all) {
+  // One comment of a thread: who wrote it, its state, its text and what the
+  // owner can still do with it alone.
+  function entry(comment, element) {
     const state = shownState(comment);
-    const element = document.createElement("li");
-    element.className = `comment-item comment-${comment.author} comment-${state}`;
+    element.classList.add("comment-item", `comment-${comment.author}`, `comment-${state}`);
+    element.classList.toggle("comment-unread", Boolean(comment.unread));
     element.dataset.commentId = comment.id;
     const meta = document.createElement("div");
     meta.className = "comment-meta";
     const author = document.createElement("span");
     author.className = "comment-author";
-    author.textContent = comment.author === "agent" ? "Agent" : comment.replyTo ? "You, answering" : "You";
+    author.textContent = comment.author === "agent" ? "Agent" : "You";
+    if (comment.unread) {
+      const fresh = document.createElement("span");
+      fresh.className = "comment-new";
+      fresh.textContent = "New";
+      author.append(" ", fresh);
+    }
     const badge = document.createElement("span");
     badge.className = "comment-state";
     badge.textContent = SHOWN_STATE[state] ?? state;
     meta.append(author, badge);
-    const snippet = document.createElement("blockquote");
-    snippet.className = "comment-snippet";
-    snippet.textContent = comment.anchoredText.length > SNIPPET_CHARS ? `${comment.anchoredText.slice(0, SNIPPET_CHARS)}…` : comment.anchoredText;
+    element.append(meta);
+    if (!comment.replyTo) {
+      const snippet = document.createElement("blockquote");
+      snippet.className = "comment-snippet";
+      snippet.textContent = comment.anchoredText.length > SNIPPET_CHARS ? `${comment.anchoredText.slice(0, SNIPPET_CHARS)}…` : comment.anchoredText;
+      element.append(snippet);
+    }
     const body = document.createElement("p");
     body.className = "comment-body";
     body.textContent = comment.body;
-    element.append(meta, snippet, body);
+    element.append(body);
     if (comment.note) {
       const note = document.createElement("p");
       note.className = "comment-note";
       note.textContent = comment.note;
       element.append(note);
     }
-    const actions = document.createElement("div");
-    actions.className = "comment-actions";
     const id = comment.id;
-    if (editing?.id === id) {
-      const kind = editing.kind;
-      element.append(inlineEditor(kind === "edit" ? comment.body : "", kind === "edit" ? "Edit comment" : "Reply", text => {
+    if (editing?.id === id && editing.kind === "edit") {
+      element.append(inlineEditor(comment.body, "Edit comment", text => {
         editing = null;
-        if (kind === "edit") act("comment_edit", { id, body: text });
-        else act("comment_add", { comment: { body: text, replyTo: id } });
+        act("comment_edit", { id, body: text });
       }));
     }
-    if (state === "open" && comment.author === "agent") {
-      const answered = all.some(other => other.replyTo === id && other.state !== "resolved");
-      if (!answered) actions.append(button("Reply", "comment-action comment-reply", () => { editing = { id, kind: "reply" }; render(); }));
-      actions.append(button("Resolve", "comment-action comment-resolve", () => act("comment_resolve", { id })));
-    } else if (state === "held" || state === "queued") {
+    const actions = document.createElement("div");
+    actions.className = "comment-actions";
+    if (comment.author === "owner" && (state === "held" || state === "queued")) {
       actions.append(button("Edit", "comment-action comment-edit", () => { editing = { id, kind: "edit" }; render(); }));
       actions.append(button("Delete", "comment-action comment-delete", () => act("comment_delete", { id })));
-    } else if (state === "sent") {
+    } else if (comment.author === "owner" && state === "sent") {
       actions.append(button("Resend", "comment-action comment-resend", () => act("comment_resend", { id })));
-      actions.append(button("Resolve", "comment-action comment-resolve", () => act("comment_resolve", { id })));
-    } else if (state === "orphaned") {
+    } else if (state === "orphaned" && !comment.replyTo) {
       actions.append(button("Delete", "comment-action comment-delete", () => act("comment_delete", { id })));
+    }
+    return actions;
+  }
+
+  // A thread: its root, the replies indented under it, then a reply box and
+  // Resolve while it is unresolved.
+  function threadItem({ root, replies }) {
+    const element = document.createElement("li");
+    const actions = entry(root, element);
+    element.classList.toggle("comment-thread-unread", [root, ...replies].some(comment => comment.unread));
+    if (replies.length) {
+      const list = document.createElement("ol");
+      list.className = "comment-replies";
+      for (const reply of replies) {
+        const item = document.createElement("li");
+        const own = entry(reply, item);
+        if (own.childElementCount) item.append(own);
+        item.addEventListener("click", event => {
+          event.stopPropagation();
+          select(reply.id);
+        });
+        list.append(item);
+      }
+      element.append(list);
+    }
+    const id = root.id;
+    const pending = root.author === "owner" && (root.state === "held" || root.state === "queued") && replies.length === 0;
+    if (root.state !== "resolved" && !pending) {
+      if (editing?.id === id && editing.kind === "reply") {
+        element.append(inlineEditor("", "Reply", text => {
+          editing = null;
+          act("comment_add", { comment: { body: text, replyTo: id } });
+        }));
+      } else {
+        actions.append(button("Reply", "comment-action comment-reply", () => { editing = { id, kind: "reply" }; select(id); }));
+      }
+      actions.append(button("Resolve", "comment-action comment-resolve", () => act("comment_resolve", { id })));
     }
     if (actions.childElementCount) element.append(actions);
     element.addEventListener("click", () => select(id));
@@ -275,9 +344,8 @@ export function createComments({ document, invoke, root, countButton, editors, a
     const editor = active();
     const event = editor ? latest.get(docKey(editor.doc)) : null;
     const all = event?.comments ?? [];
-    const unresolved = all.filter(comment => comment.state !== "resolved");
     countButton.hidden = !editor;
-    countButton.textContent = unresolved.length === 1 ? "1 comment" : unresolved.length ? `${unresolved.length} comments` : "No comments";
+    countButton.textContent = countLabel(all);
     countButton.classList.toggle("listening", coedit.listening);
     countButton.title = coedit.listening ? "Comments. An agent is listening for them." : "Comments";
     countButton.setAttribute("aria-expanded", String(open && Boolean(editor)));
@@ -314,8 +382,8 @@ export function createComments({ document, invoke, root, countButton, editors, a
 
     const list = document.createElement("ol");
     list.className = "comments-list";
-    const order = [...all].sort((a, b) => (shownState(a) === "resolved") - (shownState(b) === "resolved") || Boolean(a.orphaned) - Boolean(b.orphaned) || a.from - b.from);
-    list.append(...order.map(comment => item(comment, all)));
+    const order = threads(all).sort(({ root: a }, { root: b }) => (shownState(a) === "resolved") - (shownState(b) === "resolved") || Boolean(a.orphaned) - Boolean(b.orphaned) || a.from - b.from);
+    list.append(...order.map(threadItem));
     if (all.length === 0) {
       const empty = document.createElement("p");
       empty.className = "comments-empty";

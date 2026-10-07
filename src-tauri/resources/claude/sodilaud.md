@@ -31,19 +31,24 @@ Keep an `empty` counter, starting at 0.
 3. Otherwise set `empty` to 0 and handle each comment in order:
    1. Call `mcp__sodilaud__read_document` for the comment's `doc` to get the live text and its
       `version`. Find the anchored text with `headingPath`, `contextBefore` and `contextAfter`.
-      A comment with `replyTo` is the user's answer to your question `replyTo.body`: act on
-      the answer.
-   2. Make the change with `mcp__sodilaud__apply_edit`: `baseVersion` is that `version`, each
+      A comment with `replyTo` is a reply in a thread; `thread` holds the whole discussion,
+      oldest first. Read it before acting.
+   2. A question about why something is the way it is, or a point to discuss, is not a
+      change request: answer with `mcp__sodilaud__reply_comment` (`commentId`, `body`, a
+      fresh `requestId`) giving your reasoning, leave the thread open, and go back to step 1.
+      Change the document only when the user asks for it.
+   3. Make the change with `mcp__sodilaud__apply_edit`: `baseVersion` is that `version`, each
       `oldText` is copied exactly from the text you just read, and a fresh `requestId`.
-   3. Read the whole document again and fix every other place the change affects:
+   4. Read the whole document again and fix every other place the change affects:
       terminology, cross-references, numbering, summaries, tables of contents. Use
       `apply_edit` for these too.
-   4. If `apply_edit` reports conflicts, the user changed that text meanwhile and the user
+   5. If `apply_edit` reports conflicts, the user changed that text meanwhile and the user
       wins. Read again and retry once with fresh text; if it still conflicts, leave it and
       say so in the note. Each conflict has a `hint`; `ambiguous` gives the number of
       `matches`, and `not_found` gives the closest text as `currentText` when there is one.
-   5. Call `mcp__sodilaud__resolve_comment` with the comment `id` and a one-line `note` that
-      names what changed, including the other places you changed.
+   6. Call `mcp__sodilaud__resolve_comment` with the comment `id` and a one-line `note` that
+      names what changed, including the other places you changed. Resolving closes the
+      whole thread.
    Then go back to step 1.
 
 ## Rules

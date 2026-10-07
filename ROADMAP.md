@@ -314,7 +314,7 @@ Depends on: 11.
 
 ## 13. Review book: discussion threads
 
-Status: not started
+Status: built on `feat/review-book`
 
 Comment threads of any depth and either author. New MCP tool `reply_comment`, thread context
 in `get_pending_comments`, a nested comments panel with a reply box on every open thread, and

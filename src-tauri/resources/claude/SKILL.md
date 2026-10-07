@@ -34,6 +34,9 @@ needs its permission in Sodilaud's MCP Configuration (write functions start off)
 - Conflicts carry a `hint`. `ambiguous` reports how many `matches`; add surrounding text.
   `not_found` returns the closest text as `currentText` when there is one.
 - Reuse paths exactly as Sodilaud returns them (`/tmp` comes back as `/private/tmp`).
-- Your own comments never come back from `get_pending_comments`; the user's answers do, with
-  `replyTo` holding your question.
+- Your own comments never come back from `get_pending_comments`; the user's replies do, with
+  `replyTo` naming the thread's first comment and `thread` holding the discussion so far.
+- Discussion by default, change on request: answer a question with `reply_comment`, which
+  leaves the thread open, and edit only when the user asks. `resolve_comment` closes the
+  whole thread.
 - Retries: reuse the same `requestId` with identical arguments.

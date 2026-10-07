@@ -401,6 +401,7 @@ collection). A file must be open: `open_document` is the way in.
 | `apply_edit` | write | document, `baseVersion`, `requestId`, `edits[{ oldText, newText }]` (1-50) | `{ applied[index], conflicts[{ index, reason, currentText, matches?, hint }], version }` |
 | `get_pending_comments` | read | document (optional), `waitSeconds` (0-1,800, default 0) | `{ comments[], timedOut }` |
 | `add_comment` | write | document, `anchorText`, `occurrence` (from 1), `body` (1-2,000 characters), `requestId` | `{ comment }` |
+| `reply_comment` | write | `commentId`, `body` (1-2,000 characters), `requestId` | `{ comment }` |
 | `resolve_comment` | write | `id`, `note` (1-500 characters) | `{ comment }` |
 
 **Reading.** `read_document` returns the text as the editor shows it, including
@@ -408,7 +409,8 @@ typing from moments ago, and its `version`. Offsets count characters. It also
 remembers that text (the last eight versions per document) as the base for
 `apply_edit`, and makes the document co-edited. `comments` lists the comments
 an agent may act on, with `id`, `author`, `state`, `anchoredText`,
-`headingPath`, `offset`, `body` and the resolve `note`.
+`headingPath`, `offset`, `body`, the resolve `note` and `replyTo` (the thread's first
+comment) on a reply.
 
 **Editing.** `apply_edit` takes replacements written against the text read at
 `baseVersion`. Sodilaud finds each `oldText` in that text (exactly and once;
@@ -433,8 +435,10 @@ Retrying with the same `requestId` and arguments returns the first result.
 **Comments.** `get_pending_comments` returns your comments that are waiting,
 oldest first, and marks them sent. Each has `id`, `doc` (`{ path }` or
 `{ noteId }`), `headingPath`, `anchoredText`, two lines of `contextBefore` and
-`contextAfter`, `body` and `createdAt`; an answer to an agent's question also has
-`replyTo: { id, body }`. With `waitSeconds` the call waits until a comment
+`contextAfter`, `body`, `createdAt` and `thread`: the thread's first comment and
+every reply so far, oldest first, as `{ id, author, body, createdAt }`. A reply
+also has `replyTo: { id, body }` naming the thread's first comment. With
+`waitSeconds` the call waits until a comment
 arrives or the time is up (`timedOut: true`). While it waits, an **Agent
 listening** dot shows in the editors. A client that disconnects while waiting
 takes nothing. The agent's own comments never come back from this tool.
@@ -442,8 +446,12 @@ takes nothing. The agent's own comments never come back from this tool.
 `add_comment` puts an agent comment on `anchorText`, which must occur exactly
 once in the current text unless `occurrence` picks one. Use it to open a review:
 you answer in place, and the answers arrive through `get_pending_comments`.
-`resolve_comment` marks a comment addressed with a note shown in the comments
-panel; resolving an answer also resolves the question.
+`reply_comment` answers in the thread holding `commentId` (its first comment or
+any reply) without resolving it, for a discussion: you see the reply nested in
+the comments panel with a **New** marker until you open the thread, and your
+answer comes back through `get_pending_comments`. A resolved thread takes no
+replies. `resolve_comment` marks a comment addressed with a note shown in the
+comments panel and closes its whole thread.
 
 Some clients stop a tool call after a fixed time. A client that cuts off a
 30-minute wait earlier simply calls again; set its MCP tool timeout higher (in

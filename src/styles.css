@@ -3812,5 +3812,9 @@ kbd {
 .comment-note { margin: 6px 0 0; color: var(--text-secondary); font-size: 0.78rem; white-space: pre-wrap; }
 .comment-note::before { content: "Agent: "; font-weight: 600; }
 .comment-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.comment-replies { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 0 12px; padding: 0; list-style: none; }
+.comment-replies .comment-item { padding: 6px 8px; }
+.comment-new { padding: 0 5px; border-radius: 8px; background: #b07cd8; color: #fff; font-size: 0.66rem; font-weight: 600; }
+.comment-thread-unread { box-shadow: 0 0 0 1px color-mix(in srgb, #b07cd8 55%, transparent); }
 .comments-empty { margin: 0; color: var(--text-muted); }
 .comment-controls { display: flex; align-items: center; }

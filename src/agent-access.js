@@ -31,6 +31,7 @@ const WRITE_FUNCTIONS = [
   ["open_document", "Open document", "Open a Markdown or text file in the main window. Returns no content."],
   ["apply_edit", "Apply edit", "Merge edits into a co-edited file or note around your typing."],
   ["add_comment", "Add comment", "Leave a question on a passage for you to answer."],
+  ["reply_comment", "Reply to comment", "Answer in a comment thread without resolving it."],
   ["resolve_comment", "Resolve comment", "Mark a comment addressed with a one-line note."]
 ];
 export const MCP_READ_TOOLS = READ_FUNCTIONS.map(([tool]) => tool);

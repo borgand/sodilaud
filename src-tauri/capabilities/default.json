@@ -39,6 +39,7 @@
     "allow-comment-edit",
     "allow-comment-delete",
     "allow-comment-resolve",
+    "allow-comment-mark-read",
     "allow-comment-resend",
     "allow-comments-send-review",
     "allow-comments-clear-resolved",
