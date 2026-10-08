@@ -13,6 +13,11 @@ import { polyfillLayout } from "./cm-dom.js";
 
 export const settle = (ms = 50) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// Waits for debounced UI work without a fixed sleep, which slow CI runners outlast.
+export async function until(predicate, timeout = 3000) {
+  for (let waited = 0; !predicate() && waited < timeout; waited += 25) await settle(25);
+}
+
 // `storage` seeds local storage before boot; `handlers` maps a Tauri command to
 // the value it should resolve with, or throws to simulate a failing command.
 // `instance` gives the module a distinct URL so a single process can boot the
@@ -137,6 +142,7 @@ async function bootPage({ page, script, label, storage = {}, handlers = {}, regi
       return registry.workspace().trash;
     },
     settle,
+    until,
     storage: dom.window.localStorage,
     // Everything local storage holds, ready to seed the next launch.
     dumpStorage: () => {

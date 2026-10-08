@@ -89,7 +89,7 @@ test("a comment on a file: composer, panel, review mode, replies and agent edits
   const answer = question().querySelector(".comment-inline-editor textarea");
   answer.value = "Developers";
   question().querySelector(".comment-save").click();
-  await app.settle(200);
+  await app.until(() => app.fileDocs.comments(PATH).at(-1).body === "Developers");
   const reply = app.fileDocs.comments(PATH).at(-1);
   assert.equal(reply.body, "Developers");
   assert.equal(reply.replyTo, asked.id);
@@ -109,7 +109,7 @@ test("a comment on a file: composer, panel, review mode, replies and agent edits
   await app.settle();
   question().querySelector(".comment-inline-editor textarea").value = "Backend";
   question().querySelector(".comment-save").click();
-  await app.settle(200);
+  await app.until(() => app.fileDocs.comments(PATH).at(-1).body === "Backend");
   assert.equal(app.fileDocs.comments(PATH).at(-1).replyTo, asked.id);
   question().querySelector(":scope > .comment-actions .comment-resolve").click();
   await app.settle();

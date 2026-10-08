@@ -20,11 +20,11 @@ test("the cursor position follows every change while word counts trail typing", 
   assert.equal(text("cursor-position"), "Ln 2, Col 6", "the cursor position is immediate");
   assert.equal(text("word-char-count"), "1 word • 5 characters", "the word count waits for a pause");
 
-  await app.settle(200);
+  await app.until(() => text("word-char-count") === "3 words • 16 characters");
   assert.equal(text("word-char-count"), "3 words • 16 characters");
 
   view.dispatch({ selection: { anchor: 10, head: 0 } });
   assert.equal(text("cursor-position"), "Ln 1, Col 1", "a backward selection reports its head");
-  await app.settle(200);
+  await app.until(() => text("selection-count") === "2 words • 10 characters selected");
   assert.equal(text("selection-count"), "2 words • 10 characters selected");
 });
