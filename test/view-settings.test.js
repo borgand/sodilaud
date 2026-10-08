@@ -31,7 +31,7 @@ test("the main window's appearance settings are adjustable, persistent and share
     ["File", "Appearance", "Quick Notes", "Agent access", "Clipboard history", "Help"]
   );
   assert.equal(document.getElementById("theme-picker-btn").firstElementChild.textContent, "Color theme");
-  assert.equal(document.getElementById("active-theme-menu-value").textContent, "Default Dark");
+  assert.equal(document.getElementById("active-theme-menu-value").textContent, "Executive");
   assert.equal(document.getElementById("help-menu-btn").textContent, "Help & reference");
   assert.equal(document.getElementById("about-menu-btn").firstChild.textContent.trim(), "About Sodilaud");
   assert.equal(document.getElementById("actions-btn").getAttribute("aria-label"), "Open Sodilaud menu");
