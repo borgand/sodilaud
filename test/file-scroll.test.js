@@ -92,7 +92,7 @@ test("Next unreviewed jumps to a hunk not yet reviewed, unfolding its section, a
   for (const button of preview.querySelectorAll(".diff-hunk-reviewed")) {
     if (!button.closest(".diff-hunk").classList.contains("diff-hunk-is-reviewed")) button.click();
   }
-  for (let waited = 0; !next.hidden && waited < 3000; waited += 50) await app.settle(50);
+  await app.until(() => next.hidden);
   assert.equal(next.hidden, true, "nothing left to review");
 });
 

@@ -273,7 +273,7 @@ test("the outline lists headings with review progress and the status bar counts 
   page.querySelector("#markdown-preview [data-anchor=engine] .heading-fold").click();
   assert.equal(page.querySelector("#markdown-preview .diff-hunk").classList.contains("section-fold-hidden"), true);
   page.querySelectorAll(".diff-hunk-reviewed")[1].click();
-  await app.settle(200);
+  await app.until(() => status.textContent === "2/2 reviewed");
   assert.equal(status.textContent, "2/2 reviewed");
   assert.deepEqual(rows(), ["Book2/2", "Engine2/2", "Notes"]);
   assert.equal(page.querySelector("#markdown-preview .diff-hunk").classList.contains("section-fold-hidden"), true, "the fold survives the re-render");

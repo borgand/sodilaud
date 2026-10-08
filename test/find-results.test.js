@@ -166,7 +166,8 @@ test("Find All lists live matches and jumps to the selected result", async () =>
     changes: { from: 0, to: view.state.doc.length, insert: "alpha only" },
     userEvent: "input.type"
   });
-  await app.settle(200);
+  await app.until(() => document.querySelectorAll(".find-result-button").length === 1
+    && document.querySelectorAll("mark.find-preview-match").length === 1);
   assert.equal(document.querySelectorAll(".find-result-button").length, 1);
   assert.equal(document.querySelectorAll("mark.find-preview-match").length, 1);
   assert.equal(document.getElementById("find-results-summary").textContent, "1 match");
