@@ -43,6 +43,9 @@ export const externalChange = Annotation.define();
 
 export const modeFacet = Facet.define({ combine: values => values[0] ?? "live" });
 
+// Whether syntax highlighting is on, for extensions that color code themselves.
+export const syntaxHighlightingFacet = Facet.define({ combine: values => values.some(Boolean) });
+
 // Whole lines from the one holding `anchor` to the one holding `head`,
 // without the last line's break, so the selection never reaches into the
 // next line. Dragging upwards keeps the anchor at the end of its line.
@@ -242,7 +245,9 @@ export function createMarkdownEditor(options) {
   const gutterCompartment = new Compartment();
   const extraCompartment = new Compartment();
 
-  const highlightExtension = () => highlighting ? syntaxHighlighting(markdownHighlightStyle) : [];
+  const highlightExtension = () => highlighting
+    ? [syntaxHighlighting(markdownHighlightStyle), syntaxHighlightingFacet.of(true)]
+    : [];
   const gutterExtension = () => showLineNumbers || diff !== null ? lineNumbers() : [];
 
   const updateListener = EditorView.updateListener.of(update => {

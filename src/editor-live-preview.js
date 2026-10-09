@@ -5,16 +5,19 @@ import {
   EditorSelection,
   EditorView,
   Facet,
+  RectangleMarker,
   StateEffect,
   StateField,
   ViewPlugin,
   WidgetType,
+  layer,
   syntaxTree
 } from "./vendor/codemirror.js";
-import { modeFacet } from "./editor-view.js";
+import { modeFacet, syntaxHighlightingFacet } from "./editor-view.js";
 import { isSafeMarkdownUrl, renderMarkdown, resolveLinkAction } from "./markdown.js";
 import { scrollToAnchor } from "./editor-anchors.js";
-import { buildHunkElement, reviewHunkMeta } from "./diff-hunk.js";
+import { buildHunkElement, languageForPath, reviewHunkMeta } from "./diff-hunk.js";
+import { highlightRanges } from "./syntax-highlighting.js";
 import { paintDots, paintMarks, setHunkComposer } from "./hunk-comments.js";
 import {
   hunkFenceAt,
@@ -384,6 +387,30 @@ class HunkWidget extends WidgetType {
   }
 }
 
+// The label a fenced code block shows in place of its opening fence.
+class FenceLabelWidget extends WidgetType {
+  constructor(label) {
+    super();
+    this.label = label;
+  }
+
+  eq(other) {
+    return other.label === this.label;
+  }
+
+  toDOM(view) {
+    const label = view.dom.ownerDocument.createElement("span");
+    label.className = "cm-lp-fence-label";
+    label.textContent = this.label;
+    return label;
+  }
+
+  // A click on the label places the cursor there and shows the fence.
+  ignoreEvent() {
+    return false;
+  }
+}
+
 const bulletWidget = Decoration.replace({ widget: new BulletWidget() });
 const ruleWidget = Decoration.replace({ widget: new RuleWidget() });
 const hidden = Decoration.replace({});
@@ -392,6 +419,54 @@ const blockedImageMark = Decoration.mark({ class: "cm-lp-image-blocked" });
 const lineClasses = {};
 for (const name of ["h1", "h2", "h3", "h4", "h5", "h6", "quote", "codeblock", "hr"]) {
   lineClasses[name] = Decoration.line({ class: `cm-lp-${name}` });
+}
+for (const name of ["head", "foot", "highlighted"]) {
+  lineClasses[`codeblock-${name}`] = Decoration.line({ class: `cm-lp-codeblock cm-lp-codeblock-${name}` });
+}
+
+const FENCE_PATH = /(?:^|\s)(?:path|file|filename|title)=(?:"([^"]*)"|'([^']*)'|(\S+))/;
+
+/**
+ * What a fenced code block's header shows: the file named by `path=`, `file=`,
+ * `filename=` or `title=`, else the language, else "code". `language` is the
+ * Highlight.js language that colors it, from the info string or the file's
+ * extension, or "" when there is none.
+ */
+export function codeFenceMeta(info, hljs = null) {
+  const trimmed = info.trim();
+  const first = trimmed.split(/\s+/, 1)[0];
+  const named = first && !first.includes("=") ? first : "";
+  const match = FENCE_PATH.exec(trimmed);
+  const path = match ? match[1] ?? match[2] ?? match[3] : "";
+  let language = named && hljs?.getLanguage?.(named) ? named : "";
+  if (!language && path && hljs) {
+    const fromPath = languageForPath(path, hljs);
+    if (fromPath !== "diff") language = fromPath;
+  }
+  return { label: path || named || "code", language };
+}
+
+// Highlighting reruns whenever the live preview rebuilds, so keep the last few
+// blocks' tokens rather than highlighting on every cursor move.
+const HIGHLIGHT_CACHE_SIZE = 64;
+const highlightCache = new Map();
+const tokenMarks = new Map();
+
+function fenceTokens(code, language, hljs) {
+  const key = `${language}\n${code}`;
+  let tokens = highlightCache.get(key);
+  if (!tokens) {
+    tokens = highlightRanges(code, language, hljs);
+    if (highlightCache.size >= HIGHLIGHT_CACHE_SIZE) highlightCache.delete(highlightCache.keys().next().value);
+    highlightCache.set(key, tokens);
+  }
+  return tokens;
+}
+
+function tokenMark(className) {
+  let mark = tokenMarks.get(className);
+  if (!mark) tokenMarks.set(className, mark = Decoration.mark({ class: className }));
+  return mark;
 }
 
 const linkMark = href => Decoration.mark({ class: "cm-lp-link", attributes: { "data-href": linkDestination(href) } });
@@ -430,6 +505,39 @@ function buildInline(view, focused) {
     }
   };
   const followingSpace = to => (doc.sliceString(to, to + 1) === " " ? to + 1 : to);
+  const hljs = state.facet(syntaxHighlightingFacet) ? view.dom.ownerDocument.defaultView?.hljs ?? null : null;
+
+  // The opening fence turns into a header naming the file or language, the
+  // closing one into the block's bottom edge, each until the cursor is on it.
+  function handleFence(node, rangeFrom, rangeTo) {
+    const info = fenceInfo(state, node);
+    // Diagrams and review hunks are block widgets; their source shows as is.
+    if (reviewHunkMeta(info) !== null || (state.facet(mermaidFacet) && isMermaidFence(state, node))) {
+      markLines(node.from, node.to, "codeblock", rangeFrom, rangeTo);
+      return;
+    }
+    const meta = codeFenceMeta(info, hljs);
+    const text = node.getChild("CodeText");
+    markLines(node.from, node.to, meta.language ? "codeblock-highlighted" : "codeblock", rangeFrom, rangeTo);
+    const marks = node.getChildren("CodeMark");
+    if (!marks.length) return;
+    const open = doc.lineAt(node.from);
+    lineDecorations.set(open.from, lineClasses["codeblock-head"]);
+    let close = marks.length > 1 ? doc.lineAt(marks.at(-1).from) : null;
+    if (close && (close.from === open.from || isRevealed(close.from, close.to))) close = null;
+    if (close) lineDecorations.set(close.from, lineClasses["codeblock-foot"]);
+    if (handled.has(`fence:${node.from}`)) return;
+    handled.add(`fence:${node.from}`);
+    if (!isRevealed(open.from, open.to)) {
+      ranges.push(Decoration.replace({ widget: new FenceLabelWidget(meta.label) }).range(marks[0].from, open.to));
+    }
+    if (close) hide(marks.at(-1).from, marks.at(-1).to);
+    if (text && meta.language) {
+      for (const token of fenceTokens(doc.sliceString(text.from, text.to), meta.language, hljs)) {
+        ranges.push(tokenMark(token.className).range(text.from + token.from, text.from + token.to));
+      }
+    }
+  }
 
   function handleLink(node) {
     const marks = node.getChildren("LinkMark");
@@ -483,7 +591,7 @@ function buildInline(view, focused) {
             markLines(from, to, "quote", rangeFrom, rangeTo);
             return true;
           case "FencedCode":
-            markLines(from, to, "codeblock", rangeFrom, rangeTo);
+            handleFence(ref.node, rangeFrom, rangeTo);
             return false;
           case "HorizontalRule":
             markLines(from, to, "hr", rangeFrom, rangeTo);
@@ -584,8 +692,9 @@ const inlinePreview = ViewPlugin.fromClass(class {
   update(update) {
     const modeChanged = update.startState.facet(modeFacet) !== update.state.facet(modeFacet);
     const treeChanged = syntaxTree(update.startState) !== syntaxTree(update.state);
+    const highlightingChanged = update.startState.facet(syntaxHighlightingFacet) !== update.state.facet(syntaxHighlightingFacet);
     if (
-      !modeChanged && !treeChanged && !update.docChanged && !update.selectionSet &&
+      !modeChanged && !treeChanged && !highlightingChanged && !update.docChanged && !update.selectionSet &&
       !update.viewportChanged && !update.focusChanged
     ) {
       return;
@@ -680,6 +789,51 @@ const blockField = StateField.define({
     return { focused, decorations: buildBlocks(tr.state, focused) };
   },
   provide: field => EditorView.decorations.from(field, value => value.decorations)
+});
+
+// Code blocks get their background from a layer under the selection's, since a
+// background on the lines themselves would paint over the selection and hide it.
+// Blocks shown as a widget (diagrams, review hunks) draw their own.
+const codeBlockLayer = layer({
+  above: false,
+  class: "cm-lp-codeblock-layer",
+  update: update =>
+    update.docChanged || update.viewportChanged || update.focusChanged ||
+    update.startState.facet(modeFacet) !== update.state.facet(modeFacet) ||
+    update.startState.field(blockField) !== update.state.field(blockField),
+  markers(view) {
+    if (!isLive(view.state)) return [];
+    const line = view.contentDOM.querySelector(".cm-line");
+    if (!line) return [];
+    const scroller = view.scrollDOM.getBoundingClientRect();
+    const box = line.getBoundingClientRect();
+    const left = box.left - scroller.left + view.scrollDOM.scrollLeft;
+    const top = view.documentTop - scroller.top + view.scrollDOM.scrollTop;
+    const widgets = view.state.field(blockField).decorations;
+    const markers = [];
+    const drawn = new Set();
+    for (const { from, to } of view.visibleRanges) {
+      syntaxTree(view.state).iterate({
+        from,
+        to,
+        enter: ref => {
+          if (ref.name !== "FencedCode") return true;
+          if (drawn.has(ref.from)) return false;
+          drawn.add(ref.from);
+          let shownAsWidget = false;
+          widgets.between(ref.from, ref.to, (start, end) => {
+            if (end > start) shownAsWidget = true;
+          });
+          if (shownAsWidget) return false;
+          const first = view.lineBlockAt(ref.from);
+          const last = view.lineBlockAt(ref.to);
+          markers.push(new RectangleMarker("cm-lp-codeblock-bg", left, top + first.top, box.width, last.bottom - first.top));
+          return false;
+        }
+      });
+    }
+    return markers;
+  }
 });
 
 const blockFocusSync = EditorView.updateListener.of(update => {
@@ -793,6 +947,7 @@ export function livePreview({ onOpenLink, onFollowAnchor, mermaid } = {}) {
     mermaidFacet.of(mermaid ?? null),
     followFacet.of(follow),
     blockField,
+    codeBlockLayer,
     blockFocusSync,
     mermaidThemeSync,
     inlinePreview,

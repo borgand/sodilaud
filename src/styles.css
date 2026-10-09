@@ -1790,63 +1790,85 @@ html:not(.editor-line-numbers-enabled) .app-container.compare-mode .editor-host 
    so highlighted code wraps and selects exactly like unhighlighted code. */
 .markdown-preview .hljs-comment,
 .diff-hunk .hljs-comment,
+.cm-lp-codeblock .hljs-comment,
 .markdown-preview .hljs-quote,
-.diff-hunk .hljs-quote {
+.diff-hunk .hljs-quote,
+.cm-lp-codeblock .hljs-quote {
   color: var(--syntax-muted);
 }
 
 .markdown-preview .hljs-keyword,
 .diff-hunk .hljs-keyword,
+.cm-lp-codeblock .hljs-keyword,
 .markdown-preview .hljs-selector-tag,
 .diff-hunk .hljs-selector-tag,
+.cm-lp-codeblock .hljs-selector-tag,
 .markdown-preview .hljs-literal,
 .diff-hunk .hljs-literal,
+.cm-lp-codeblock .hljs-literal,
 .markdown-preview .hljs-type,
-.diff-hunk .hljs-type {
+.diff-hunk .hljs-type,
+.cm-lp-codeblock .hljs-type {
   color: var(--accent-color);
 }
 
 .markdown-preview .hljs-string,
 .diff-hunk .hljs-string,
+.cm-lp-codeblock .hljs-string,
 .markdown-preview .hljs-regexp,
 .diff-hunk .hljs-regexp,
+.cm-lp-codeblock .hljs-regexp,
 .markdown-preview .hljs-addition,
 .diff-hunk .hljs-addition,
+.cm-lp-codeblock .hljs-addition,
 .markdown-preview .hljs-attribute,
-.diff-hunk .hljs-attribute {
+.diff-hunk .hljs-attribute,
+.cm-lp-codeblock .hljs-attribute {
   color: var(--syntax-string);
 }
 
 .markdown-preview .hljs-number,
 .diff-hunk .hljs-number,
+.cm-lp-codeblock .hljs-number,
 .markdown-preview .hljs-symbol,
 .diff-hunk .hljs-symbol,
+.cm-lp-codeblock .hljs-symbol,
 .markdown-preview .hljs-bullet,
 .diff-hunk .hljs-bullet,
+.cm-lp-codeblock .hljs-bullet,
 .markdown-preview .hljs-variable,
 .diff-hunk .hljs-variable,
+.cm-lp-codeblock .hljs-variable,
 .markdown-preview .hljs-template-variable,
-.diff-hunk .hljs-template-variable {
+.diff-hunk .hljs-template-variable,
+.cm-lp-codeblock .hljs-template-variable {
   color: var(--syntax-number);
 }
 
 .markdown-preview .hljs-title,
 .diff-hunk .hljs-title,
+.cm-lp-codeblock .hljs-title,
 .markdown-preview .hljs-section,
 .diff-hunk .hljs-section,
+.cm-lp-codeblock .hljs-section,
 .markdown-preview .hljs-selector-id,
 .diff-hunk .hljs-selector-id,
+.cm-lp-codeblock .hljs-selector-id,
 .markdown-preview .hljs-selector-class,
 .diff-hunk .hljs-selector-class,
+.cm-lp-codeblock .hljs-selector-class,
 .markdown-preview .hljs-built_in,
-.diff-hunk .hljs-built_in {
+.diff-hunk .hljs-built_in,
+.cm-lp-codeblock .hljs-built_in {
   color: var(--accent-hover);
 }
 
 .markdown-preview .hljs-deletion,
 .diff-hunk .hljs-deletion,
+.cm-lp-codeblock .hljs-deletion,
 .markdown-preview .hljs-meta,
-.diff-hunk .hljs-meta {
+.diff-hunk .hljs-meta,
+.cm-lp-codeblock .hljs-meta {
   color: var(--syntax-danger);
 }
 
@@ -3440,10 +3462,40 @@ kbd {
   font-size: 0.9em;
 }
 
+/* The background is a layer under the selection (see codeBlockLayer); one on
+   the lines would hide a selection made in the code. */
 .cm-mode-live .cm-lp-codeblock {
-  background-color: var(--preview-code-bg);
   font-family: var(--font-mono);
   font-size: 0.9em;
+}
+
+.cm-lp-codeblock-bg {
+  box-sizing: border-box;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background-color: var(--preview-code-bg);
+}
+
+.cm-mode-live .cm-lp-codeblock-head {
+  border-bottom: 1px solid var(--border-color);
+}
+
+.cm-mode-live .cm-lp-codeblock-head {
+  color: var(--text-secondary);
+}
+
+/* The hidden closing fence leaves only the block's bottom padding. */
+.cm-mode-live .cm-lp-codeblock-foot {
+  font-size: 0.4em;
+}
+
+.cm-lp-fence-label {
+  font-weight: 600;
+}
+
+/* Highlighted code takes its colors from the tokens, as in Reading mode. */
+.cm-mode-live .cm-lp-codeblock-highlighted .syntax-code {
+  color: inherit;
 }
 
 .cm-mode-live .cm-lp-link {
