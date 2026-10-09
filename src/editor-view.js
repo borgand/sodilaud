@@ -72,6 +72,21 @@ export const tripleClickSelectsLines = EditorView.mouseSelectionStyle.of((view, 
   };
 });
 
+// A plain click into an unfocused editor puts the cursor where it lands before
+// CodeMirror takes focus. Otherwise the focus writes the old selection back to
+// the DOM, and WebKit scrolls that into view in the middle of the click: after
+// the outline or Back scrolled away from the cursor, the view jumped back and
+// the click selected everything from where it landed to the old cursor.
+const clickPlacesCursorOnFocus = EditorView.domEventHandlers({
+  mousedown(event, view) {
+    if (view.hasFocus || event.defaultPrevented || event.button !== 0 || event.detail > 1) return false;
+    if (event.shiftKey || event.altKey || event.metaKey || event.ctrlKey) return false;
+    const selection = EditorSelection.single(view.posAtCoords({ x: event.clientX, y: event.clientY }, false));
+    if (!view.state.selection.eq(selection)) view.dispatch({ selection, userEvent: "select.pointer" });
+    return false;
+  }
+});
+
 const markdownHighlightStyle = HighlightStyle.define([
   { tag: tags.heading, class: "syntax-heading" },
   { tag: [tags.emphasis, tags.strong, tags.strikethrough], class: "syntax-emphasis" },
@@ -262,6 +277,7 @@ export function createMarkdownEditor(options) {
       history(),
       drawSelection(),
       tripleClickSelectsLines,
+      clickPlacesCursorOnFocus,
       EditorView.lineWrapping,
       keymap.of([...historyKeymap, ...baseKeymap]),
       options.placeholder ? placeholder(options.placeholder) : [],

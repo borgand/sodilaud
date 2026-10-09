@@ -202,3 +202,28 @@ test("the content element carries the aria label and disables spellcheck", async
     assert.equal(content.getAttribute("spellcheck"), "false");
   } finally { t.done(); }
 });
+
+test("a click into the unfocused editor places the cursor before focus can scroll back to the old one", async () => {
+  const t = await setup();
+  try {
+    const { view } = t.editor;
+    t.editor.loadText("x".repeat(1000));
+    t.editor.setSelection(10, 10);
+    // jsdom has no layout. The click lands on position 500, until something
+    // scrolls the old cursor back into view, as WebKit does when focus puts
+    // an off-screen selection back into the DOM.
+    let scrolledBack = false;
+    const atPointer = () => (scrolledBack ? 20 : 500);
+    view.posAtCoords = () => atPointer();
+    view.posAndSideAtCoords = () => ({ pos: atPointer(), assoc: 1 });
+    view.contentDOM.addEventListener("focus", () => {
+      if (view.state.selection.main.head !== 500) scrolledBack = true;
+    });
+    const mouse = type => new t.env.window.MouseEvent(type, { bubbles: true, cancelable: true, button: 0, detail: 1, clientX: 5, clientY: 5 });
+    assert.equal(view.hasFocus, false);
+    view.contentDOM.dispatchEvent(mouse("mousedown"));
+    t.env.document.dispatchEvent(mouse("mouseup"));
+    assert.equal(scrolledBack, false, "focus found the cursor already where the click landed");
+    assert.deepEqual(t.editor.getSelection(), { start: 500, end: 500, direction: "none" });
+  } finally { t.done(); }
+});
