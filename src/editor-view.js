@@ -77,8 +77,10 @@ const markdownHighlightStyle = HighlightStyle.define([
   { tag: [tags.emphasis, tags.strong, tags.strikethrough], class: "syntax-emphasis" },
   { tag: [tags.link, tags.url], class: "syntax-link" },
   { tag: tags.monospace, class: "syntax-code" },
+  // Not tags.list: lezer tags a whole list subtree with it, which would mute the
+  // item text. The bullet and number markers are processingInstruction.
   {
-    tag: [tags.processingInstruction, tags.meta, tags.contentSeparator, tags.list, tags.quote],
+    tag: [tags.processingInstruction, tags.meta, tags.contentSeparator, tags.quote],
     class: "syntax-punctuation"
   }
 ]);

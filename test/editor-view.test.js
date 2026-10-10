@@ -202,3 +202,16 @@ test("the content element carries the aria label and disables spellcheck", async
     assert.equal(content.getAttribute("spellcheck"), "false");
   } finally { t.done(); }
 });
+
+test("list item text keeps the body color while its markers stay muted", async () => {
+  const t = await setup({ mode: "source" });
+  try {
+    t.editor.loadText("- bullet item\n1. numbered item\n- **bold** item");
+    const muted = [...t.env.document.querySelectorAll(".cm-content .syntax-punctuation")].map(el => el.textContent);
+    assert.ok(muted.includes("-"), "bullet marker is muted");
+    assert.ok(muted.includes("1."), "number marker is muted");
+    assert.ok(!muted.some(text => /bullet|numbered|item/.test(text)), `item text is not muted: ${JSON.stringify(muted)}`);
+    const emphasis = [...t.env.document.querySelectorAll(".cm-content .syntax-emphasis")].map(el => el.textContent);
+    assert.ok(emphasis.includes("bold"), "inline styling inside a list item still applies");
+  } finally { t.done(); }
+});
