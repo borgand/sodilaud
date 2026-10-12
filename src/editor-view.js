@@ -43,6 +43,9 @@ export const externalChange = Annotation.define();
 
 export const modeFacet = Facet.define({ combine: values => values[0] ?? "live" });
 
+// Whether syntax highlighting is on, for extensions that color code themselves.
+export const syntaxHighlightingFacet = Facet.define({ combine: values => values.some(Boolean) });
+
 // Whole lines from the one holding `anchor` to the one holding `head`,
 // without the last line's break, so the selection never reaches into the
 // next line. Dragging upwards keeps the anchor at the end of its line.
@@ -92,8 +95,10 @@ const markdownHighlightStyle = HighlightStyle.define([
   { tag: [tags.emphasis, tags.strong, tags.strikethrough], class: "syntax-emphasis" },
   { tag: [tags.link, tags.url], class: "syntax-link" },
   { tag: tags.monospace, class: "syntax-code" },
+  // Not tags.list: lezer tags a whole list subtree with it, which would mute the
+  // item text. The bullet and number markers are processingInstruction.
   {
-    tag: [tags.processingInstruction, tags.meta, tags.contentSeparator, tags.list, tags.quote],
+    tag: [tags.processingInstruction, tags.meta, tags.contentSeparator, tags.quote],
     class: "syntax-punctuation"
   }
 ]);
@@ -257,7 +262,9 @@ export function createMarkdownEditor(options) {
   const gutterCompartment = new Compartment();
   const extraCompartment = new Compartment();
 
-  const highlightExtension = () => highlighting ? syntaxHighlighting(markdownHighlightStyle) : [];
+  const highlightExtension = () => highlighting
+    ? [syntaxHighlighting(markdownHighlightStyle), syntaxHighlightingFacet.of(true)]
+    : [];
   const gutterExtension = () => showLineNumbers || diff !== null ? lineNumbers() : [];
 
   const updateListener = EditorView.updateListener.of(update => {

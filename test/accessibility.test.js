@@ -69,7 +69,7 @@ test("help and reference documents current Markdown editing behavior", () => {
   assert.match(shortcuts, /Pasting a URL over selected text makes a link/);
   assert.match(shortcuts, /Live.*Source.*Reading/);
   assert.match(shortcuts, /In Live mode, Cmd-click a link to open it/);
-  assert.match(markdown, /A language label enables syntax highlighting in Reading mode/);
+  assert.match(markdown, /A language label enables syntax highlighting in Live and Reading modes/);
   assert.match(markdown, /Sodilaud menu → Appearance/);
   assert.match(markdown, /Right-click in the editor/);
   assert.match(markdown, /empty generated row to exit the table/);

@@ -3,13 +3,22 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { marked } from "marked";
+import { readFileSync } from "node:fs";
+import vm from "node:vm";
 import { installEditorDom } from "./helpers/cm-dom.js";
+
+function loadHighlighter() {
+  const context = {};
+  vm.runInNewContext(`${readFileSync(new URL("../src/vendor/highlight.min.js", import.meta.url), "utf8")};this.hljs = hljs;`, context);
+  return context.hljs;
+}
 
 const settle = () => new Promise(resolve => setTimeout(resolve, 0));
 
-async function setup(text, { focused = true, mermaid } = {}) {
+async function setup(text, { focused = true, mermaid, hljs } = {}) {
   const env = installEditorDom();
   env.window.marked = marked;
+  if (hljs) env.window.hljs = hljs;
   const { createMarkdownEditor } = await import("../src/editor-view.js");
   const live = await import("../src/editor-live-preview.js");
   const opened = [];
@@ -274,7 +283,8 @@ test("quotes, inline code, strikethrough, rules and fenced code get live styling
     assert.ok(lines[2].classList.contains("cm-lp-hr"));
     assert.ok(lines[2].querySelector("hr.cm-lp-hr-widget"));
     assert.ok(lines[3].classList.contains("cm-lp-codeblock"));
-    assert.equal(lines[3].textContent, "```");
+    assert.ok(lines[3].classList.contains("cm-lp-codeblock-head"));
+    assert.equal(lines[3].textContent, "code");
   } finally { t.done(); }
 });
 
@@ -436,6 +446,81 @@ test("mermaid blocks stay code in source mode and without a renderer", async () 
   try {
     await plain.caret(0);
     assert.equal(plain.view.contentDOM.querySelector(".cm-lp-mermaid"), null);
-    assert.ok(plain.lineTexts().includes("```mermaid"));
+    assert.ok(plain.lineTexts().includes("mermaid"), "a plain code block, labelled with its language");
   } finally { plain.done(); }
+});
+
+test("a fence label names the file, else the language, else says code", async () => {
+  const { codeFenceMeta } = await import("../src/editor-live-preview.js");
+  const hljs = loadHighlighter();
+  assert.deepEqual(codeFenceMeta("js", hljs), { label: "js", language: "js" });
+  assert.deepEqual(codeFenceMeta("python path=scripts/tool.py", hljs), { label: "scripts/tool.py", language: "python" });
+  assert.deepEqual(codeFenceMeta('title="src/app.rs"', hljs), { label: "src/app.rs", language: "rust" });
+  assert.deepEqual(codeFenceMeta("file=notes.txt", hljs), { label: "notes.txt", language: "" });
+  assert.deepEqual(codeFenceMeta("madeup", hljs), { label: "madeup", language: "" });
+  assert.deepEqual(codeFenceMeta("", hljs), { label: "code", language: "" });
+  assert.deepEqual(codeFenceMeta("js", null), { label: "js", language: "" });
+});
+
+test("a fenced block shows a header label and hides its closing fence until the caret is on them", async () => {
+  const text = "```js path=src/a.js\nlet a = 1;\n```\nend";
+  const t = await setup(text);
+  try {
+    await t.caret(text.length);
+    let lines = t.lines();
+    assert.ok(lines[0].classList.contains("cm-lp-codeblock-head"));
+    assert.equal(lines[0].querySelector(".cm-lp-fence-label")?.textContent, "src/a.js");
+    assert.equal(lines[0].textContent, "src/a.js");
+    assert.ok(lines[2].classList.contains("cm-lp-codeblock-foot"));
+    assert.equal(lines[2].textContent, "");
+
+    await t.caret(2);
+    lines = t.lines();
+    assert.equal(lines[0].textContent, "```js path=src/a.js");
+    assert.ok(lines[0].classList.contains("cm-lp-codeblock-head"));
+
+    await t.caret(text.indexOf("```\nend") + 1);
+    lines = t.lines();
+    assert.equal(lines[2].textContent, "```");
+    assert.equal(lines[2].classList.contains("cm-lp-codeblock-foot"), false);
+  } finally { t.done(); }
+});
+
+test("code in a fence with a known language is highlighted while syntax highlighting is on", async () => {
+  const text = "```python\ndef main():\n    return 42\n```\n\n```madeup\ndef x\n```\nend";
+  const t = await setup(text, { hljs: loadHighlighter() });
+  try {
+    await t.caret(text.length);
+    const tokens = () => [...t.view.contentDOM.querySelectorAll(".cm-lp-codeblock [class*='hljs-']")].map(element => element.textContent);
+    assert.deepEqual(tokens(), ["def", "main", "return", "42"]);
+    assert.ok(t.lines()[1].classList.contains("cm-lp-codeblock-highlighted"));
+    assert.equal(t.lines()[6].classList.contains("cm-lp-codeblock-highlighted"), false);
+
+    t.editor.setSyntaxHighlighting(false);
+    await settle();
+    assert.deepEqual(tokens(), []);
+    t.editor.setSyntaxHighlighting(true);
+    await settle();
+    assert.equal(tokens().length, 4);
+  } finally { t.done(); }
+});
+
+test("code blocks draw their background under the selection, not on their lines", async () => {
+  const styles = readFileSync(new URL("../src/styles.css", import.meta.url), "utf8");
+  const rule = /\.cm-mode-live \.cm-lp-codeblock \{([^}]*)\}/.exec(styles);
+  assert.ok(rule, "the live code block rule exists");
+  assert.doesNotMatch(rule[1], /background/, "a line background would paint over the selection layer");
+  assert.match(/\.cm-lp-codeblock-bg \{([^}]*)\}/.exec(styles)?.[1] ?? "", /background-color/);
+
+  const text = "```js\na\n```\n\n```diff path=a.js hunk=h1 lines=1-1\n@@ -1 +1 @@\n-a\n+b\n```\n\n```\nb\n```\nend";
+  const t = await setup(text);
+  try {
+    await t.caret(text.length);
+    await new Promise(resolve => setTimeout(resolve, 50));
+    const layer = t.view.dom.querySelector(".cm-lp-codeblock-layer");
+    assert.ok(layer, "the background layer is mounted");
+    assert.equal(layer.querySelectorAll(".cm-lp-codeblock-bg").length, 2, "one per code block; the review hunk draws its own");
+    const selection = t.view.dom.querySelector(".cm-selectionLayer");
+    assert.ok(Number(layer.style.zIndex) < Number(selection.style.zIndex), "the backgrounds sit under the selection");
+  } finally { t.done(); }
 });
