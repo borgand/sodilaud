@@ -69,7 +69,7 @@ Clipboard history is off by default. Turn it on in **Sodilaud menu → Clipboard
 - Agents can push a note into Quick Notes (a **From agents** folder) and open a Markdown or text file in the main window
 - Multiple notes with automatic saving, titles derived from the first line, and quick creation by double-clicking empty sidebar space
 - Live, Source, and Reading editing modes, with inline Markdown rendering and per-line raw source in Live mode
-- Optional Markdown editor coloring and language-aware fenced-code highlighting in Reading mode
+- Optional Markdown editor coloring and language-aware fenced-code highlighting in Live and Reading modes
 - Review books: diff hunks with line numbers and highlighting, a Reviewed toggle, folding by heading, an outline with review progress, and links between files with Back and Forward
 - Mermaid diagrams from ` ```mermaid ` blocks in Live and Reading modes and in copied HTML, in the active theme's colors, rendered offline
 - Optional, theme-aware source line numbers in either editor pane
@@ -203,7 +203,7 @@ Sodilaud keeps its Markdown assistance lightweight and works directly in the nat
 - The formatting buttons to the left of the mode buttons apply bold, italic, strikethrough, inline code, links, headings (from a menu, including **Paragraph** to remove one), bullet, numbered, and task lists, quotes, code blocks, tables, and horizontal rules to the pane you last worked in. Marks, headings, lists, and quotes toggle: applying one again removes it. Link inside an existing link selects its URL. Hover a button to see its shortcut. Buttons that do not fit the window move into the **»** (More formatting) menu. The buttons are unavailable in Reading mode.
 - Right-click in either editor and choose **Insert** for a starter table, task list, fenced code block, inline link, or reference-style link. The first useful placeholder is selected so typing replaces it immediately.
 
-Syntax highlighting is enabled by default. Open **Sodilaud menu → Appearance → Syntax highlighting** to toggle both the editor’s Markdown coloring and language-aware highlighting in Reading mode. Reading mode code highlighting requires a supported language after the opening fence, such as <code>```javascript</code>; unknown and unlabeled fences remain plain code.
+Syntax highlighting is enabled by default. Open **Sodilaud menu → Appearance → Syntax highlighting** to toggle both the editor’s Markdown coloring and language-aware code highlighting. Code highlighting requires a supported language after the opening fence, such as <code>```javascript</code>, or in Live mode a file name with a known extension, such as <code>```path=src/app.js</code>; unknown and unlabeled fences remain plain code. In Live mode each fenced block shows a header with its file name (<code>path=</code>, <code>file=</code>, <code>filename=</code> or <code>title=</code>), else its language, else “code”.
 
 Source line numbers are off by default. Open **Sodilaud menu → Appearance → Line numbers** to show a subtle, theme-aware gutter in both editor panes; the preference is remembered between launches.
 
