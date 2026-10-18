@@ -123,12 +123,31 @@ export const ACTIVE_TEXT_PROPERTIES = [
 // Every property deriveThemeSurfaceColors can set. A theme it can only partly
 // derive -- or not at all -- returns a subset, so callers must clear the whole
 // list before applying, or the previous theme's tones stay on the element.
+export const DOCUMENT_THEME_PROPERTIES = [
+  "--preview-code-bg",
+  "--preview-code-border",
+  "--preview-table-head-bg",
+  "--preview-table-border",
+  "--preview-hr",
+  "--preview-quote-bg",
+  "--preview-quote-border",
+  "--preview-quote-text",
+  "--preview-heading",
+  "--preview-link",
+  "--syntax-muted",
+  "--syntax-code",
+  "--syntax-string",
+  "--syntax-number",
+  "--syntax-danger"
+];
+
 export const DERIVED_THEME_PROPERTIES = [
   "--bg-note-hover",
   "--bg-note-active",
   "--text-secondary",
   "--text-muted",
-  ...ACTIVE_TEXT_PROPERTIES
+  ...ACTIVE_TEXT_PROPERTIES,
+  ...DOCUMENT_THEME_PROPERTIES
 ];
 
 // Returns the CSS custom properties a theme should set beyond its own colours,
@@ -171,4 +190,101 @@ export function deriveThemeSurfaceColors(theme, parseOpaqueColor = parseColor) {
     "--text-secondary-on-active": toHex(ensureContrast(mix(foreground, active, 0.25), [active], MIN_SECONDARY_CONTRAST)),
     "--text-muted-on-active": toHex(ensureContrast(mix(foreground, active, 0.4), [active], MIN_TEXT_CONTRAST))
   };
+}
+
+export const DEFAULT_SYNTAX = {
+  dark: { code: "#5eead4", string: "#86efac", number: "#fbbf24", danger: "#fb7185" },
+  light: { code: "#047857", string: "#15803d", number: "#b45309", danger: "#be123c" }
+};
+
+const SYNTAX_KEYS = ["code", "string", "number", "danger"];
+const MIN_DOCUMENT_TEXT_CONTRAST = 4.5;
+const MAX_MIX = 0.6;
+
+// Raise `amount` from `start` in `step`s until the result clears `target` on
+// `surface`, so a rule stays visible on themes whose surfaces are close to it.
+function mixUntilVisible(start, step, surface, target, build) {
+  let amount = start;
+  let color = quantize(build(amount));
+  while (contrastRatio(color, surface) < target && amount + step <= MAX_MIX + 1e-9) {
+    amount += step;
+    color = quantize(build(amount));
+  }
+  return color;
+}
+
+// Colours for the document surface: code blocks, tables, rules, quotes,
+// headings, links and syntax tones. Always returns every property of
+// DOCUMENT_THEME_PROPERTIES for a theme, or null when there is no theme.
+export function deriveDocumentColors(theme, parseOpaqueColor = parseColor) {
+  if (!theme) return null;
+  const background = parseOpaqueColor(theme.background);
+  const foreground = parseOpaqueColor(theme.foreground);
+  if (!background || !foreground) return deriveUnmeasurableDocumentColors(theme);
+
+  const dark = contrastRatio(WHITE, background) > contrastRatio(BLACK, background);
+  const lift = (darkAmount, lightAmount) =>
+    mix(background, dark ? WHITE : BLACK, dark ? darkAmount : lightAmount);
+  const accent = parseOpaqueColor(theme.accent) || foreground;
+
+  const codeBg = quantize(lift(0.05, 0.04));
+  const tableHeadBg = quantize(lift(0.04, 0.03));
+  const quoteBg = quantize(lift(0.03, 0.025));
+  const codeBorder = mixUntilVisible(0.14, 0.02, background, 1.3, t => mix(codeBg, foreground, t));
+  const tableBorder = mixUntilVisible(0.14, 0.02, background, 1.3,
+    t => lift(t, t - 0.02));
+  const hr = mixUntilVisible(0.25, 0.05, background, 1.5, t => mix(background, foreground, t));
+  const heading = ensureContrast(accent, [background], MIN_DOCUMENT_TEXT_CONTRAST);
+  const quoteBorder = mix(background, heading, 0.6);
+  const quoteText = ensureContrast(mix(foreground, quoteBg, 0.2), [quoteBg], MIN_DOCUMENT_TEXT_CONTRAST);
+  const link = ensureContrast(accent, [background, quoteBg], MIN_DOCUMENT_TEXT_CONTRAST);
+  const muted = ensureContrast(mix(foreground, codeBg, 0.45), [codeBg], MIN_DOCUMENT_TEXT_CONTRAST);
+
+  const colors = {
+    "--preview-code-bg": toHex(codeBg),
+    "--preview-code-border": toHex(codeBorder),
+    "--preview-table-head-bg": toHex(tableHeadBg),
+    "--preview-table-border": toHex(tableBorder),
+    "--preview-hr": toHex(hr),
+    "--preview-quote-bg": toHex(quoteBg),
+    "--preview-quote-border": toHex(quoteBorder),
+    "--preview-quote-text": toHex(quoteText),
+    "--preview-heading": toHex(heading),
+    "--preview-link": toHex(link),
+    "--syntax-muted": toHex(muted)
+  };
+  const defaults = DEFAULT_SYNTAX[dark ? "dark" : "light"];
+  for (const key of SYNTAX_KEYS) {
+    const tone = mix(parseColor(defaults[key]), foreground, 0.2);
+    colors[`--syntax-${key}`] = toHex(ensureContrast(tone, [codeBg], MIN_DOCUMENT_TEXT_CONTRAST));
+  }
+  return colors;
+}
+
+// Darkness is unknown, so every lift mixes toward the foreground. Values are
+// color-mix() expressions over the theme's own validated colour strings.
+function deriveUnmeasurableDocumentColors(theme) {
+  const bg = theme.background;
+  const fg = theme.foreground;
+  const accent = theme.accent || fg;
+  const mixFg = (base, percent) => `color-mix(in srgb, ${base} ${percent}%, ${fg})`;
+  const codeBg = mixFg(bg, 95);
+  const quoteBg = mixFg(bg, 97);
+  const colors = {
+    "--preview-code-bg": codeBg,
+    "--preview-code-border": mixFg(codeBg, 86),
+    "--preview-table-head-bg": mixFg(bg, 96),
+    "--preview-table-border": mixFg(bg, 86),
+    "--preview-hr": mixFg(bg, 75),
+    "--preview-quote-bg": quoteBg,
+    "--preview-quote-border": `color-mix(in srgb, ${bg} 40%, ${accent})`,
+    "--preview-quote-text": `color-mix(in srgb, ${fg} 80%, ${quoteBg})`,
+    "--preview-heading": accent,
+    "--preview-link": accent,
+    "--syntax-muted": `color-mix(in srgb, ${fg} 55%, ${codeBg})`
+  };
+  for (const key of SYNTAX_KEYS) {
+    colors[`--syntax-${key}`] = `color-mix(in srgb, ${fg} 80%, ${DEFAULT_SYNTAX.dark[key]})`;
+  }
+  return colors;
 }

@@ -163,15 +163,21 @@
   --editor-text: #1e293b;
   --preview-bg: #f8fafc;
   --preview-text: #1e293b;
-  --preview-code-bg: #e2e8f0;
-  --preview-quote-bg: #f1f5f9;
-  --preview-quote-border: #a855f7;
-  --preview-hr: #e2e8f0;
-  --syntax-muted: #64748b;
-  --syntax-code: #047857;
-  --syntax-string: #15803d;
-  --syntax-number: #b45309;
-  --syntax-danger: #be123c;
+  --preview-code-bg: #eef0f2;
+  --preview-code-border: #cfd2d6;
+  --preview-table-head-bg: #f1f3f4;
+  --preview-table-border: #dadcde;
+  --preview-hr: #bec1c8;
+  --preview-quote-bg: #f2f4f6;
+  --preview-quote-border: #be92ea;
+  --preview-quote-text: #3c4353;
+  --preview-heading: #974cde;
+  --preview-link: #934ad8;
+  --syntax-muted: #686d78;
+  --syntax-code: #06654e;
+  --syntax-string: #146b39;
+  --syntax-number: #934710;
+  --syntax-danger: #9b1338;
   
   --statusbar-bg: #ffffff;
   --topbar-bg: #ffffff;
@@ -211,15 +217,21 @@
     --editor-text: #e5e7eb;
     --preview-bg: #090d16;
     --preview-text: #e5e7eb;
-    --preview-code-bg: #1e2640;
-    --preview-quote-bg: #111625;
-    --preview-quote-border: #a855f7;
-    --preview-hr: #1e2640;
-    --syntax-muted: #9ca3af;
-    --syntax-code: #5eead4;
-    --syntax-string: #86efac;
-    --syntax-number: #fbbf24;
-    --syntax-danger: #fb7185;
+    --preview-code-bg: #151922;
+    --preview-code-border: #343840;
+    --preview-table-head-bg: #13171f;
+    --preview-table-border: #2b2f37;
+    --preview-hr: #44474e;
+    --preview-quote-bg: #10141d;
+    --preview-quote-border: #68389d;
+    --preview-quote-text: #c6c7cb;
+    --preview-heading: #a855f7;
+    --preview-link: #a855f7;
+    --syntax-muted: #8f9197;
+    --syntax-code: #7cecdb;
+    --syntax-string: #9cf0bb;
+    --syntax-number: #f9ca4e;
+    --syntax-danger: #f98b9c;
     
     --statusbar-bg: #111625;
     --topbar-bg: #111625;
@@ -257,15 +269,21 @@ html.theme-light {
   --editor-text: #1e293b;
   --preview-bg: #f8fafc;
   --preview-text: #1e293b;
-  --preview-code-bg: #e2e8f0;
-  --preview-quote-bg: #f1f5f9;
-  --preview-quote-border: #a855f7;
-  --preview-hr: #e2e8f0;
-  --syntax-muted: #64748b;
-  --syntax-code: #047857;
-  --syntax-string: #15803d;
-  --syntax-number: #b45309;
-  --syntax-danger: #be123c;
+  --preview-code-bg: #eef0f2;
+  --preview-code-border: #cfd2d6;
+  --preview-table-head-bg: #f1f3f4;
+  --preview-table-border: #dadcde;
+  --preview-hr: #bec1c8;
+  --preview-quote-bg: #f2f4f6;
+  --preview-quote-border: #be92ea;
+  --preview-quote-text: #3c4353;
+  --preview-heading: #974cde;
+  --preview-link: #934ad8;
+  --syntax-muted: #686d78;
+  --syntax-code: #06654e;
+  --syntax-string: #146b39;
+  --syntax-number: #934710;
+  --syntax-danger: #9b1338;
   
   --statusbar-bg: #ffffff;
   --topbar-bg: #ffffff;
@@ -304,15 +322,21 @@ html.theme-dark {
   --editor-text: #e5e7eb;
   --preview-bg: #090d16;
   --preview-text: #e5e7eb;
-  --preview-code-bg: #1e2640;
-  --preview-quote-bg: #111625;
-  --preview-quote-border: #a855f7;
-  --preview-hr: #1e2640;
-  --syntax-muted: #9ca3af;
-  --syntax-code: #5eead4;
-  --syntax-string: #86efac;
-  --syntax-number: #fbbf24;
-  --syntax-danger: #fb7185;
+  --preview-code-bg: #151922;
+  --preview-code-border: #343840;
+  --preview-table-head-bg: #13171f;
+  --preview-table-border: #2b2f37;
+  --preview-hr: #44474e;
+  --preview-quote-bg: #10141d;
+  --preview-quote-border: #68389d;
+  --preview-quote-text: #c6c7cb;
+  --preview-heading: #a855f7;
+  --preview-link: #a855f7;
+  --syntax-muted: #8f9197;
+  --syntax-code: #7cecdb;
+  --syntax-string: #9cf0bb;
+  --syntax-number: #f9ca4e;
+  --syntax-danger: #f98b9c;
   
   --statusbar-bg: #111625;
   --topbar-bg: #111625;
@@ -1547,7 +1571,7 @@ button.view-setting-value:hover {
   font-family: var(--font-mono);
   font-size: var(--editor-font-size);
   line-height: var(--editor-line-height);
-  background-color: color-mix(in srgb, var(--bg-input) 55%, var(--editor-bg));
+  background-color: var(--preview-code-bg);
   border-right: 1px solid color-mix(in srgb, var(--border-color) 65%, transparent);
   color: var(--text-muted);
 }
@@ -1589,7 +1613,7 @@ html:not(.editor-line-numbers-enabled) .app-container.compare-mode .editor-host 
 }
 
 .cm-editor .cm-find-match {
-  background-color: rgba(139, 92, 246, 0.3);
+  background-color: color-mix(in srgb, var(--accent-color) 30%, transparent);
   border-radius: 2px;
 }
 
@@ -1602,7 +1626,7 @@ html:not(.editor-line-numbers-enabled) .app-container.compare-mode .editor-host 
 }
 
 .cm-editor .syntax-heading {
-  color: var(--accent-color);
+  color: var(--preview-heading);
 }
 
 .cm-editor .syntax-emphasis {
@@ -1610,7 +1634,7 @@ html:not(.editor-line-numbers-enabled) .app-container.compare-mode .editor-host 
 }
 
 .cm-editor .syntax-link {
-  color: var(--accent-hover);
+  color: var(--preview-link);
 }
 
 .cm-editor .syntax-code {
@@ -1673,7 +1697,15 @@ html:not(.editor-line-numbers-enabled) .app-container.compare-mode .editor-host 
   font-weight: 700;
   line-height: 1.35;
   letter-spacing: -0.02em;
-  color: var(--text-primary);
+}
+
+.markdown-preview h1,
+.markdown-preview h2,
+.markdown-preview h3,
+.markdown-preview h4,
+.markdown-preview h5,
+.markdown-preview h6 {
+  color: var(--preview-heading);
 }
 
 .markdown-preview h1 { font-size: 1.8rem; border-bottom: 1px solid var(--preview-hr); padding-bottom: 0.3em; margin-top: 0.5em; }
@@ -1686,13 +1718,13 @@ html:not(.editor-line-numbers-enabled) .app-container.compare-mode .editor-host 
 }
 
 .markdown-preview a {
-  color: var(--accent-color);
+  color: var(--preview-link);
   text-decoration: underline;
   text-decoration-thickness: 1px;
 }
 
 .markdown-preview a:hover {
-  color: var(--accent-hover);
+  color: var(--preview-link);
 }
 
 .markdown-preview ul,
@@ -1716,12 +1748,13 @@ html:not(.editor-line-numbers-enabled) .app-container.compare-mode .editor-host 
   margin-bottom: 1em;
   border-top-right-radius: 6px;
   border-bottom-right-radius: 6px;
-  color: var(--text-secondary);
+  color: var(--preview-quote-text);
   font-style: italic;
 }
 
 .markdown-preview pre {
   background-color: var(--preview-code-bg);
+  border: 1px solid var(--preview-code-border);
   border-radius: 8px;
   padding: 16px;
   overflow-x: auto;
@@ -1887,13 +1920,13 @@ html:not(.editor-line-numbers-enabled) .app-container.compare-mode .editor-host 
 
 .markdown-preview th,
 .markdown-preview td {
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--preview-table-border);
   padding: 8px 12px;
   text-align: left;
 }
 
 .markdown-preview th {
-  background-color: var(--preview-quote-bg);
+  background-color: var(--preview-table-head-bg);
   font-weight: 600;
 }
 
@@ -1906,7 +1939,7 @@ html:not(.editor-line-numbers-enabled) .app-container.compare-mode .editor-host 
 .markdown-preview mark.find-preview-match {
   padding: 0 1px;
   border-radius: 2px;
-  background-color: rgba(139, 92, 246, 0.3);
+  background-color: color-mix(in srgb, var(--accent-color) 30%, transparent);
   color: inherit;
 }
 
@@ -3445,7 +3478,7 @@ kbd {
 .cm-mode-live .cm-lp-h6 {
   font-weight: 600;
   line-height: 1.35;
-  color: var(--text-primary);
+  color: var(--preview-heading);
 }
 .cm-mode-live .cm-lp-h1 { font-size: 1.8em; }
 .cm-mode-live .cm-lp-h2 { font-size: 1.45em; }
@@ -3462,6 +3495,11 @@ kbd {
   font-size: 0.9em;
 }
 
+.cm-mode-live .cm-lp-code,
+.cm-mode-live .cm-lp-code .syntax-code {
+  color: inherit;
+}
+
 /* The background is a layer under the selection (see codeBlockLayer); one on
    the lines would hide a selection made in the code. */
 .cm-mode-live .cm-lp-codeblock {
@@ -3471,13 +3509,13 @@ kbd {
 
 .cm-lp-codeblock-bg {
   box-sizing: border-box;
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--preview-code-border);
   border-radius: 8px;
   background-color: var(--preview-code-bg);
 }
 
 .cm-mode-live .cm-lp-codeblock-head {
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--preview-code-border);
 }
 
 .cm-mode-live .cm-lp-codeblock-head {
@@ -3499,7 +3537,7 @@ kbd {
 }
 
 .cm-mode-live .cm-lp-link {
-  color: var(--accent-color);
+  color: var(--preview-link);
   text-decoration: underline;
   text-decoration-thickness: 1px;
 }
@@ -3515,7 +3553,7 @@ kbd {
   padding: 0;
   border: 1px solid var(--border-color);
   border-radius: 4px;
-  background-color: var(--bg-input);
+  background-color: var(--preview-code-bg);
   color: var(--accent-color);
   cursor: pointer;
 }
@@ -3539,7 +3577,7 @@ kbd {
   border-left: 4px solid var(--preview-quote-border);
   background-color: var(--preview-quote-bg);
   padding-left: 12px;
-  color: var(--text-secondary);
+  color: var(--preview-quote-text);
   font-style: italic;
 }
 

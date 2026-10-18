@@ -4,7 +4,7 @@
 // a page with the picker markup (the main window) can change it. Every element
 // is looked up by id and may be missing.
 
-import { ACTIVE_TEXT_PROPERTIES, DERIVED_THEME_PROPERTIES, deriveThemeSurfaceColors, isValidColor } from "./theme-colors.js";
+import { ACTIVE_TEXT_PROPERTIES, DERIVED_THEME_PROPERTIES, deriveDocumentColors, deriveThemeSurfaceColors, isValidColor } from "./theme-colors.js";
 import { createCssColorResolver, createOpaqueColorParser, isColorDark } from "./css-color.js";
 import { PRESET_THEMES } from "./preset-themes.js";
 import { escapeHTML } from "./syntax-highlighting.js";
@@ -190,6 +190,8 @@ export function createThemes({ document, storage, invoke, onApplied = () => {}, 
     // aren't parseable keep the plain values set above.
     const derived = deriveThemeSurfaceColors(theme, parseOpaqueThemeColor) || {};
     Object.entries(derived).forEach(([prop, value]) => root.style.setProperty(prop, value));
+    Object.entries(deriveDocumentColors(theme, parseOpaqueThemeColor))
+      .forEach(([prop, value]) => root.style.setProperty(prop, value));
 
     // The active row rebinds its text to the on-active tones whether or not we
     // could measure them, so anything left underived is pinned to the theme's own
