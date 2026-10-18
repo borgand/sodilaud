@@ -3436,6 +3436,7 @@ kbd {
 /* Editor: live preview */
 .cm-editor.cm-mode-live .cm-content { font-family: var(--font-sans); }
 .cm-editor.cm-mode-source .cm-content { font-family: var(--font-mono); }
+.cm-editor.cm-plain .cm-content { font-family: var(--font-mono); }
 
 .cm-mode-live .cm-lp-h1,
 .cm-mode-live .cm-lp-h2,

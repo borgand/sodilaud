@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createFilesModel, isDirty, needsPrompt } from "../src/files.js";
+import { createFilesModel, fileKind, isDirty, needsPrompt } from "../src/files.js";
 
 let counter = 0;
 const model = () => createFilesModel({ newId: () => `id-${(counter += 1)}` });
@@ -97,4 +97,12 @@ test("Save As adopts the new file and a reload replaces the text", () => {
   assert.equal(buffer.text, "fresh");
   assert.equal(buffer.version, 9);
   assert.equal(buffer.latest, 9);
+});
+
+test("fileKind marks .txt, .csv and .tsv as plain and the rest as Markdown", () => {
+  assert.equal(fileKind("A.TXT"), "plain");
+  assert.equal(fileKind("x.csv"), "plain");
+  assert.equal(fileKind("y.tsv"), "plain");
+  assert.equal(fileKind("n.md"), "markdown");
+  assert.equal(fileKind("n.markdown"), "markdown");
 });

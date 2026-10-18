@@ -609,3 +609,11 @@
 .review-progress.complete {
   color: #22a559;
 }
+
+.plain-text-preview {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  font-size: 0.95rem;
+}

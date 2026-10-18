@@ -6,6 +6,9 @@
 
 export const UNTITLED_BASE = "Untitled";
 
+// Text, CSV and TSV files open as plain text: no live preview, no Markdown keys.
+export const fileKind = (name) => (/\.(txt|csv|tsv)$/i.test(name ?? "") ? "plain" : "markdown");
+
 // `docId` names this opening of the file in the registry; events from an
 // earlier opening of the same path are ignored. `text` and `version` are what
 // the editor starts from (an untitled buffer
@@ -13,7 +16,7 @@ export const UNTITLED_BASE = "Untitled";
 // and `savedVersion` the newest one on disk. `external` is null, "conflict"
 // (changed on disk while edited here) or "removed" (deleted or moved away).
 function createBuffer(id, fields) {
-  return {
+  const buffer = {
     id,
     path: null,
     docId: null,
@@ -29,6 +32,8 @@ function createBuffer(id, fields) {
     editorState: null,
     ...fields
   };
+  buffer.kind = fileKind(buffer.name);
+  return buffer;
 }
 
 const fromOpened = (opened) => ({
@@ -129,7 +134,8 @@ export function createFilesModel({ newId = () => globalThis.crypto.randomUUID() 
     adopt(id, opened) {
       const buffer = find(id);
       if (!buffer) return null;
-      return Object.assign(buffer, fromOpened(opened), { editorState: null, error: null });
+      const fields = fromOpened(opened);
+      return Object.assign(buffer, fields, { kind: fileKind(fields.name), editorState: null, error: null });
     },
 
     // Events from the registry: `{ docId, path, version }`.

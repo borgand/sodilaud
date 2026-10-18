@@ -194,7 +194,15 @@ export function createFileEditor({
   function loadBuffer(buffer) {
     const extensions = buffer.path === null ? [] : sync.extension({ path: buffer.path, docId: buffer.docId }, buffer.version);
     editor.loadText(buffer.text, { extensions });
+    applyKind(buffer);
   }
+
+  function applyKind(buffer) {
+    editor.setPlainText(buffer.kind === "plain");
+    syncFormatting();
+  }
+
+  const syncFormatting = () => formatToolbar.setEnabled(layoutMode !== "reading" && !editor.isPlainText());
 
   const formatToolbar = createFormatToolbar({
     document,
@@ -314,6 +322,13 @@ export function createFileEditor({
 
   function renderPreview() {
     if (layoutMode !== "reading" || !model.active()) return;
+    if (model.active().kind === "plain") {
+      const pre = document.createElement("pre");
+      pre.className = "plain-text-preview";
+      pre.textContent = editor.getText();
+      preview.replaceChildren(pre);
+      return;
+    }
     try {
       preview.innerHTML = renderMarkdown(editor.getText(), "*Empty file*");
       const hljs = document.defaultView.hljs;
@@ -343,8 +358,9 @@ export function createFileEditor({
     outlineTimer = null;
     const buffer = showingStartPage ? null : model.active();
     const { state } = editor.view;
-    const hunks = buffer ? reviewHunkFences(state) : [];
-    const entries = buffer ? outlineEntries(documentAnchors(state), hunks, state.doc.length) : [];
+    const markdown = Boolean(buffer) && buffer.kind !== "plain";
+    const hunks = markdown ? reviewHunkFences(state) : [];
+    const entries = markdown ? outlineEntries(documentAnchors(state), hunks, state.doc.length) : [];
     outlineSection.hidden = entries.length === 0;
     if (entries.length) renderOutlineList(outlineList, entries, jumpTo);
     const progress = reviewProgress(hunks);
@@ -423,8 +439,10 @@ export function createFileEditor({
         previous.scroll = editor.scrollPlace();
         previous.previewTop = preview.scrollTop;
       }
-      if (buffer.editorState) editor.restoreState(buffer.editorState);
-      else loadBuffer(buffer);
+      if (buffer.editorState) {
+        editor.restoreState(buffer.editorState);
+        applyKind(buffer);
+      } else loadBuffer(buffer);
       shownId = buffer.id;
       renderPreview();
       editor.restoreScroll(buffer.scroll);
@@ -887,7 +905,7 @@ export function createFileEditor({
       button.setAttribute("aria-pressed", String(mode === layoutMode));
     }
     editor.setMode(editorModeFor(layoutMode));
-    formatToolbar.setEnabled(layoutMode !== "reading");
+    syncFormatting();
     $("comment-btn").disabled = layoutMode === "reading";
     comments.render();
     renderPreview();
