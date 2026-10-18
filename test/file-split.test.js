@@ -8,10 +8,11 @@ import { bootMainWindow } from "./helpers/app-harness.js";
 const A = "alpha one\n";
 const B = "beta two\n";
 
-function boot(instance, { open = ["/d/a.md", "/d/b.md"], disk = {}, handlers = {} } = {}) {
+function boot(instance, { open = ["/d/a.md", "/d/b.md"], disk = {}, handlers = {}, beforeBoot } = {}) {
   let listed = open;
   return bootMainWindow({
     instance,
+    beforeBoot,
     platform: "MacIntel",
     disk: { "/d/a.md": A, "/d/b.md": B, ...disk },
     handlers: {
@@ -204,4 +205,94 @@ test("find searches the pane focused last", async () => {
   assert.equal(byId(app, "editor-wrapper").classList.contains("active-pane"), true);
   assert.equal(byId(app, "find-count").textContent, "0 of 0");
   assert.equal(doc(app).querySelectorAll("#secondary-editor-host .cm-find-match").length, 0);
+});
+
+const calls = (app, command) => app.invocations.filter((call) => call.command === command);
+const saveAsTo = (app, path) => ({ text }) => {
+  app.fileDocs.files.set(path, text);
+  return { path, name: path.split("/").pop(), hash: `h-${text.length}` };
+};
+
+test("Save As keeps typing from the right pane that the left has not received yet", async () => {
+  let delay = false;
+  let app = null;
+  app = await bootSplit(11, {
+    handlers: { file_save_as_dialog: (args) => saveAsTo(app, "/d/new.md")(args) },
+    beforeBoot: (dom) => {
+      const events = dom.window.__TAURI__.event;
+      const listen = events.listen;
+      events.listen = (name, handler, options) => listen(name, name !== "file-doc-updates" ? handler
+        : (event) => (delay ? setTimeout(() => handler(event), 1500) : handler(event)), options);
+    }
+  });
+  await choose(app, "/d/a.md");
+  delay = true;
+  app.editor("secondary").focus();
+  typeAt(app.editor("secondary"), "right ");
+  keydown(app, app.editor("secondary").contentDOM, { key: "s", code: "KeyS", metaKey: true, shiftKey: true });
+  await app.until(() => app.fileDocs.files.has("/d/new.md"));
+  assert.equal(calls(app, "file_save_as_dialog")[0].args.text, `right ${A}`);
+  await app.until(() => app.editorText("primary") === `right ${A}` && app.editorText("secondary") === `right ${A}`);
+  assert.equal(app.fileDocs.files.get("/d/new.md"), `right ${A}`);
+  assert.equal(app.editorText("primary"), `right ${A}`);
+  assert.equal(app.editorText("secondary"), `right ${A}`);
+  assert.equal(byId(app, "secondary-file-select").value, "/d/new.md");
+});
+
+test("typing waits in both panes while Save As asks where to save", async () => {
+  let answer = null;
+  const app = await bootSplit(12, { handlers: { file_save_as_dialog: () => new Promise((resolve) => { answer = resolve; }) } });
+  await choose(app, "/d/a.md");
+  app.click("menu-save-as-btn");
+  await app.until(() => answer !== null);
+  typeAt(app.editor("primary"), "left ");
+  typeAt(app.editor("secondary"), "right ");
+  assert.equal(app.editorText("primary"), A);
+  assert.equal(app.editorText("secondary"), A);
+  answer(null);
+  await app.settle();
+  typeAt(app.editor("secondary"), "right ");
+  assert.equal(app.editorText("secondary"), `right ${A}`);
+  await app.until(() => app.fileDocs.text("/d/a.md") === `right ${A}`);
+  assert.equal(app.fileDocs.text("/d/a.md"), `right ${A}`);
+});
+
+test("Save, Save As and Close act on the file of the focused pane", async () => {
+  const app = await bootSplit(13, { handlers: { file_save_as_dialog: () => null } });
+  const right = () => app.editor("secondary").contentDOM;
+  app.editor("secondary").focus();
+  await app.settle();
+  keydown(app, right(), { key: "s", code: "KeyS", metaKey: true });
+  await app.until(() => calls(app, "file_doc_save").length > 0);
+  assert.equal(calls(app, "file_doc_save").at(-1).args.path, "/d/b.md");
+  keydown(app, right(), { key: "s", code: "KeyS", metaKey: true, shiftKey: true });
+  await app.until(() => calls(app, "file_save_as_dialog").length > 0);
+  assert.equal(calls(app, "file_save_as_dialog").at(-1).args.suggestedName, "b.md");
+  keydown(app, right(), { key: "w", code: "KeyW", metaKey: true });
+  await app.until(() => !fileItem(app, "b.md"));
+  assert.ok(fileItem(app, "a.md"));
+  assert.equal(byId(app, "secondary-file-select").value, "/d/a.md");
+  assert.equal(app.editorText("primary"), A);
+});
+
+test("a comment on a file shown in both panes is drawn in each and sent once", async () => {
+  const app = await bootSplit(14);
+  await choose(app, "/d/a.md");
+  const view = app.editor("secondary");
+  view.focus();
+  await app.settle();
+  view.dispatch({ selection: { anchor: 0, head: 5 } });
+  byId(app, "comment-btn").click();
+  await app.settle();
+  const composer = doc(app).querySelector("#secondary-editor-host .cm-comment-composer textarea");
+  assert.ok(composer, "the composer opens in the right pane");
+  composer.value = "Why alpha?";
+  doc(app).querySelector("#secondary-editor-host .cm-comment-add").click();
+  await app.until(() => doc(app).querySelectorAll("#editor-host .cm-comment").length > 0);
+  await app.settle(200);
+  assert.equal(calls(app, "comment_add").length, 1);
+  assert.equal(app.fileDocs.comments("/d/a.md").length, 1);
+  const marks = (host) => [...doc(app).querySelectorAll(`${host} .cm-comment`)].map((mark) => mark.textContent);
+  assert.deepEqual(marks("#editor-host"), ["alpha"]);
+  assert.deepEqual(marks("#secondary-editor-host"), ["alpha"]);
 });

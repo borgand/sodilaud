@@ -28,7 +28,7 @@ import {
   reviewProgressText
 } from "./outline.js";
 import { normalizeLayoutMode } from "./view-preferences.js";
-import { createDocSync } from "./doc-sync.js";
+import { applyUpdatesToText, createDocSync } from "./doc-sync.js";
 import { createFilesModel, isDirty, needsPrompt } from "./files.js";
 import { commentsExtension } from "./editor-comments.js";
 import { createComments } from "./comments-panel.js";
@@ -89,9 +89,9 @@ export function createFileEditor({
   let showingStartPage = true;
   let sidebarHidden = false;
   let shownId = null;
-  // The document being handed to another window or to Quick Notes: typing
-  // into it now would be dropped when the editor lets go of it.
-  let movingDocId = null;
+  // The buffer being handed to another window or to Quick Notes, or saved
+  // under a new name: typing into it now would go to a document about to close.
+  let lockedId = null;
   let recent = [];
   let drafts = [];
   let outlineTimer = null;
@@ -110,7 +110,7 @@ export function createFileEditor({
         : livePreview({ onOpenLink: (href) => followLink(href, "secondary"), onFollowAnchor: scrollRightPane, mermaid }),
       sectionFolding(),
       EditorState.changeFilter.of((tr) =>
-        movingDocId === null || movingDocId !== paneDoc(pane)?.docId || tr.annotation(Transaction.userEvent) === undefined),
+        lockedId === null || lockedId !== paneBufferId(pane) || tr.annotation(Transaction.userEvent) === undefined),
       commentsExtension({
         onSubmit: (view, comment) => comments.submit(view, comment),
         onSelect: id => comments.select(id)
@@ -175,7 +175,10 @@ export function createFileEditor({
   // Comments need a file Rust holds: an untitled buffer has none yet.
   const docOf = (buffer) => (buffer?.path ? { path: buffer.path, docId: buffer.docId } : null);
   const shownDoc = () => docOf(showingStartPage ? null : model.get(shownId));
-  const paneDoc = (pane) => (pane === "primary" ? shownDoc() : docOf(model.get(split.shownId())));
+  const paneBufferId = (pane) => (pane === "primary" ? (showingStartPage ? null : shownId) : split.shownId());
+  const paneDoc = (pane) => docOf(model.get(paneBufferId(pane)));
+  // The file the focused pane shows: Save, Save As and Close act on it.
+  const focusedId = () => paneBufferId(split.activePane()) ?? model.active()?.id;
   const comments = createComments({
     document,
     invoke,
@@ -590,14 +593,40 @@ export function createFileEditor({
     return ok;
   }
 
-  async function saveAs(id = model.active()?.id) {
+  // The document's text in the registry, which has every pane's changes
+  // even before their update events reach the other pane.
+  async function registryText(buffer) {
+    const { text, version } = buffer.confirmed;
+    const result = await invoke("file_doc_pull", { path: buffer.path, docId: buffer.docId, since: version });
+    if (result?.reload) return result.reload.text;
+    return applyUpdatesToText(text, Array.isArray(result?.updates) ? result.updates : []);
+  }
+
+  async function saveAs(id = focusedId()) {
     const buffer = model.get(id);
-    if (!buffer) return false;
-    // Rust drops the document if the new path is this file, so nothing may
-    // still be on its way to it.
-    if (buffer.path !== null) await sync.flush();
+    if (!buffer || lockedId !== null) return false;
+    lockedId = id;
+    try {
+      return await saveAsLocked(buffer);
+    } finally {
+      lockedId = null;
+    }
+  }
+
+  async function saveAsLocked(buffer) {
+    const { id } = buffer;
     const shown = buffer.id === shownId;
-    const text = shown ? editor.getText() : buffer.editorState?.doc.toString() ?? buffer.text;
+    let text;
+    try {
+      // Rust drops the document if the new path is this file, so nothing may
+      // still be on its way to it.
+      if (buffer.path === null) text = shown ? editor.getText() : buffer.editorState?.doc.toString() ?? buffer.text;
+      else if (await sync.flush((doc) => doc.docId === buffer.docId)) text = await registryText(buffer);
+      else throw new Error("unsaved changes could not be sent");
+    } catch (error) {
+      notify(`Could not save ${buffer.name}: ${errorMessage(error)}`);
+      return false;
+    }
     let saved;
     try {
       saved = await invoke("file_save_as_dialog", {
@@ -649,7 +678,7 @@ export function createFileEditor({
   }
 
   // Cmd+S: a new file or a draft asks where to go; a saved one is written at once.
-  function save(id = model.active()?.id) {
+  function save(id = focusedId()) {
     const buffer = model.get(id);
     if (!buffer) return Promise.resolve(false);
     return buffer.path === null || buffer.draft ? saveAs(id) : saveNow(id);
@@ -658,7 +687,7 @@ export function createFileEditor({
   async function saveDraftToNotes(id = model.active()?.id) {
     const buffer = model.get(id);
     if (!buffer?.draft) return false;
-    movingDocId = buffer.docId;
+    lockedId = buffer.id;
     try {
       if (!(await sync.flush((doc) => doc.docId === buffer.docId))) {
         notify(`Could not save ${buffer.name}: unsaved changes could not be sent.`);
@@ -669,7 +698,7 @@ export function createFileEditor({
       notify(errorMessage(error));
       return false;
     } finally {
-      movingDocId = null;
+      lockedId = null;
     }
     // Rust discarded the draft's document, so there is nothing to close.
     await forget(id, { detach: true });
@@ -970,7 +999,7 @@ export function createFileEditor({
       notify(`Save ${buffer.name} first to move it.`);
       return false;
     }
-    movingDocId = buffer.docId;
+    lockedId = buffer.id;
     try {
       if (!(await sync.flush((doc) => doc.docId === buffer.docId))) {
         notify(`Could not move ${buffer.name}: unsaved changes could not be sent.`);
@@ -981,7 +1010,7 @@ export function createFileEditor({
       notify(errorMessage(error));
       return false;
     } finally {
-      movingDocId = null;
+      lockedId = null;
     }
     await forget(id, { detach: true });
     return true;
@@ -1190,12 +1219,12 @@ export function createFileEditor({
     $("menu-open-file-btn").addEventListener("click", () => { closeMenus(); openDialog(); });
     $("menu-save-file-btn").addEventListener("click", () => { closeMenus(); save(); });
     $("menu-save-as-btn").addEventListener("click", () => { closeMenus(); saveAs(); });
-    $("menu-close-file-btn").addEventListener("click", () => { closeMenus(); closeFile(); });
+    $("menu-close-file-btn").addEventListener("click", () => { closeMenus(); closeFile(focusedId()); });
     $("menu-start-page-btn").addEventListener("click", () => { closeMenus(); showStartPage(); });
     $("comment-btn").addEventListener("click", () => comments.start());
     $("comments-count-btn").addEventListener("click", () => comments.toggle());
     $("split-file-btn").addEventListener("click", toggleSplit);
-    $("draft-save-as-btn").addEventListener("click", () => saveAs());
+    $("draft-save-as-btn").addEventListener("click", () => saveAs(model.active()?.id));
     for (const [button, action] of [["draft-save-notes-btn", saveDraftToNotes], ["draft-discard-btn", discardDraft]]) {
       $(button).addEventListener("click", () => {
         const id = model.active()?.id;
@@ -1262,7 +1291,7 @@ export function createFileEditor({
     else if (key === "s" && event.shiftKey && model.active()) action = () => saveAs();
     // Ctrl+Cmd+S toggles the sidebar on macOS.
     else if (key === "s" && !event.shiftKey && !(event.ctrlKey && event.metaKey) && model.active()) action = () => save();
-    else if (key === "w" && !event.shiftKey && model.active() && !showingStartPage) action = () => closeFile();
+    else if (key === "w" && !event.shiftKey && model.active() && !showingStartPage) action = () => closeFile(focusedId());
     // Cmd+[ and Cmd+] go Back and Forward, as in a browser.
     else if (event.key === "[" && !event.shiftKey && model.list().length) action = goBack;
     else if (event.key === "]" && !event.shiftKey && model.list().length) action = goForward;

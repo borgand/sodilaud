@@ -682,3 +682,14 @@
   font-family: var(--font-mono);
   font-size: 0.95rem;
 }
+
+/* The pane find, formatting and comments act on. */
+#file-editor.split-mode .editor-wrapper.active-pane::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 2;
+  height: 2px;
+  background: var(--accent-color);
+  pointer-events: none;
+}
