@@ -592,8 +592,11 @@ function buildInline(view, focused) {
           const last = doc.lineAt(textEnd).number;
           for (let n = Math.max(first, doc.lineAt(rangeFrom).number); n <= Math.min(last, doc.lineAt(rangeTo).number); n++) {
             const line = doc.line(n);
-            if (lineDecorations.get(line.from) !== lineClasses[`h${level}`]) continue;
+            const existing = lineDecorations.get(line.from);
+            const quoted = existing === lineClasses.quote;
+            if (existing !== lineClasses[`h${level}`] && !quoted) continue;
             const classes = [`cm-lp-h${level}`];
+            if (quoted) classes.push("cm-lp-quote");
             if (level <= 2 && n === last) classes.push("cm-lp-heading-rule");
             if (n > first) classes.push("cm-lp-heading-cont");
             if (n < last) classes.push("cm-lp-heading-more");
