@@ -106,26 +106,7 @@ export function pointToSource(root, node, offset, edge, source) {
   const map = (i) => range.from + aligned[i];
   const start = edge === "start";
 
-  // A boundary at the edge of a text node stays with that node when it has matched characters,
-  // so selecting a whole phrase anchors to the markup around it rather than skipping past it.
   const at = node.nodeType === 3 ? texts.indexOf(node) : -1;
-  if (at >= 0) {
-    const lo = starts[at];
-    const hi = lo + node.data.length;
-    const cut = lo + Math.min(offset, node.data.length);
-    if (start) {
-      const hit = firstMatch(aligned, cut, hi);
-      if (hit >= 0) return map(hit);
-      const last = lastMatch(aligned, lo, hi);
-      if (last >= 0) return map(last) + 1;
-    } else {
-      const hit = lastMatch(aligned, lo, cut);
-      if (hit >= 0) return map(hit) + 1;
-      const next = firstMatch(aligned, cut, hi);
-      if (next >= 0) return map(next);
-    }
-  }
-
   const index = at >= 0 ? starts[at] + Math.min(offset, node.data.length) : renderedIndex(block, info, node, offset);
   if (start) {
     const hit = firstMatch(aligned, index, total);

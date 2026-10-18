@@ -43,7 +43,25 @@ test("selection over emphasis maps to the text, not the asterisks", () => {
     const last = root.querySelector("p").lastChild;
     range.setStart(first, 5);
     range.setEnd(last, 0);
-    assert.deepEqual(rangeToSource(root, range, source), { from: 5, to: 13 });
+    assert.deepEqual(rangeToSource(root, range, source), { from: 7, to: 11 });
+  } finally {
+    env.cleanup();
+  }
+});
+
+test("a point in a text node with no matched characters falls back to its neighbours", () => {
+  const { env, root, document } = mount('<p data-src-from="0" data-src-to="12">ab<em>\u2665</em>cd</p>');
+  try {
+    const source = "ab&hearts;cd";
+    const mid = root.querySelector("em").firstChild;
+    const p = root.querySelector("p");
+    const range = document.createRange();
+    range.setStart(mid, 0);
+    range.setEnd(p.lastChild, 2);
+    assert.deepEqual(rangeToSource(root, range, source), { from: 10, to: 12 });
+    range.setStart(p.firstChild, 0);
+    range.setEnd(mid, 1);
+    assert.deepEqual(rangeToSource(root, range, source), { from: 0, to: 2 });
   } finally {
     env.cleanup();
   }
