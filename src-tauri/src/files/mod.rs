@@ -5,7 +5,12 @@
 // reformatting (see `io`), and hears about outside edits (see `watch`).
 
 pub mod commands;
+// Unused until the folder commands land.
+#[allow(dead_code)]
+pub mod folders;
 pub mod grants;
+#[allow(dead_code)]
+pub mod ignore;
 pub mod io;
 pub mod store;
 pub mod watch;
@@ -393,14 +398,13 @@ pub fn present_pending(app: &AppHandle, files: &Files, granted: Vec<String>) {
     }
 }
 
+pub const TEXT_EXTENSIONS: &[&str] = &["md", "markdown", "txt", "csv", "tsv"];
+
 fn is_text_file(path: &Path) -> bool {
-    matches!(
-        path.extension()
-            .and_then(|ext| ext.to_str())
-            .map(str::to_ascii_lowercase)
-            .as_deref(),
-        Some("md" | "markdown" | "txt")
-    )
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .map(str::to_ascii_lowercase)
+        .is_some_and(|ext| TEXT_EXTENSIONS.contains(&ext.as_str()))
 }
 
 /// Checks a file an agent asks the main window to open, with the file editor's
