@@ -328,7 +328,14 @@ impl Files {
                 let plain = requested
                     .components()
                     .all(|part| matches!(part, Component::RootDir | Component::Normal(_)));
-                if plain && containing(requested).is_some() {
+                // Where the missing path would be is decided by its nearest existing ancestor, so a
+                // link out of the root does not tell what exists on the other side.
+                let inside = requested.ancestors().skip(1).find_map(|ancestor| {
+                    let real = ancestor.canonicalize().ok()?;
+                    let rest = requested.strip_prefix(ancestor).ok()?;
+                    Some(containing(&real.join(rest)).is_some())
+                }) == Some(true);
+                if plain && inside {
                     Err(FileError::not_found(requested))
                 } else {
                     Err(FileError::not_in_folder(requested))
@@ -421,7 +428,21 @@ pub(crate) fn folder_listing(
     path: &str,
 ) -> Result<FolderListing, FileError> {
     let (root, folder) = files.in_folder(label, path)?;
+    if !folders::is_shown_folder(&root, &folder) {
+        return Err(FileError::not_in_folder(Path::new(path)));
+    }
     folders::list(&root, &folder)
+}
+
+/// The canonical form of each of `paths` that is a folder the tree of `label`
+/// shows. Anything else is dropped, so it never takes a watch slot.
+pub(crate) fn expandable_folders(files: &Files, label: &str, paths: &[String]) -> Vec<String> {
+    paths
+        .iter()
+        .filter_map(|path| files.in_folder(label, path).ok())
+        .filter(|(root, folder)| folder.is_dir() && folders::is_shown_folder(root, folder))
+        .map(|(_, folder)| folder.to_string_lossy().to_string())
+        .collect()
 }
 
 /// Grants a file the tree of `label` shows, with the agent rules for the
@@ -646,8 +667,8 @@ pub fn paths_from_args<I: IntoIterator<Item = String>>(args: I) -> Vec<PathBuf> 
 #[cfg(test)]
 mod tests {
     use super::{
-        agent_document, folder_file, folder_listing, paths_from_args, sibling_document, FileError,
-        FileErrorCode, Files, PendingOpen,
+        agent_document, expandable_folders, folder_file, folder_listing, paths_from_args,
+        sibling_document, FileError, FileErrorCode, Files, PendingOpen,
     };
     use crate::files::store::RECENT_LIMIT;
     use serde_json::json;
@@ -929,6 +950,89 @@ mod tests {
         assert_eq!(listing.path, text(&r));
         assert_eq!(listing.entries.len(), 1);
         assert_eq!(listing.entries[0].path, text(&r.join("loop")));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_missing_path_through_a_link_out_of_a_root_is_not_granted() {
+        let base = scratch("folder-oracle").canonicalize().unwrap();
+        let (r, outside) = (base.join("r"), base.join("outside"));
+        fs::create_dir_all(&r).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        std::os::unix::fs::symlink(&outside, r.join("escape")).unwrap();
+        let files = Files::for_test();
+        add_root(&files, "main", &r);
+        for path in [r.join("escape/gone.md"), r.join("escape/gone/deeper.md")] {
+            assert_eq!(
+                files.in_folder("main", text(&path)).unwrap_err().code,
+                FileErrorCode::NotGranted,
+                "{}",
+                path.display()
+            );
+        }
+        assert_eq!(
+            files
+                .in_folder("main", text(&r.join("gone/deeper.md")))
+                .unwrap_err()
+                .code,
+            FileErrorCode::NotFound
+        );
+    }
+
+    #[test]
+    fn a_folder_the_tree_does_not_show_is_refused() {
+        let r = scratch("folder-hidden").canonicalize().unwrap();
+        fs::write(r.join(".gitignore"), "build/\n").unwrap();
+        for folder in [
+            ".git/objects",
+            "node_modules/x",
+            "build/sub",
+            "shown/.cache",
+        ] {
+            fs::create_dir_all(r.join(folder)).unwrap();
+        }
+        let files = Files::for_test();
+        add_root(&files, "main", &r);
+        assert!(folder_listing(&files, "main", text(&r)).is_ok());
+        assert!(folder_listing(&files, "main", text(&r.join("shown"))).is_ok());
+        for folder in [
+            ".git",
+            ".git/objects",
+            "node_modules",
+            "node_modules/x",
+            "build",
+            "build/sub",
+            "shown/.cache",
+        ] {
+            assert_eq!(
+                folder_listing(&files, "main", text(&r.join(folder)))
+                    .unwrap_err()
+                    .code,
+                FileErrorCode::NotGranted,
+                "{folder}"
+            );
+        }
+        let requested = [".git", "node_modules/x", "build", "shown/.cache", "shown"]
+            .map(|folder| text(&r.join(folder)).to_string());
+        assert_eq!(
+            expandable_folders(&files, "main", &requested),
+            [text(&r.join("shown"))]
+        );
+    }
+
+    #[test]
+    fn only_folders_are_kept_expanded() {
+        let r = scratch("folder-expand").canonicalize().unwrap();
+        fs::create_dir(r.join("a")).unwrap();
+        fs::write(r.join("b.md"), "").unwrap();
+        let files = Files::for_test();
+        add_root(&files, "main", &r);
+        let requested = [r.clone(), r.join("a"), r.join("b.md"), r.join("gone")]
+            .map(|path| text(&path).to_string());
+        assert_eq!(
+            expandable_folders(&files, "main", &requested),
+            [text(&r).to_string(), text(&r.join("a")).to_string()]
+        );
     }
 
     #[test]

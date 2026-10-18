@@ -393,11 +393,7 @@ pub fn folder_set_expanded(
 ) -> Result<(), FileError> {
     require_main(window.label())?;
     let label = window.label();
-    let expanded = paths
-        .iter()
-        .filter_map(|path| files.in_folder(label, path).ok())
-        .map(|(_, folder)| folder.to_string_lossy().to_string())
-        .collect();
+    let expanded = super::expandable_folders(&files, label, &paths);
     files.update(|lists| lists.windows.set_expanded(label, expanded));
     Ok(())
 }

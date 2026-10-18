@@ -212,6 +212,16 @@ impl FolderWatcher {
 /// Whether `path` (canonical) would be shown by `list` of its parent: under `root`, no component
 /// below `root` hidden or `node_modules`, a shown file type, not ignored.
 pub fn is_listed(root: &Path, path: &Path) -> bool {
+    shown_below(root, path, false) && shown_type(path)
+}
+
+/// Whether the tree shows the folder `path` (canonical): `root` itself, or a folder below it that
+/// `is_listed` would show if it were a file of a shown type.
+pub fn is_shown_folder(root: &Path, path: &Path) -> bool {
+    path == root || shown_below(root, path, true)
+}
+
+fn shown_below(root: &Path, path: &Path, is_dir: bool) -> bool {
     let Ok(below) = path.strip_prefix(root) else {
         return false;
     };
@@ -221,13 +231,13 @@ pub fn is_listed(root: &Path, path: &Path) -> bool {
             .to_str()
             .is_some_and(|name| !hidden(name))
     });
-    if below.as_os_str().is_empty() || !visible || !shown_type(path) {
+    if below.as_os_str().is_empty() || !visible {
         return false;
     }
     let Some(parent) = path.parent() else {
         return false;
     };
-    !IgnoreSet::for_folder(root, parent).is_ignored(path, false)
+    !IgnoreSet::for_folder(root, parent).is_ignored(path, is_dir)
 }
 
 #[cfg(test)]
@@ -347,6 +357,20 @@ mod tests {
         assert!(!is_listed(&root, &root.join("ignored.md")));
         assert!(!is_listed(&root, &root.join("p.png")));
         assert!(!is_listed(&root, Path::new("/elsewhere/b.md")));
+    }
+
+    #[test]
+    fn is_shown_folder_matches_the_listing_filter() {
+        let root = scratch("shown-folder");
+        fs::write(root.join(".gitignore"), "build/\n").unwrap();
+        assert!(is_shown_folder(&root, &root));
+        assert!(is_shown_folder(&root, &root.join("a/b")));
+        assert!(!is_shown_folder(&root, &root.join(".x")));
+        assert!(!is_shown_folder(&root, &root.join("a/.x/b")));
+        assert!(!is_shown_folder(&root, &root.join("node_modules")));
+        assert!(!is_shown_folder(&root, &root.join("build")));
+        assert!(!is_shown_folder(&root, &root.join("build/sub")));
+        assert!(!is_shown_folder(&root, Path::new("/elsewhere")));
     }
 
     #[test]
