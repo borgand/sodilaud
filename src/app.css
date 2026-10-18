@@ -175,6 +175,15 @@
   display: none;
 }
 
+.custom-context-menu[hidden] {
+  display: none;
+}
+
+#open-file-menu .context-menu-submenu-content {
+  max-height: min(360px, calc(100vh - 24px));
+  overflow-y: auto;
+}
+
 .main-topbar {
   gap: 8px;
 }
