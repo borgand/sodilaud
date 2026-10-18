@@ -96,7 +96,7 @@ test("a selection in a table cell maps inside that cell's range", () => {
     range.setEnd(cell, 3);
     const mapped = rangeToSource(root, range, source);
     assert.deepEqual(mapped, { from: 8, to: 11 });
-    assert.equal(sourceBlockOf(root, cell), root.querySelectorAll("td")[1]);
+    assert.ok(sourceBlockOf(root, cell) === root.querySelectorAll("td")[1], "maps to the second cell");
   } finally {
     env.cleanup();
   }
@@ -179,8 +179,8 @@ test("blockForSource returns the innermost annotated element", () => {
     "</tr></tbody></table>"
   );
   try {
-    assert.equal(blockForSource(root, 8), root.querySelectorAll("td")[1]);
-    assert.equal(blockForSource(root, 6), root.querySelector("table"));
+    assert.ok(blockForSource(root, 8) === root.querySelectorAll("td")[1], "innermost is the cell");
+    assert.ok(blockForSource(root, 6) === root.querySelector("table"), "between cells is the table");
     assert.ok(blockForSource(root, 40) === null, "expected null");
   } finally {
     env.cleanup();

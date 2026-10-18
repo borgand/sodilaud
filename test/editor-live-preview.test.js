@@ -519,7 +519,7 @@ test("typing in the block keeps the last diagram until typing pauses", async () 
     t.view.dispatch({ changes: { from: at + 1, insert: "C" } });
     await settle();
     const [during] = t.diagrams();
-    assert.equal(during, before);
+    assert.ok(during === before, "the diagram element is reused");
     assert.match(during.querySelector("svg text").textContent, /A-->B$/);
     await new Promise(resolve => setTimeout(resolve, 350));
     assert.match(t.diagrams()[0].querySelector("svg text").textContent, /A-->BC$/);
