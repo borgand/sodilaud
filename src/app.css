@@ -391,6 +391,21 @@
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  transition: opacity 0.6s;
+}
+
+.file-status-text.settled {
+  opacity: 0;
+}
+
+.file-status:hover .file-status-text.settled {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .file-status-text {
+    transition: none;
+  }
 }
 
 .review-progress {

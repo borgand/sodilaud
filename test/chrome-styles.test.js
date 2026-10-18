@@ -39,3 +39,13 @@ test("the active file is a lift with an accent bar, not the selection pill", () 
 test("the files sidebar is 240px wide", () => {
   assert.match(declarations(app, ".files-sidebar"), /width:\s*240px/);
 });
+
+test("a settled status fades and returns on hover", () => {
+  assert.match(declarations(app, ".file-status-text.settled"), /opacity:\s*0\b/);
+  assert.match(declarations(app, ".file-status:hover .file-status-text.settled"), /opacity:\s*1\b/);
+  assert.match(declarations(app, ".file-status-text"), /transition:\s*opacity 0\.6s/);
+  const reduced = app.match(/@media \(prefers-reduced-motion: reduce\)\s*\{([\s\S]*?\}\s*)\}/);
+  assert.ok(reduced, "a reduced-motion block exists");
+  assert.match(reduced[1], /\.file-status-text/);
+  assert.match(reduced[1], /transition:\s*none/);
+});

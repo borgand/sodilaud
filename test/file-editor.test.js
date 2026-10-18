@@ -50,7 +50,42 @@ test("Open File shows the file, lists it and Rust autosaves edits", async () => 
   await app.settle(700);
   assert.deepEqual(app.fileDocs.writes, [{ path: "/docs/plan.md", text: "# Plan\n- ship it\n" }]);
   assert.equal(doc(app).getElementById("main-title").textContent, "plan.md");
-  assert.match(doc(app).getElementById("file-status").textContent, /^Saved · \/docs\/plan.md/);
+  const status = doc(app).getElementById("file-status");
+  assert.equal(status.textContent, "Saved");
+  assert.equal(status.title, "/docs/plan.md");
+});
+
+test("Saved fades after a moment and an edit brings the status back", async () => {
+  const fake = lists({ open: ["/docs/a.md"] });
+  const app = await bootMainWindow({ instance: 15, disk: { "/docs/a.md": "one\n" }, handlers: fake.handlers });
+  const status = doc(app).getElementById("file-status");
+  assert.equal(status.textContent, "Saved");
+  assert.ok(!status.classList.contains("settled"));
+  await app.until(() => status.classList.contains("settled"), 4000);
+  assert.ok(status.classList.contains("settled"));
+  typeAt(app, 0, "x");
+  assert.match(status.textContent, /^Saving…/);
+  assert.ok(!status.classList.contains("settled"));
+  await app.settle(700);
+  assert.equal(status.textContent, "Saved");
+  assert.ok(!status.classList.contains("settled"));
+});
+
+test("switching files restarts the fade", async () => {
+  const fake = lists({ open: ["/docs/a.md", "/docs/b.md"] });
+  const app = await bootMainWindow({
+    instance: 16,
+    disk: { "/docs/a.md": "one\n", "/docs/b.md": "two\n" },
+    handlers: fake.handlers
+  });
+  const status = doc(app).getElementById("file-status");
+  await app.until(() => status.classList.contains("settled"), 4000);
+  const names = [...doc(app).querySelectorAll(".open-file-name")];
+  const other = names.find((item) => !item.closest(".open-file-item").classList.contains("active"));
+  other.click();
+  await app.settle();
+  assert.equal(status.textContent, "Saved");
+  assert.ok(!status.classList.contains("settled"));
 });
 
 test("outside edits apply to a clean file, merge with typing, and ask on a conflict", async () => {

@@ -40,6 +40,7 @@ import { createComments } from "./comments-panel.js";
 const LAYOUT_KEY = "sodilaud_layout_mode";
 // The outline reparses the whole file, so it waits for typing to pause.
 const OUTLINE_DELAY_MS = 150;
+const SAVED_FADE_MS = 2000;
 
 const editorModeFor = (mode) => (mode === "source" ? "source" : "live");
 
@@ -90,6 +91,8 @@ export function createFileEditor({
   let outlineTimer = null;
   let outlineShown = [];
   let currentOutlineId = null;
+  let statusKey = null;
+  let fadeTimer = null;
   const navHistory = createNavHistory();
 
   const editor = createMarkdownEditor({
@@ -190,7 +193,16 @@ export function createFileEditor({
     title.textContent = buffer ? `${buffer.name}${dirty(buffer) ? " •" : ""}` : "Sodilaud";
     title.title = buffer?.path ?? "";
     document.title = buffer ? `${buffer.name} - Sodilaud` : "Sodilaud";
-    status.textContent = buffer ? `${statusText(buffer)}${buffer.path ? ` · ${buffer.path}` : ""}` : "";
+    const text = buffer ? statusText(buffer) : "";
+    status.textContent = text;
+    status.title = buffer?.path ?? "";
+    const key = buffer ? `${buffer.id}:${text}` : null;
+    if (key !== statusKey) {
+      statusKey = key;
+      clearTimeout(fadeTimer);
+      status.classList.remove("settled");
+      if (text === "Saved") fadeTimer = setTimeout(() => status.classList.add("settled"), SAVED_FADE_MS);
+    }
   }
 
   function renderSidebar() {
