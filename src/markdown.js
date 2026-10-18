@@ -2,6 +2,7 @@
 
 import { HUNK_ID, addHeadingAnchors, decodeFragment, hunkIdFromInfo } from "./anchors.js";
 import { HUNK_LINES, HUNK_PATH, reviewHunkMeta } from "./diff-hunk.js";
+import { SOURCE_FROM, SOURCE_TO } from "./source-map.js";
 
 const MARKDOWN_ALLOWED_TAGS = new Set([
   "a", "blockquote", "br", "code", "del", "em", "h1", "h2", "h3", "h4",
@@ -20,10 +21,14 @@ const MARKDOWN_ALLOWED_ATTRIBUTES = {
   code: new Set(["class", "data-hunk", "data-path", "data-lines", "data-reviewed", "data-elided"]),
   img: new Set(["alt", "src", "title"]),
   input: new Set(["checked", "disabled", "type"]),
-  ol: new Set(["start"]),
-  td: new Set(["align"]),
-  th: new Set(["align"])
+  ol: new Set(["start", SOURCE_FROM, SOURCE_TO]),
+  td: new Set(["align", SOURCE_FROM, SOURCE_TO]),
+  th: new Set(["align", SOURCE_FROM, SOURCE_TO])
 };
+
+for (const tag of ["p", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "ul", "li", "table", "pre"]) {
+  MARKDOWN_ALLOWED_ATTRIBUTES[tag] = new Set([SOURCE_FROM, SOURCE_TO]);
+}
 
 const CODE_DATA_PATTERNS = [
   ["data-hunk", HUNK_ID],
@@ -122,6 +127,15 @@ export function sanitizeMarkdownHtml(html) {
         element.removeAttribute(attribute.name);
       }
     });
+
+    if (element.hasAttribute(SOURCE_FROM) || element.hasAttribute(SOURCE_TO)) {
+      const from = element.getAttribute(SOURCE_FROM);
+      const to = element.getAttribute(SOURCE_TO);
+      if (!/^\d+$/.test(from ?? "") || !/^\d+$/.test(to ?? "") || Number(from) > Number(to)) {
+        element.removeAttribute(SOURCE_FROM);
+        element.removeAttribute(SOURCE_TO);
+      }
+    }
 
     if (tag === "a") {
       const href = element.getAttribute("href");
@@ -277,11 +291,120 @@ function hunkRenderer(markedApi) {
   return renderer;
 }
 
-export function renderMarkdown(rawText, emptyFallback = "", markedApi = globalThis.window?.marked) {
+export function tableCellRanges(raw) {
+  const lines = [];
+  let lineStart = 0;
+  while (lineStart <= raw.length) {
+    let lineEnd = raw.indexOf("\n", lineStart);
+    if (lineEnd === -1) lineEnd = raw.length;
+    lines.push(lineCellRanges(raw, lineStart, lineEnd));
+    lineStart = lineEnd + 1;
+  }
+  if (lines.length > 1) lines[1] = [];
+  if (lines.length && lines[lines.length - 1].length === 0 && raw.endsWith("\n")) lines.pop();
+  return lines;
+}
+
+function lineCellRanges(raw, start, end) {
+  const segments = [];
+  let segStart = start;
+  let backslashes = 0;
+  for (let i = start; i < end; i++) {
+    const ch = raw[i];
+    if (ch === "\\") {
+      backslashes++;
+      continue;
+    }
+    if (ch === "|" && backslashes % 2 === 0) {
+      segments.push([segStart, i]);
+      segStart = i + 1;
+    }
+    backslashes = 0;
+  }
+  segments.push([segStart, end]);
+
+  const blank = ([from, to]) => raw.slice(from, to).trim() === "";
+  if (segments.length > 1 && blank(segments[0])) segments.shift();
+  if (segments.length > 1 && blank(segments[segments.length - 1])) segments.pop();
+
+  return segments.map(([from, to]) => {
+    while (from < to && (raw[from] === " " || raw[from] === "\t")) from++;
+    while (to > from && (raw[to - 1] === " " || raw[to - 1] === "\t")) to--;
+    return { from, to };
+  });
+}
+
+function codeContentRange(token, from) {
+  const raw = token.raw;
+  if (!/^ {0,3}(`{3,}|~{3,})/.test(raw)) return { from, to: from + raw.length };
+  const firstBreak = raw.indexOf("\n");
+  if (firstBreak === -1) return { from: from + raw.length, to: from + raw.length };
+  const body = raw.endsWith("\n") ? raw.slice(0, -1) : raw;
+  const lastStart = body.lastIndexOf("\n") + 1;
+  const closed = lastStart > firstBreak && /^ {0,3}(`{3,}|~{3,})[ \t]*$/.test(body.slice(lastStart));
+  return { from: from + firstBreak + 1, to: from + (closed ? lastStart : raw.length) };
+}
+
+function annotateTokens(tokens, source) {
+  let cursor = 0;
+  for (const token of tokens) {
+    let at = source.startsWith(token.raw, cursor) ? cursor : source.indexOf(token.raw, cursor);
+    if (at === -1) return;
+    cursor = at + token.raw.length;
+    const range = token.type === "code"
+      ? codeContentRange(token, at)
+      : { from: at, to: cursor };
+    token.srcFrom = range.from;
+    token.srcTo = range.to;
+
+    if (token.type === "list") {
+      let itemCursor = at;
+      for (const item of token.items) {
+        const itemAt = source.indexOf(item.raw, itemCursor);
+        if (itemAt === -1) break;
+        item.srcFrom = itemAt;
+        item.srcTo = itemAt + item.raw.length;
+        itemCursor = item.srcTo;
+      }
+    } else if (token.type === "table") {
+      const lines = tableCellRanges(token.raw);
+      const place = (cell, range) => {
+        if (!range) return;
+        cell.srcFrom = at + range.from;
+        cell.srcTo = at + range.to;
+      };
+      token.header.forEach((cell, i) => place(cell, lines[0]?.[i]));
+      token.rows.forEach((row, r) => row.forEach((cell, i) => place(cell, lines[r + 2]?.[i])));
+    }
+  }
+}
+
+function withSourceAttributes(html, token) {
+  if (!Number.isInteger(token.srcFrom) || !Number.isInteger(token.srcTo)) return html;
+  return html.replace(/^(\s*<[a-z0-9]+)/i, `$1 ${SOURCE_FROM}="${token.srcFrom}" ${SOURCE_TO}="${token.srcTo}"`);
+}
+
+function positionRenderer(renderer) {
+  for (const name of ["paragraph", "heading", "blockquote", "list", "listitem", "table", "tablecell", "code"]) {
+    const original = renderer[name];
+    renderer[name] = function (token) {
+      return withSourceAttributes(original.call(this, token), token);
+    };
+  }
+  return renderer;
+}
+
+export function renderMarkdown(rawText, emptyFallback = "", markedApi = globalThis.window?.marked, { positions = false } = {}) {
   if (!markedApi) return "";
   const source = rawText || emptyFallback;
   if (typeof markedApi.parse === "function") {
-    const renderer = hunkRenderer(markedApi);
+    let renderer = hunkRenderer(markedApi);
+    if (positions && rawText && renderer && typeof markedApi.lexer === "function" && typeof markedApi.parser === "function") {
+      const tokens = markedApi.lexer(source);
+      annotateTokens(tokens, source);
+      renderer = positionRenderer(renderer);
+      return sanitizeMarkdownHtml(markedApi.parser(tokens, { renderer }));
+    }
     return sanitizeMarkdownHtml(renderer ? markedApi.parse(source, { renderer }) : markedApi.parse(source));
   }
   if (typeof markedApi === "function") {

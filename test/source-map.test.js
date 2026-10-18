@@ -3,6 +3,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { installEditorDom } from "./helpers/cm-dom.js";
+import { renderMarkdown } from "../src/markdown.js";
+import { marked } from "marked";
 import {
   alignText,
   blockForSource,
@@ -184,4 +186,17 @@ test("stripSourceAnnotations removes every trace but keeps the text", () => {
   } finally {
     env.cleanup();
   }
+});
+
+test("rangeToSource maps a selection inside a rendered table cell", () => {
+  const source = "| h |\n|---|\n| left middle right |\n";
+  const { root, document } = mount("");
+  root.innerHTML = renderMarkdown(source, "", marked, { positions: true });
+  const text = root.querySelector("td").firstChild;
+  const start = text.nodeValue.indexOf("middle");
+  const range = document.createRange();
+  range.setStart(text, start);
+  range.setEnd(text, start + 6);
+  const from = source.indexOf("middle");
+  assert.deepEqual(rangeToSource(root, range, source), { from, to: from + 6 });
 });
