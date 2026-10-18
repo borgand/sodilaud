@@ -252,9 +252,7 @@ impl WindowSet {
         }
     }
 
-    // The folder allows below are removed when the folder commands land.
     /// Appends `root` (canonical) and expands it; false when the window is unknown or already has it.
-    #[allow(dead_code)]
     pub fn add_folder(&mut self, label: &str, root: &str) -> bool {
         let Some(entry) = self.entry_mut(label) else {
             return false;
@@ -270,7 +268,6 @@ impl WindowSet {
     }
 
     /// Removes the root and every expanded path under it.
-    #[allow(dead_code)]
     pub fn remove_folder(&mut self, label: &str, root: &str) {
         if let Some(entry) = self.entry_mut(label) {
             entry.folders.retain(|folder| folder != root);
@@ -280,7 +277,6 @@ impl WindowSet {
         }
     }
 
-    #[allow(dead_code)]
     pub fn folders(&self, label: &str) -> Vec<String> {
         self.entry(label)
             .map(|entry| entry.folders.clone())
@@ -289,7 +285,6 @@ impl WindowSet {
 
     /// Keeps only paths equal to or below one of the window's roots (component-wise prefix), without
     /// duplicates, in the given order.
-    #[allow(dead_code)]
     pub fn set_expanded(&mut self, label: &str, paths: Vec<String>) {
         let Some(entry) = self.entry_mut(label) else {
             return;
@@ -308,7 +303,6 @@ impl WindowSet {
     }
 
     /// Roots then expanded folders of every window, window order, without duplicates, at most `limit`.
-    #[allow(dead_code)]
     pub fn watched_folders(&self, limit: usize) -> Vec<String> {
         let mut watched: Vec<String> = Vec::new();
         for entry in &self.windows {

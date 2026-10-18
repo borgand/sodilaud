@@ -5,9 +5,10 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use tauri::{AppHandle, State, Window};
 
+use super::folders::FolderListing;
 use super::io::{self, LineEnding};
 use super::windows::{is_main_label, Claim};
-use super::{FileError, Files, OpenedDocument, PendingOpen};
+use super::{FileError, Files, FolderRoot, OpenedDocument, PendingOpen};
 use crate::docs::commands::SharedRegistry;
 use crate::docs::files::{FileOpened, FileSaved, Resolve};
 use crate::docs::registry::{Pulled, Pushed, Update};
@@ -44,11 +45,20 @@ pub struct RecentFile {
 pub struct ListsView {
     open: Vec<String>,
     recent: Vec<RecentFile>,
+    folders: Vec<FolderRoot>,
+    expanded: Vec<String>,
 }
 
-fn lists_view(open: Vec<String>, recent: Vec<String>) -> ListsView {
+fn lists_view(
+    open: Vec<String>,
+    recent: Vec<String>,
+    folders: Vec<String>,
+    expanded: Vec<String>,
+) -> ListsView {
     ListsView {
         open,
+        folders: folders.iter().map(|root| FolderRoot::new(root)).collect(),
+        expanded,
         recent: recent
             .into_iter()
             .map(|path| RecentFile {
@@ -273,19 +283,135 @@ pub fn file_doc_resolve(
     registry.file_resolve(&files.require(&path)?, keep, &*files)
 }
 
-/// This window's open files, and the recent files.
+/// This window's open files and folders, and the recent files.
 #[tauri::command]
 pub fn file_lists(window: Window, files: State<'_, Files>) -> Result<ListsView, FileError> {
     require_main(window.label())?;
-    let (open, recent) = files.read(|lists| {
-        let open = lists
+    let (entry, recent) = files.read(|lists| {
+        let entry = lists
             .windows
             .entry(window.label())
-            .map(|entry| entry.open.clone())
+            .map(|entry| {
+                (
+                    entry.open.clone(),
+                    entry.folders.clone(),
+                    entry.expanded.clone(),
+                )
+            })
             .unwrap_or_default();
-        (open, lists.recent.clone())
+        (entry, lists.recent.clone())
     });
-    Ok(lists_view(open, recent))
+    let (open, folders, expanded) = entry;
+    Ok(lists_view(open, recent, folders, expanded))
+}
+
+/// Adds `root` (canonical) to the window's sidebar, expanded. A root the
+/// window already shows is returned as it is.
+fn add_root(files: &Files, label: &str, root: &Path) -> Result<FolderRoot, FileError> {
+    let root = root.to_string_lossy().to_string();
+    let known = files.update(|lists| {
+        lists.windows.add_folder(label, &root);
+        lists.windows.entry(label).is_some()
+    });
+    if !known {
+        return Err(FileError::wrong_window());
+    }
+    Ok(FolderRoot::new(&root))
+}
+
+/// Open Folder: the native folder picker. The chosen folder becomes a root of
+/// this window.
+#[tauri::command]
+pub fn folder_open_dialog(
+    window: Window,
+    files: State<'_, Files>,
+) -> Result<Option<FolderRoot>, FileError> {
+    require_main(window.label())?;
+    let Some(chosen) = rfd::FileDialog::new()
+        .set_title("Open Folder")
+        .pick_folder()
+    else {
+        return Ok(None);
+    };
+    let root = chosen
+        .canonicalize()
+        .map_err(|error| FileError::io(&chosen, &error))?;
+    add_root(&files, window.label(), &root).map(Some)
+}
+
+/// Show Folder in Sidebar: the folder of a file open in this window becomes
+/// a root of it.
+#[tauri::command]
+pub fn folder_browse(
+    window: Window,
+    files: State<'_, Files>,
+    path: String,
+) -> Result<FolderRoot, FileError> {
+    require_main(window.label())?;
+    let file = files.require(&path)?;
+    let file_text = file.to_string_lossy().to_string();
+    let label = window.label();
+    if files
+        .read(|lists| lists.windows.owner(&file_text))
+        .as_deref()
+        != Some(label)
+    {
+        return Err(FileError::not_open(&file));
+    }
+    let root = file.parent().ok_or_else(|| FileError::not_open(&file))?;
+    add_root(&files, label, root)
+}
+
+#[tauri::command]
+pub fn folder_remove(
+    window: Window,
+    files: State<'_, Files>,
+    path: String,
+) -> Result<(), FileError> {
+    require_main(window.label())?;
+    files.update(|lists| lists.windows.remove_folder(window.label(), &path));
+    Ok(())
+}
+
+#[tauri::command]
+pub fn folder_list(
+    window: Window,
+    files: State<'_, Files>,
+    path: String,
+) -> Result<FolderListing, FileError> {
+    require_main(window.label())?;
+    super::folder_listing(&files, window.label(), &path)
+}
+
+/// The folders expanded in this window's sidebar. Only folders in one of its
+/// roots are kept, in their canonical form, and watched.
+#[tauri::command]
+pub fn folder_set_expanded(
+    window: Window,
+    files: State<'_, Files>,
+    paths: Vec<String>,
+) -> Result<(), FileError> {
+    require_main(window.label())?;
+    let label = window.label();
+    let expanded = paths
+        .iter()
+        .filter_map(|path| files.in_folder(label, path).ok())
+        .map(|(_, folder)| folder.to_string_lossy().to_string())
+        .collect();
+    files.update(|lists| lists.windows.set_expanded(label, expanded));
+    Ok(())
+}
+
+/// Grants a file shown in this window's folder tree. The page then opens it
+/// with `file_doc_open`.
+#[tauri::command]
+pub fn folder_open_file(
+    window: Window,
+    files: State<'_, Files>,
+    path: String,
+) -> Result<OpenedDocument, FileError> {
+    require_main(window.label())?;
+    super::folder_file(&files, window.label(), &path)
 }
 
 /// The files open in this window, in sidebar order, and the one shown. Only

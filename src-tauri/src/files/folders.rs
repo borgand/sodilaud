@@ -181,6 +181,14 @@ impl FolderWatcher {
         }
     }
 
+    #[cfg(test)]
+    pub fn folders(&self) -> Vec<String> {
+        self.watched
+            .iter()
+            .map(|watched| watched.folder.to_string_lossy().into_owned())
+            .collect()
+    }
+
     /// Folders whose visible listing changed since the last poll; each change reported once.
     pub fn poll(&mut self) -> Vec<String> {
         let mut changed = Vec::new();
