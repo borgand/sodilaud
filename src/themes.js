@@ -7,6 +7,7 @@
 import { ACTIVE_TEXT_PROPERTIES, DERIVED_THEME_PROPERTIES, THEME_SLOTS, deriveDocumentColors, deriveThemeSurfaceColors, ensureContrast, isValidColor, toHex } from "./theme-colors.js";
 import { createCssColorResolver, createOpaqueColorParser, isColorDark } from "./css-color.js";
 import { PRESET_THEMES } from "./preset-themes.js";
+import { normalizeFontValue } from "./document-fonts.js";
 import { escapeHTML } from "./syntax-highlighting.js";
 
 export const THEME_STORAGE_KEYS = ["sodilaud_active_theme", "sodilaud_custom_themes", "color-scheme"];
@@ -244,6 +245,22 @@ export function createThemes({ document, storage, invoke, onApplied = () => {}, 
     return slots;
   }
 
+  const FONT_THEME_KEYS = { body: "fontBody", heading: "fontHeading", code: "fontCode" };
+
+  // Font suggestions go through the same validation as a typed font name, so an
+  // imported theme cannot put CSS text into a font stack.
+  function pickFonts(source, isKv) {
+    const fonts = {};
+    for (const [slot, key] of Object.entries(FONT_THEME_KEYS)) {
+      const value = isKv
+        ? source[key.toLowerCase()] ?? source[key.replace(/[A-Z]/g, c => `_${c.toLowerCase()}`)]
+        : source[key];
+      const font = normalizeFontValue(value, slot);
+      if (font) fonts[key] = font;
+    }
+    return fonts;
+  }
+
   function normalizeCustomTheme(theme, index = 0) {
     if (!theme || typeof theme !== "object") return null;
     if (!isValidColor(theme.background) || !isValidColor(theme.foreground)) return null;
@@ -258,6 +275,7 @@ export function createThemes({ document, storage, invoke, onApplied = () => {}, 
       border: isValidColor(theme.border) ? theme.border.trim() : "rgba(128,128,128,0.2)",
       selection: isValidColor(theme.selection) ? theme.selection.trim() : "rgba(59,130,246,0.2)",
       ...pickSlots(theme, false),
+      ...pickFonts(theme, false),
       isCustom: true
     };
   }
@@ -451,6 +469,7 @@ export function createThemes({ document, storage, invoke, onApplied = () => {}, 
           border: isValidColor(border) ? border : "rgba(128,128,128,0.2)",
           selection: isValidColor(sel) ? sel : "rgba(59,130,246,0.2)",
           ...pickSlots(colors, false),
+          ...pickFonts(colors, false),
           isCustom: true
         }
       };
@@ -498,6 +517,7 @@ export function createThemes({ document, storage, invoke, onApplied = () => {}, 
           border: isValidColor(border) ? border : "rgba(128,128,128,0.2)",
           selection: isValidColor(sel) ? sel : "rgba(59,130,246,0.2)",
           ...pickSlots(kv, true),
+          ...pickFonts(kv, true),
           isCustom: true
         }
       };
@@ -525,6 +545,9 @@ export function createThemes({ document, storage, invoke, onApplied = () => {}, 
     };
     for (const slot of Object.keys(THEME_SLOTS)) {
       if (active[slot]) exportData[slot] = active[slot];
+    }
+    for (const key of Object.values(FONT_THEME_KEYS)) {
+      if (active[key]) exportData[key] = active[key];
     }
 
     const jsonStr = JSON.stringify(exportData, null, 2);
@@ -561,6 +584,7 @@ export function createThemes({ document, storage, invoke, onApplied = () => {}, 
     closeModal: closeThemeModal,
     isModalOpen: () => isThemeModalOpen,
     modal: themeModal,
-    activeThemeId: () => activeThemeId
+    activeThemeId: () => activeThemeId,
+    activeTheme: () => [...PRESET_THEMES, ...customThemes].find(theme => theme.id === activeThemeId)
   };
 }

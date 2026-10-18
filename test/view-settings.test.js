@@ -37,7 +37,7 @@ test("the main window's appearance settings are adjustable, persistent and share
   assert.equal(document.getElementById("actions-btn").getAttribute("aria-label"), "Open Sodilaud menu");
   assert.deepEqual(
     [...document.querySelectorAll("#view-settings .view-setting-label")].map(label => label.textContent),
-    ["Editor zoom", "Line spacing", "Paragraph spacing", "Readable width", "Syntax highlighting", "Line numbers"]
+    ["Editor zoom", "Line spacing", "Paragraph spacing", "Readable width", "Body font", "Heading font", "Code font", "Syntax highlighting", "Line numbers"]
   );
   assert.equal(root.style.getPropertyValue("zoom"), "", "the application UI is not scaled");
   assert.equal(root.style.getPropertyValue("--editor-font-size"), "1.2rem");
