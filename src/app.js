@@ -350,6 +350,7 @@ function attachListeners() {
     setQuickNotesHotkey(isMac ? DEFAULT_QUICK_NOTES_HOTKEY_MAC : DEFAULT_QUICK_NOTES_HOTKEY_OTHER);
   });
   $("open-quicknotes-menu-btn").addEventListener("click", closeMenuThen(() => showQuickNotes()));
+  $("menu-new-window-btn").addEventListener("click", closeMenuThen(openNewWindow));
   // The sodilaud command is a shell script; Windows has no install for it.
   const cliToolBtn = $("menu-cli-tool-btn");
   cliToolBtn.hidden = isWindowsPlatform(navigator);
@@ -419,6 +420,11 @@ function handleKeydown(event) {
     fileEditor.toggleSidebar();
     return;
   }
+  if (isNewWindowShortcut(event)) {
+    event.preventDefault();
+    openNewWindow();
+    return;
+  }
   if (fileEditor.handleShortcut(event)) return;
 
   // Disable browser inspect shortcuts and accidental page reloads.
@@ -459,6 +465,19 @@ function isSidebarShortcut(event) {
     return event.metaKey && !event.altKey && (event.code === "KeyS" || event.key.toLowerCase() === "s");
   }
   return event.altKey && !event.metaKey && event.key.toLowerCase() === "s";
+}
+
+// Cmd+Alt+N on macOS, Ctrl+Alt+N elsewhere. Cmd+Shift+N is the Quick Notes
+// hotkey. Option+N is a dead key on macOS, so the physical key is matched.
+function isNewWindowShortcut(event) {
+  if (event.code !== "KeyN" || !event.altKey || event.shiftKey) return false;
+  return isMacLikePlatform(navigator)
+    ? event.metaKey && !event.ctrlKey
+    : event.ctrlKey && !event.metaKey;
+}
+
+function openNewWindow() {
+  invoke("main_window_new").catch(() => showNotification("Could not open a new window"));
 }
 
 // Rust waits for this window's answer before quitting: every open file is
