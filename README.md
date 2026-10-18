@@ -236,7 +236,7 @@ Themes can also set optional document colors and fonts. Unset color slots are de
 
 ```json
 {
-  "name": "Executive",
+  "name": "My Theme",
   "background": "#181e21",
   "foreground": "#fdc78e",
   "heading": "#f2946c",
@@ -253,7 +253,7 @@ Themes can also set optional document colors and fonts. Unset color slots are de
 }
 ```
 
-`fontBody`, `fontHeading` and `fontCode` are suggestions: a bundled font id (`inter`, `ibm-plex-serif`, `jetbrains-mono`, `ibm-plex-mono`) or `system:<name>`. TOML files accept the same names in lowercase or snake_case (`code_background`, `font_body`).
+`fontBody`, `fontHeading` and `fontCode` are suggestions: a bundled font id (`inter`, `ibm-plex-serif`, `jetbrains-mono`, `ibm-plex-mono`) or `system:<name>`. TOML files accept the same names in lowercase or snake_case (`code_background`, `font_body`). TOML slot values currently need `rgb()` or named colors, not hex, because of a known limitation in the TOML parser.
 
 ## Development
 
