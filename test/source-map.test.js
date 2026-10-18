@@ -111,11 +111,11 @@ test("points in skipped elements or outside annotated elements map to null", () 
     const button = root.querySelector("button").firstChild;
     const hunk = root.querySelector(".diff-hunk").firstChild;
     const outside = root.querySelector("div").firstChild;
-    assert.equal(pointToSource(root, button, 1, "start", source), null);
-    assert.equal(pointToSource(root, hunk, 1, "end", source), null);
-    assert.equal(pointToSource(root, outside, 1, "start", source), null);
-    assert.equal(sourceBlockOf(root, button), null);
-    assert.equal(sourceBlockOf(root, outside), null);
+    assert.ok(pointToSource(root, button, 1, "start", source) === null, "expected null");
+    assert.ok(pointToSource(root, hunk, 1, "end", source) === null, "expected null");
+    assert.ok(pointToSource(root, outside, 1, "start", source) === null, "expected null");
+    assert.ok(sourceBlockOf(root, button) === null, "expected null");
+    assert.ok(sourceBlockOf(root, outside) === null, "expected null");
     const p = root.querySelector("p");
     assert.equal(pointToSource(root, p, 3, "end", source), 6);
   } finally {
@@ -129,7 +129,7 @@ test("an empty or inverted selection maps to null", () => {
     const range = document.createRange();
     range.setStart(root.firstChild.firstChild, 2);
     range.setEnd(root.firstChild.firstChild, 2);
-    assert.equal(rangeToSource(root, range, "text"), null);
+    assert.ok(rangeToSource(root, range, "text") === null, "expected null");
   } finally {
     env.cleanup();
   }
@@ -181,7 +181,7 @@ test("blockForSource returns the innermost annotated element", () => {
   try {
     assert.equal(blockForSource(root, 8), root.querySelectorAll("td")[1]);
     assert.equal(blockForSource(root, 6), root.querySelector("table"));
-    assert.equal(blockForSource(root, 40), null);
+    assert.ok(blockForSource(root, 40) === null, "expected null");
   } finally {
     env.cleanup();
   }

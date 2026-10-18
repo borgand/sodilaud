@@ -217,7 +217,7 @@ test("remote images never render, data images do", async () => {
   const t = await setup("![a](https://evil.example/x.png)\nother");
   try {
     await t.caret(t.editor.getText().length);
-    assert.equal(t.view.contentDOM.querySelector("img"), null);
+    assert.ok(!t.view.contentDOM.querySelector("img"), "expected no match");
     assert.ok(t.view.contentDOM.querySelector(".cm-lp-image-blocked"));
     t.editor.loadText("![a](data:image/png;base64,iVBORw0KGgo=)\nother");
     await t.caret(t.editor.getText().length);
@@ -235,7 +235,7 @@ test("tables render as an HTML widget until the caret enters them", async () => 
     assert.equal(t.view.contentDOM.querySelectorAll(".cm-lp-table table").length, 1);
     assert.ok(t.lineTexts().every(text => !text.includes("|---")));
     await t.caret(t.editor.getText().indexOf("| 1"));
-    assert.equal(t.view.contentDOM.querySelector(".cm-lp-table"), null);
+    assert.ok(!t.view.contentDOM.querySelector(".cm-lp-table"), "expected no match");
     assert.ok(t.lineTexts().some(text => text.includes("|---")));
   } finally { t.done(); }
 });
@@ -258,7 +258,7 @@ test("clicking a table widget moves the caret into the table", async () => {
     t.mousedown(t.view.contentDOM.querySelector(".cm-lp-table"));
     await settle();
     assert.equal(t.editor.getSelection().start, 7);
-    assert.equal(t.view.contentDOM.querySelector(".cm-lp-table"), null);
+    assert.ok(!t.view.contentDOM.querySelector(".cm-lp-table"), "expected no match");
   } finally { t.done(); }
 });
 
@@ -405,7 +405,7 @@ test("source mode shows raw Markdown with no live preview decorations", async ()
     assert.ok(t.view.contentDOM.querySelector("[class*='cm-lp-']"));
     t.editor.setMode("source");
     await settle();
-    assert.equal(t.view.contentDOM.querySelector("[class*='cm-lp-']"), null);
+    assert.ok(!t.view.contentDOM.querySelector("[class*='cm-lp-']"), "expected no match");
     assert.deepEqual(t.lineTexts().slice(0, 4), ["# T", "**b** [l](https://x.y)", "- [ ] t", "---"]);
     assert.ok(t.lineTexts().includes("|---|"));
   } finally { t.done(); }
@@ -505,7 +505,7 @@ test("with the caret inside, the source stays editable and the diagram renders b
     assert.ok(diagram.classList.contains("cm-lp-mermaid-preview"));
     assert.ok(diagram.querySelector("svg"));
     const closing = t.lines().find(line => line.textContent === "```");
-    assert.equal(closing.nextElementSibling, diagram);
+    assert.ok(closing.nextElementSibling === diagram, "diagram follows the closing fence");
   } finally { t.done(); }
 });
 
@@ -556,7 +556,7 @@ test("a known diagram renders without a placeholder and without re-rendering", a
     await t.caret(0);
     await settle();
     await t.caret(t.editor.getText().indexOf("A-->"));
-    assert.equal(t.view.contentDOM.querySelector(".cm-lp-mermaid-pending"), null);
+    assert.ok(!t.view.contentDOM.querySelector(".cm-lp-mermaid-pending"), "expected no match");
     assert.equal(t.renders.length, 1);
   } finally { t.done(); }
 });
@@ -585,7 +585,7 @@ test("mermaid blocks stay code in source mode and without a renderer", async () 
   const plain = await setup(`intro\n\n${flowchart}`);
   try {
     await plain.caret(0);
-    assert.equal(plain.view.contentDOM.querySelector(".cm-lp-mermaid"), null);
+    assert.ok(!plain.view.contentDOM.querySelector(".cm-lp-mermaid"), "expected no match");
     assert.ok(plain.lineTexts().includes("mermaid"), "a plain code block, labelled with its language");
   } finally { plain.done(); }
 });

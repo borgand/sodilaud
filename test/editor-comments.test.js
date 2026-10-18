@@ -23,7 +23,7 @@ test("a composerHost predicate that claims the composer keeps it from being draw
   const t = await setup(({ composerHost }) => composerHost.of(() => true));
   try {
     assert.equal(t.comments.startCommentAt(t.view, 0, 4), true);
-    assert.equal(t.view.dom.querySelector(".cm-comment-composer"), null);
+    assert.ok(!t.view.dom.querySelector(".cm-comment-composer"), "expected no composer element");
     assert.equal(t.comments.composerHosted(t.view.state), true);
   } finally {
     t.done();
@@ -54,7 +54,7 @@ test("the predicate is evaluated again when the configuration changes", async ()
   const t = await setup(({ composerHost }) => composerHost.of(() => true));
   try {
     t.comments.startCommentAt(t.view, 0, 4);
-    assert.equal(t.view.dom.querySelector(".cm-comment-composer"), null);
+    assert.ok(!t.view.dom.querySelector(".cm-comment-composer"), "expected no composer element");
     t.view.dispatch({ effects: t.compartment.reconfigure([]) });
     assert.ok(t.view.dom.querySelector(".cm-comment-composer"));
   } finally {
