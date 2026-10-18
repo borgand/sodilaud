@@ -317,6 +317,34 @@ test("focus leaving for the composer does not rebuild the table", async () => {
   } finally { t.done(); }
 });
 
+test("an edit inside the table while composing keeps the text and focus", async () => {
+  const t = await setup(COMMENT_TABLE, { comments: true });
+  try {
+    selectText(t, "2 |", "2");
+    await settle();
+    t.commentsApi.startComment(t.view);
+    await settle();
+    const input = t.view.contentDOM.querySelector(".cm-lp-table .cm-comment-composer textarea");
+    input.value = "half typed";
+    input.focus();
+    t.setFocus(false);
+    t.view.dispatch({});
+    await settle();
+    await settle();
+    const one = t.editor.getText().indexOf("1 |");
+    t.view.dispatch({ changes: { from: one, to: one + 1, insert: "9" } });
+    await settle();
+    await settle();
+    const table = t.view.contentDOM.querySelector(".cm-lp-table");
+    assert.ok(table, "the table is still rendered");
+    assert.ok(table.textContent.includes("9"), "the table shows the edit");
+    assert.ok(table.querySelector(".cm-comment-composer textarea") === input, "the same textarea");
+    assert.equal(input.value, "half typed");
+    assert.ok(t.env.document.activeElement === input, "the textarea keeps focus");
+    assert.equal(table.querySelector(".cm-comment-draft")?.textContent, "2");
+  } finally { t.done(); }
+});
+
 test("comments on table text are tinted in the widget", async () => {
   const t = await setup(COMMENT_TABLE, { comments: true });
   try {

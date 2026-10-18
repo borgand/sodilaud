@@ -263,9 +263,16 @@ class TableWidget extends WidgetType {
     return other.source === this.source && sameReview(other.review, this.review);
   }
 
-  // Focus moving into the composer must not rebuild the table and drop it.
+  // Neither focus moving into the composer nor an edit elsewhere in the table
+  // may rebuild the composer: it would drop the half-typed text and focus.
   updateDOM(dom, view) {
-    if (dom.tableSource !== this.source) return false;
+    if (dom.tableSource !== this.source) {
+      for (const child of [...dom.childNodes]) {
+        if (!child.classList?.contains("cm-lp-table-composer")) child.remove();
+      }
+      dom.insertAdjacentHTML("afterbegin", tableHtml(this.source));
+      dom.tableSource = this.source;
+    }
     showTableReview(dom, view, this);
     return true;
   }
