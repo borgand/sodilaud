@@ -213,6 +213,24 @@ function mixUntilVisible(start, step, surface, target, build) {
   return color;
 }
 
+// Optional theme keys that replace a derived document colour (or, for
+// mutedText, the derived muted text tone) with the theme author's own.
+export const THEME_SLOTS = {
+  heading: "--preview-heading",
+  codeBackground: "--preview-code-bg",
+  codeBorder: "--preview-code-border",
+  tableHeaderBackground: "--preview-table-head-bg",
+  tableBorder: "--preview-table-border",
+  rule: "--preview-hr",
+  mutedText: "--text-muted",
+  link: "--preview-link"
+};
+
+function slotValue(theme, slot) {
+  const value = theme[slot];
+  return isValidColor(value) ? value.trim() : null;
+}
+
 // Colours for the document surface: code blocks, tables, rules, quotes,
 // headings, links and syntax tones. Always returns every property of
 // DOCUMENT_THEME_PROPERTIES for a theme, or null when there is no theme.
@@ -227,30 +245,45 @@ export function deriveDocumentColors(theme, parseOpaqueColor = parseColor) {
     mix(background, dark ? WHITE : BLACK, dark ? darkAmount : lightAmount);
   const accent = parseOpaqueColor(theme.accent) || foreground;
 
-  const codeBg = quantize(lift(0.05, 0.04));
+  // A surface slot is used as written. Its parsed form, when we can read one,
+  // feeds the colours derived from it; otherwise they derive from the default.
+  const surface = (slot, fallback) => {
+    const text = slotValue(theme, slot);
+    const parsed = text && parseOpaqueColor(text);
+    return { text, color: parsed ? quantize(parsed) : fallback };
+  };
+  const textTone = (slot, fallback, surfaces) => {
+    const text = slotValue(theme, slot);
+    const parsed = text && parseOpaqueColor(text);
+    if (parsed) return { text: null, color: ensureContrast(parsed, surfaces, MIN_DOCUMENT_TEXT_CONTRAST) };
+    return { text, color: fallback };
+  };
+
+  const code = surface("codeBackground", quantize(lift(0.05, 0.04)));
+  const codeBg = code.color;
   const tableHeadBg = quantize(lift(0.04, 0.03));
   const quoteBg = quantize(lift(0.03, 0.025));
   const codeBorder = mixUntilVisible(0.14, 0.02, background, 1.3, t => mix(codeBg, foreground, t));
   const tableBorder = mixUntilVisible(0.14, 0.02, background, 1.3,
     t => lift(t, t - 0.02));
   const hr = mixUntilVisible(0.25, 0.05, background, 1.5, t => mix(background, foreground, t));
-  const heading = ensureContrast(accent, [background], MIN_DOCUMENT_TEXT_CONTRAST);
-  const quoteBorder = mix(background, heading, 0.6);
+  const heading = textTone("heading", ensureContrast(accent, [background], MIN_DOCUMENT_TEXT_CONTRAST), [background]);
+  const quoteBorder = mix(background, heading.color, 0.6);
   const quoteText = ensureContrast(mix(foreground, quoteBg, 0.2), [quoteBg], MIN_DOCUMENT_TEXT_CONTRAST);
-  const link = ensureContrast(accent, [background, quoteBg], MIN_DOCUMENT_TEXT_CONTRAST);
+  const link = textTone("link", ensureContrast(accent, [background, quoteBg], MIN_DOCUMENT_TEXT_CONTRAST), [background, quoteBg]);
   const muted = ensureContrast(mix(foreground, codeBg, 0.45), [codeBg], MIN_DOCUMENT_TEXT_CONTRAST);
 
   const colors = {
-    "--preview-code-bg": toHex(codeBg),
-    "--preview-code-border": toHex(codeBorder),
-    "--preview-table-head-bg": toHex(tableHeadBg),
-    "--preview-table-border": toHex(tableBorder),
-    "--preview-hr": toHex(hr),
+    "--preview-code-bg": code.text ?? toHex(codeBg),
+    "--preview-code-border": slotValue(theme, "codeBorder") ?? toHex(codeBorder),
+    "--preview-table-head-bg": slotValue(theme, "tableHeaderBackground") ?? toHex(tableHeadBg),
+    "--preview-table-border": slotValue(theme, "tableBorder") ?? toHex(tableBorder),
+    "--preview-hr": slotValue(theme, "rule") ?? toHex(hr),
     "--preview-quote-bg": toHex(quoteBg),
     "--preview-quote-border": toHex(quoteBorder),
     "--preview-quote-text": toHex(quoteText),
-    "--preview-heading": toHex(heading),
-    "--preview-link": toHex(link),
+    "--preview-heading": heading.text ?? toHex(heading.color),
+    "--preview-link": link.text ?? toHex(link.color),
     "--syntax-muted": toHex(muted)
   };
   const defaults = DEFAULT_SYNTAX[dark ? "dark" : "light"];
@@ -268,19 +301,21 @@ function deriveUnmeasurableDocumentColors(theme) {
   const fg = theme.foreground;
   const accent = theme.accent || fg;
   const mixFg = (base, percent) => `color-mix(in srgb, ${base} ${percent}%, ${fg})`;
-  const codeBg = mixFg(bg, 95);
+  const slot = (name, fallback) => slotValue(theme, name) ?? fallback;
+  const codeBg = slot("codeBackground", mixFg(bg, 95));
+  const heading = slot("heading", accent);
   const quoteBg = mixFg(bg, 97);
   const colors = {
     "--preview-code-bg": codeBg,
-    "--preview-code-border": mixFg(codeBg, 86),
-    "--preview-table-head-bg": mixFg(bg, 96),
-    "--preview-table-border": mixFg(bg, 86),
-    "--preview-hr": mixFg(bg, 75),
+    "--preview-code-border": slot("codeBorder", mixFg(codeBg, 86)),
+    "--preview-table-head-bg": slot("tableHeaderBackground", mixFg(bg, 96)),
+    "--preview-table-border": slot("tableBorder", mixFg(bg, 86)),
+    "--preview-hr": slot("rule", mixFg(bg, 75)),
     "--preview-quote-bg": quoteBg,
-    "--preview-quote-border": `color-mix(in srgb, ${bg} 40%, ${accent})`,
+    "--preview-quote-border": `color-mix(in srgb, ${bg} 40%, ${heading})`,
     "--preview-quote-text": `color-mix(in srgb, ${fg} 80%, ${quoteBg})`,
-    "--preview-heading": accent,
-    "--preview-link": accent,
+    "--preview-heading": heading,
+    "--preview-link": slot("link", accent),
     "--syntax-muted": `color-mix(in srgb, ${fg} 55%, ${codeBg})`
   };
   for (const key of SYNTAX_KEYS) {

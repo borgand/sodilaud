@@ -11,6 +11,7 @@ import {
   contrastRatio,
   deriveDocumentColors,
   deriveThemeSurfaceColors,
+  THEME_SLOTS,
   ensureContrast,
   mix,
   parseColor,
@@ -235,4 +236,13 @@ test("an unmeasurable theme gets color-mix values, not nothing", () => {
 
 test("deriveDocumentColors has nothing to derive without a theme", () => {
   assert.equal(deriveDocumentColors(null), null);
+});
+
+test("Executive's slots land in the derived document colours", () => {
+  const executive = PRESET_THEMES.find(theme => theme.id === "executive");
+  const colors = deriveDocumentColors(executive);
+  for (const [slot, prop] of Object.entries(THEME_SLOTS)) {
+    if (!executive[slot] || slot === "mutedText") continue;
+    assert.equal(colors[prop], executive[slot], slot);
+  }
 });
