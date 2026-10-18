@@ -483,7 +483,11 @@ pub fn start(app: &AppHandle) {
             let removed = change.kind == watch::ChangeKind::Removed;
             watched.file_changed_on_disk(Path::new(&change.path), removed, &*files);
         }
-        let folders = lock(&files.folder_watcher).poll();
+        // Listing runs without the lock, so a command that sets the watched folders never waits
+        // for a scan.
+        let mut polled = lock(&files.folder_watcher).take();
+        let folders = polled.poll();
+        lock(&files.folder_watcher).restore(polled);
         if !folders.is_empty() {
             let handle = watching.clone();
             let _ = watching.run_on_main_thread(move || {

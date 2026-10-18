@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
-use tauri::{AppHandle, State, Window};
+use tauri::{AppHandle, Manager, State, Window};
 
 use super::folders::FolderListing;
 use super::io::{self, LineEnding};
@@ -373,14 +373,20 @@ pub fn folder_remove(
     Ok(())
 }
 
+/// Async, and listed on a blocking thread: a large folder never stalls the main thread.
 #[tauri::command]
-pub fn folder_list(
+pub async fn folder_list(
     window: Window,
-    files: State<'_, Files>,
+    app: AppHandle,
     path: String,
 ) -> Result<FolderListing, FileError> {
     require_main(window.label())?;
-    super::folder_listing(&files, window.label(), &path)
+    let label = window.label().to_string();
+    tauri::async_runtime::spawn_blocking(move || {
+        super::folder_listing(&app.state::<Files>(), &label, &path)
+    })
+    .await
+    .map_err(|error| FileError::other(format!("Could not list the folder: {error}")))?
 }
 
 /// The folders expanded in this window's sidebar. Only folders in one of its

@@ -240,6 +240,13 @@ New commands (all main windows only):
 
 New event: `folder-changed { path }` to every main window.
 
+No folder is scanned on the main thread. `folder_list` is an async command that lists on a
+blocking thread (`tauri::async_runtime::spawn_blocking`). Setting the watched folders (from
+`folder_set_expanded`, `folder_open_dialog`, `folder_browse` or any lists update) reads only
+modification times. Each watched folder is first listed by the poll thread, and the poll thread
+lists without holding the watcher lock: it takes the folders out, polls them, then puts back the
+state of those still watched.
+
 ### JS
 
 ```

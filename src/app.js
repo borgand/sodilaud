@@ -351,14 +351,8 @@ function attachListeners() {
   });
   $("open-quicknotes-menu-btn").addEventListener("click", closeMenuThen(() => showQuickNotes()));
   $("menu-new-window-btn").addEventListener("click", closeMenuThen(openNewWindow));
-  $("menu-open-folder-btn").addEventListener("click", () => {
-    toggleActionsDropdown(false);
-    fileEditor.openFolderDialog();
-  });
-  $("menu-browse-folder-btn").addEventListener("click", () => {
-    toggleActionsDropdown(false);
-    fileEditor.browseFolder();
-  });
+  $("menu-open-folder-btn").addEventListener("click", closeMenuThen(() => fileEditor.openFolderDialog()));
+  $("menu-browse-folder-btn").addEventListener("click", closeMenuThen(() => fileEditor.browseFolder()));
   $("start-open-folder-btn").addEventListener("click", () => fileEditor.openFolderDialog());
   // The sodilaud command is a shell script; Windows has no install for it.
   const cliToolBtn = $("menu-cli-tool-btn");

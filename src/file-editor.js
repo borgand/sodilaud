@@ -963,7 +963,8 @@ export function createFileEditor({
     // A file handed over at launch wins; otherwise the last file reopened shows.
     if (!(await takePending())) showingStartPage = model.list().length === 0;
     render();
-    await folders.restore(lists);
+    // Listing the folders is not waited for: the window is usable before it is done.
+    folders.restore(lists).catch((error) => console.error("Could not restore the folders", error));
   }
 
   function attach() {

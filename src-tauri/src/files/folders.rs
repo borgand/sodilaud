@@ -90,10 +90,15 @@ fn list_within(
             continue;
         }
         let is_link = entry.file_type().is_ok_and(|kind| kind.is_symlink());
-        // A link to a folder the tree hides would be listed but refused on expand.
+        // A link to something the tree hides would be listed but refused on expand or open.
         if is_link
             && !path.canonicalize().is_ok_and(|real| {
-                real.starts_with(root) && (!is_dir || is_shown_folder(root, &real))
+                real.starts_with(root)
+                    && if is_dir {
+                        is_shown_folder(root, &real)
+                    } else {
+                        is_listed(root, &real)
+                    }
             })
         {
             continue;
@@ -135,18 +140,23 @@ struct Watched {
     modified: Option<SystemTime>,
     /// `None` while the folder cannot be listed.
     listing: Option<FolderListing>,
+    /// Not listed yet: the first poll lists it, off the main thread.
+    unread: bool,
 }
 
 impl Watched {
+    /// Only the modification time is read here, so setting the watched folders never scans one.
     fn new(root: PathBuf, folder: PathBuf) -> Self {
-        let mut watched = Self {
+        let modified = fs::metadata(&folder)
+            .and_then(|metadata| metadata.modified())
+            .ok();
+        Self {
             root,
             folder,
-            modified: None,
+            modified,
             listing: None,
-        };
-        watched.read();
-        watched
+            unread: true,
+        }
     }
 
     fn read(&mut self) {
@@ -154,6 +164,7 @@ impl Watched {
             .and_then(|metadata| metadata.modified())
             .ok();
         self.listing = list(&self.root, &self.folder).ok();
+        self.unread = false;
     }
 }
 
@@ -162,11 +173,14 @@ impl Watched {
 #[derive(Default)]
 pub struct FolderWatcher {
     watched: Vec<Watched>,
+    /// Counts `set` calls, so `restore` knows whether the folders changed while out.
+    generation: u64,
 }
 
 impl FolderWatcher {
     /// Watches exactly `folders` ((root, folder) pairs), keeping state of those already watched.
     pub fn set(&mut self, folders: Vec<(PathBuf, PathBuf)>) {
+        self.generation += 1;
         let mut previous = std::mem::take(&mut self.watched);
         for (root, folder) in folders {
             if self
@@ -194,14 +208,24 @@ impl FolderWatcher {
             .collect()
     }
 
-    /// Folders whose visible listing changed since the last poll; each change reported once.
+    /// Folders whose visible listing changed since the last poll; each change reported once. A
+    /// folder not listed yet is listed silently, unless it changed since it was watched; then its
+    /// change is reported even if it is not visible.
     pub fn poll(&mut self) -> Vec<String> {
         let mut changed = Vec::new();
         for watched in &mut self.watched {
             let modified = fs::metadata(&watched.folder)
                 .and_then(|metadata| metadata.modified())
                 .ok();
-            if modified.is_some() && modified == watched.modified {
+            let same_time = modified.is_some() && modified == watched.modified;
+            if watched.unread {
+                watched.read();
+                if !same_time {
+                    changed.push(watched.folder.to_string_lossy().into_owned());
+                }
+                continue;
+            }
+            if same_time {
                 continue;
             }
             let before = watched.listing.take();
@@ -211,6 +235,32 @@ impl FolderWatcher {
             }
         }
         changed
+    }
+
+    /// Takes the watched folders out, to poll them without holding the lock `set` waits for.
+    pub fn take(&mut self) -> FolderWatcher {
+        FolderWatcher {
+            watched: std::mem::take(&mut self.watched),
+            generation: self.generation,
+        }
+    }
+
+    /// Puts back the state of polled folders that are still watched. A folder `set` added while
+    /// they were out keeps its fresh state.
+    pub fn restore(&mut self, mut polled: FolderWatcher) {
+        if self.generation == polled.generation {
+            self.watched = polled.watched;
+            return;
+        }
+        for watched in &mut self.watched {
+            if let Some(index) = polled
+                .watched
+                .iter()
+                .position(|old| old.root == watched.root && old.folder == watched.folder)
+            {
+                *watched = polled.watched.swap_remove(index);
+            }
+        }
     }
 }
 
@@ -415,6 +465,25 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn a_link_to_a_file_the_tree_hides_is_not_listed() {
+        use std::os::unix::fs::symlink;
+        let root = scratch("hiddenfilelink");
+        fs::create_dir(root.join(".secret")).unwrap();
+        fs::write(root.join(".secret/s.md"), "").unwrap();
+        fs::write(root.join(".hidden.md"), "").unwrap();
+        fs::write(root.join("ignored.md"), "").unwrap();
+        fs::write(root.join("a.md"), "").unwrap();
+        fs::write(root.join(".gitignore"), "ignored.md\n").unwrap();
+        symlink(root.join(".secret/s.md"), root.join("to-secret.md")).unwrap();
+        symlink(root.join(".hidden.md"), root.join("to-hidden.md")).unwrap();
+        symlink(root.join("ignored.md"), root.join("to-ignored.md")).unwrap();
+        symlink(root.join("a.md"), root.join("to-a.md")).unwrap();
+        let listing = list(&root, &root).unwrap();
+        assert_eq!(names(&listing), ["a.md", "to-a.md"]);
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn a_link_loop_is_listed_once_without_recursion() {
         use std::os::unix::fs::symlink;
         let base = scratch("loop");
@@ -463,10 +532,73 @@ mod tests {
         let root = scratch("invisible");
         let mut watcher = FolderWatcher::default();
         watcher.set(vec![(root.clone(), root.clone())]);
+        assert!(watcher.poll().is_empty());
         fs::write(root.join(".hidden.md"), "").unwrap();
         fs::write(root.join("p.png"), "").unwrap();
         bump(&root, 5);
         assert!(watcher.poll().is_empty());
+    }
+
+    #[test]
+    fn setting_the_watched_folders_lists_none_of_them() {
+        let root = scratch("unread");
+        let mut watcher = FolderWatcher::default();
+        watcher.set(vec![(root.clone(), root.clone())]);
+        assert!(watcher.watched[0].unread);
+        assert!(watcher.watched[0].listing.is_none());
+        assert!(
+            watcher.poll().is_empty(),
+            "the first listing is not a change"
+        );
+        assert!(watcher.watched[0].listing.is_some());
+    }
+
+    #[test]
+    fn a_change_before_the_first_poll_is_reported() {
+        let root = scratch("early");
+        let mut watcher = FolderWatcher::default();
+        watcher.set(vec![(root.clone(), root.clone())]);
+        fs::write(root.join("new.md"), "").unwrap();
+        bump(&root, 5);
+        assert_eq!(watcher.poll(), [root.to_string_lossy().into_owned()]);
+        assert!(watcher.poll().is_empty());
+    }
+
+    #[test]
+    fn folders_polled_while_taken_out_keep_their_state_and_follow_set() {
+        let root = scratch("taken");
+        let other = scratch("taken-other");
+        let mut watcher = FolderWatcher::default();
+        watcher.set(vec![(root.clone(), root.clone())]);
+        let mut polled = watcher.take();
+        assert!(polled.poll().is_empty());
+        watcher.restore(polled);
+        assert!(
+            !watcher.watched[0].unread,
+            "nothing set meanwhile: the polled state is back"
+        );
+
+        let mut polled = watcher.take();
+        watcher.set(vec![
+            (root.clone(), root.clone()),
+            (other.clone(), other.clone()),
+        ]);
+        assert!(polled.poll().is_empty());
+        watcher.restore(polled);
+        assert_eq!(
+            watcher.folders(),
+            [root.to_string_lossy(), other.to_string_lossy()]
+        );
+        assert!(!watcher.watched[0].unread);
+        assert!(watcher.watched[1].unread);
+
+        let polled = watcher.take();
+        watcher.set(Vec::new());
+        watcher.restore(polled);
+        assert!(
+            watcher.folders().is_empty(),
+            "a folder dropped meanwhile does not come back"
+        );
     }
 
     #[test]

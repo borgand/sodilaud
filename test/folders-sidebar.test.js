@@ -208,3 +208,60 @@ test("a root that cannot be listed shows Folder not found", async () => {
   assert.ok(row(app, "/gone").querySelector(".folder-remove"));
   assert.equal(doc(app).getElementById("app-notification").hidden, true);
 });
+
+test("a listing that comes back after its folder was collapsed is dropped, and one expand lists once", async () => {
+  const handlers = folderHandlers({ folders: sample(), roots: [{ path: "/r", name: "r" }], expanded: ["/r"] });
+  const list = handlers.folder_list;
+  let release = null;
+  handlers.folder_list = (args) => {
+    if (args.path !== "/r/docs") return list(args);
+    return new Promise((resolve) => { release = () => resolve(list(args)); });
+  };
+  const app = await bootMainWindow({ instance: 13, handlers });
+  clickRow(app, "/r/docs");
+  await app.settle();
+  // Not awaited: it waits for the listing on its way.
+  app.emit("folder-changed", { path: "/elsewhere" });
+  await app.settle();
+  assert.equal(calls(app, "folder_list").filter((args) => args.path === "/r/docs").length, 1, "a second fill joins the listing on its way");
+  clickRow(app, "/r/docs");
+  await app.settle();
+  release();
+  await app.settle();
+  assert.deepEqual(rows(app), ["/r", "/r/docs", "/r/a.md"]);
+  clickRow(app, "/r/docs");
+  await app.settle();
+  release();
+  await app.settle();
+  assert.equal(calls(app, "folder_list").filter((args) => args.path === "/r/docs").length, 2, "the late listing was not kept");
+  assert.deepEqual(rows(app), ["/r", "/r/docs", "/r/docs/b.md", "/r/a.md"]);
+});
+
+test("the window does not wait for the folders to be listed", async () => {
+  const handlers = folderHandlers({ folders: sample(), roots: [{ path: "/r", name: "r" }], expanded: ["/r"] });
+  const list = handlers.folder_list;
+  let release = null;
+  handlers.folder_list = (args) => new Promise((resolve) => { release = () => resolve(list(args)); });
+  const app = await bootMainWindow({ instance: 14, handlers });
+  assert.ok(app.invocations.some((call) => call.command === "coedit_get_state"));
+  assert.deepEqual(rows(app), ["/r"]);
+  release();
+  await app.settle();
+  assert.deepEqual(rows(app), ["/r", "/r/docs", "/r/a.md"]);
+});
+
+test("a row is named by its name button and described by Folder not found", async () => {
+  const app = await bootMainWindow({
+    instance: 15,
+    handlers: folderHandlers({ folders: sample(), roots: [{ path: "/r", name: "r" }, { path: "/gone", name: "gone" }], expanded: ["/r", "/gone"] })
+  });
+  const name = (path) => {
+    const item = row(app, path);
+    return doc(app).getElementById(item.getAttribute("aria-labelledby"))?.textContent;
+  };
+  assert.equal(name("/r"), "r");
+  assert.equal(name("/r/a.md"), "a.md");
+  assert.equal(name("/gone"), "gone");
+  assert.equal(row(app, "/r").hasAttribute("aria-describedby"), false);
+  assert.equal(doc(app).getElementById(row(app, "/gone").getAttribute("aria-describedby"))?.textContent, "Folder not found");
+});

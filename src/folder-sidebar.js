@@ -17,10 +17,14 @@ export function createFolderSidebar({ document, invoke, openPath, notify = () =>
   let activePath = null;
   // The row in the tab order, and the one keyboard focus returns to.
   let focusPath = null;
+  let rowIds = 0;
+  // One folder_list per path at a time.
+  const inFlight = new Map();
 
   const errorMessage = (error, fallback) => error?.message ?? fallback;
 
   function rowElement(row, tabbable) {
+    const id = `folder-row-${rowIds += 1}`;
     const item = document.createElement("li");
     item.className = `folder-row folder-row-${row.kind}`;
     item.dataset.path = row.path;
@@ -43,8 +47,10 @@ export function createFolderSidebar({ document, invoke, openPath, notify = () =>
     name.type = "button";
     name.className = "folder-name";
     name.tabIndex = -1;
+    name.id = `${id}-name`;
     name.textContent = row.name;
     name.title = row.path;
+    item.setAttribute("aria-labelledby", name.id);
     name.addEventListener("click", () => {
       focusPath = row.path;
       activateRow(row);
@@ -53,7 +59,9 @@ export function createFolderSidebar({ document, invoke, openPath, notify = () =>
     if (row.missing) {
       const missing = document.createElement("span");
       missing.className = "folder-missing";
+      missing.id = `${id}-missing`;
       missing.textContent = MISSING_TEXT;
+      item.setAttribute("aria-describedby", missing.id);
       item.append(missing);
     }
     if (row.kind === "root") {
@@ -88,15 +96,32 @@ export function createFolderSidebar({ document, invoke, openPath, notify = () =>
   const report = () => invoke("folder_set_expanded", { paths: tree.expanded() })
     .catch((error) => console.error("Could not save the expanded folders", error));
 
-  async function list(path) {
+  // A listing that comes back after its folder was collapsed or removed is dropped.
+  const shownExpanded = (path) => tree.rows().some((row) => row.path === path && expandable(row) && row.expanded);
+
+  async function fetchListing(path) {
     try {
-      tree.setListing(await invoke("folder_list", { path }), path);
+      const listing = await invoke("folder_list", { path });
+      if (shownExpanded(path)) tree.setListing(listing, path);
     } catch (error) {
+      if (!shownExpanded(path)) return;
       // Marked missing, so it is not listed again until it changes or is expanded again.
-      if (!tree.rows().some((row) => row.path === path)) return;
       tree.setMissing(path);
       if (error?.code !== "NotFound" && error?.code !== "NotGranted") notify(errorMessage(error, "Could not list the folder"));
     }
+  }
+
+  function list(path) {
+    if (!inFlight.has(path)) {
+      inFlight.set(path, fetchListing(path).finally(() => inFlight.delete(path)));
+    }
+    return inFlight.get(path);
+  }
+
+  // A listing already on its way may predate the change, so a new one follows it.
+  async function relist(path) {
+    await inFlight.get(path);
+    await list(path);
   }
 
   // Lists every shown expanded folder that has no listing yet, top-down.
@@ -215,8 +240,8 @@ export function createFolderSidebar({ document, invoke, openPath, notify = () =>
     async folderChanged(payload) {
       const path = payload?.path;
       if (typeof path !== "string") return;
-      if (tree.rows().some((row) => row.path === path && expandable(row) && row.expanded)) {
-        await list(path);
+      if (shownExpanded(path)) {
+        await relist(path);
         render();
       } else {
         tree.forget(path);
