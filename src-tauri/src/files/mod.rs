@@ -11,18 +11,20 @@ pub mod store;
 pub mod watch;
 pub mod windows;
 
+use std::collections::HashMap;
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::thread;
 
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
 
 use crate::docs::commands::SharedRegistry;
 use crate::docs::files::{Disk, Due};
 use grants::Grants;
 use store::FileLists;
 use watch::Watcher;
+use windows::WindowSet;
 
 #[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FileErrorCode {
@@ -33,6 +35,7 @@ pub enum FileErrorCode {
     WrongWindow,
     NotOpen,
     Unsupported,
+    OpenElsewhere,
     Io,
 }
 
@@ -127,6 +130,23 @@ impl FileError {
         )
     }
 
+    pub fn open_elsewhere(path: &Path) -> Self {
+        Self::new(
+            FileErrorCode::OpenElsewhere,
+            format!("{} is open in another window.", io::file_name(path)),
+        )
+    }
+
+    pub fn owned_elsewhere(path: &Path) -> Self {
+        Self::new(
+            FileErrorCode::Unsupported,
+            format!(
+                "{} is open in another window. Close it there first.",
+                io::file_name(path)
+            ),
+        )
+    }
+
     pub fn wrong_window() -> Self {
         Self::new(
             FileErrorCode::WrongWindow,
@@ -145,13 +165,40 @@ impl FileError {
     }
 }
 
+pub struct Lists {
+    pub windows: WindowSet,
+    pub recent: Vec<String>,
+}
+
+impl Lists {
+    /// Moves `path` to the front of the recent list.
+    pub fn opened_recent(&mut self, path: &str) {
+        self.recent.retain(|recent| recent != path);
+        self.recent.insert(0, path.to_string());
+        self.recent.truncate(store::RECENT_LIMIT);
+    }
+
+    pub fn forget_recent(&mut self, path: &str) {
+        self.recent.retain(|recent| recent != path);
+    }
+}
+
+/// A file handed to one window that its page has not taken yet. `view` is
+/// the scroll and selection a moved file carries.
+#[derive(Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingOpen {
+    pub path: String,
+    pub view: Option<serde_json::Value>,
+}
+
 pub struct Files {
     lists_path: Option<PathBuf>,
     grants: Mutex<Grants>,
-    lists: Mutex<FileLists>,
+    lists: Mutex<Lists>,
     watcher: Mutex<Watcher>,
-    /// Files handed over from outside that the page has not taken yet.
-    pending: Mutex<Vec<String>>,
+    /// Per window label.
+    pending: Mutex<HashMap<String, Vec<PendingOpen>>>,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -166,23 +213,35 @@ impl Files {
             .app_config_dir()
             .ok()
             .map(|directory| directory.join(store::FILE_NAME));
-        let lists = lists_path.as_deref().map(store::load).unwrap_or_default();
+        let saved = lists_path.as_deref().map(store::load).unwrap_or_default();
+        let lists = Lists {
+            windows: WindowSet::from_saved(saved.windows),
+            recent: saved.recent,
+        };
         let mut grants = Grants::default();
-        for path in lists
-            .windows
-            .iter()
-            .flat_map(|window| &window.open)
-            .chain(&lists.recent)
-        {
+        for path in lists.windows.all_open().iter().chain(&lists.recent) {
             let _ = grants.grant(Path::new(path));
         }
+        Self::new(lists_path, grants, lists)
+    }
+
+    fn new(lists_path: Option<PathBuf>, grants: Grants, lists: Lists) -> Self {
         Self {
             lists_path,
             grants: Mutex::new(grants),
             lists: Mutex::new(lists),
             watcher: Mutex::new(Watcher::default()),
-            pending: Mutex::new(Vec::new()),
+            pending: Mutex::new(HashMap::new()),
         }
+    }
+
+    #[cfg(test)]
+    fn for_test() -> Self {
+        let lists = Lists {
+            windows: WindowSet::from_saved(vec![]),
+            recent: Vec::new(),
+        };
+        Self::new(None, Grants::default(), lists)
     }
 
     pub fn grant(&self, path: &Path) -> Result<PathBuf, FileError> {
@@ -193,21 +252,29 @@ impl Files {
         lock(&self.grants).require(Path::new(path))
     }
 
-    pub fn lists(&self) -> FileLists {
-        lock(&self.lists).clone()
+    pub fn read<T>(&self, f: impl FnOnce(&Lists) -> T) -> T {
+        f(&lock(&self.lists))
     }
 
-    pub fn update_lists(&self, change: impl FnOnce(&mut FileLists)) {
-        let snapshot = {
+    /// Changes the lists, saves them and watches every window's open files.
+    pub fn update<T>(&self, f: impl FnOnce(&mut Lists) -> T) -> T {
+        let (result, snapshot, open) = {
             let mut lists = lock(&self.lists);
-            change(&mut lists);
-            lists.clone()
+            let result = f(&mut lists);
+            let snapshot = FileLists {
+                windows: lists.windows.saved(),
+                recent: lists.recent.clone(),
+                open: Vec::new(),
+            };
+            (result, snapshot, lists.windows.all_open())
         };
         if let Some(path) = &self.lists_path {
             if let Err(error) = store::save(path, &snapshot) {
                 eprintln!("{error}");
             }
         }
+        self.watch(open.into_iter().map(PathBuf::from).collect());
+        result
     }
 
     pub fn watch(&self, paths: Vec<PathBuf>) {
@@ -233,8 +300,20 @@ impl Files {
         Ok(hash)
     }
 
-    pub fn take_pending(&self) -> Vec<String> {
-        std::mem::take(&mut *lock(&self.pending))
+    pub fn queue(&self, label: &str, entries: Vec<PendingOpen>) {
+        lock(&self.pending)
+            .entry(label.to_string())
+            .or_default()
+            .extend(entries);
+    }
+
+    pub fn take_pending(&self, label: &str) -> Vec<PendingOpen> {
+        lock(&self.pending).remove(label).unwrap_or_default()
+    }
+
+    #[allow(dead_code)]
+    pub fn drop_pending(&self, label: &str) {
+        lock(&self.pending).remove(label);
     }
 }
 
@@ -289,9 +368,9 @@ pub fn start(app: &AppHandle) {
 }
 
 /// Files handed to Sodilaud from outside (Finder, or a launch with file
-/// arguments): grant them, show the main window and tell it to take them. At
-/// launch the page may not be listening yet; it takes pending files when it
-/// starts too.
+/// arguments): grant them, show the window that has each one open (or the
+/// focused window) and tell it to take them. At launch the page may not be
+/// listening yet; it takes pending files when it starts too.
 pub fn open_from_system(app: &AppHandle, paths: Vec<PathBuf>) {
     let Some(files) = app.try_state::<Files>() else {
         return;
@@ -304,17 +383,19 @@ pub fn open_from_system(app: &AppHandle, paths: Vec<PathBuf>) {
     present_pending(app, &files, granted);
 }
 
-fn present_pending(app: &AppHandle, files: &Files, granted: Vec<String>) {
+pub fn present_pending(app: &AppHandle, files: &Files, granted: Vec<String>) {
     if granted.is_empty() {
         return;
     }
-    lock(&files.pending).extend(granted);
-    crate::quicknotes::window::show_main(app, None);
-    let _ = app.emit_to(
-        crate::quicknotes::window::MAIN_LABEL,
-        commands::OPEN_REQUEST_EVENT,
-        (),
-    );
+    let groups = files.update(|lists| lists.windows.route(&granted));
+    for (label, paths) in groups {
+        let entries = paths
+            .into_iter()
+            .map(|path| PendingOpen { path, view: None })
+            .collect();
+        files.queue(&label, entries);
+        crate::main_window::present(app, &label);
+    }
 }
 
 fn is_text_file(path: &Path) -> bool {
@@ -388,7 +469,8 @@ pub struct OpenedDocument {
 }
 
 /// Opens a file an agent named, the way Finder's "Open With" does: grants that
-/// one file, then shows it in the main window. Opening an open file switches to it.
+/// one file, then shows it in the window that has it open, or the focused one.
+/// Opening an open file switches to it.
 pub fn open_for_agent(app: &AppHandle, path: &str) -> Result<OpenedDocument, FileError> {
     let (resolved, bytes) = agent_document(path)?;
     let files = app
@@ -424,9 +506,63 @@ pub fn paths_from_args<I: IntoIterator<Item = String>>(args: I) -> Vec<PathBuf> 
 
 #[cfg(test)]
 mod tests {
-    use super::{agent_document, paths_from_args, sibling_document, FileErrorCode};
+    use super::{
+        agent_document, paths_from_args, sibling_document, FileError, FileErrorCode, Files,
+        PendingOpen,
+    };
+    use crate::files::store::RECENT_LIMIT;
+    use serde_json::json;
     use std::fs;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
+
+    #[test]
+    fn pending_opens_are_kept_per_window() {
+        let files = Files::for_test();
+        files.queue(
+            "main",
+            vec![PendingOpen {
+                path: "/a.md".into(),
+                view: None,
+            }],
+        );
+        files.queue(
+            "main-2",
+            vec![PendingOpen {
+                path: "/b.md".into(),
+                view: Some(json!({"top": 3})),
+            }],
+        );
+        assert_eq!(files.take_pending("main-2")[0].path, "/b.md");
+        assert!(files.take_pending("main-2").is_empty());
+        assert_eq!(files.take_pending("main").len(), 1);
+    }
+
+    #[test]
+    fn recent_files_are_newest_first_without_duplicates_and_capped() {
+        let files = Files::for_test();
+        files.update(|lists| {
+            for index in 0..12 {
+                lists.opened_recent(&format!("/f/{index}.md"));
+            }
+            lists.opened_recent("/f/5.md");
+        });
+        let recent = files.read(|lists| lists.recent.clone());
+        assert_eq!(recent.len(), RECENT_LIMIT);
+        assert_eq!(recent[0], "/f/5.md");
+        assert_eq!(recent[1], "/f/11.md");
+        assert_eq!(recent.iter().filter(|p| *p == "/f/5.md").count(), 1);
+    }
+
+    #[test]
+    fn an_open_elsewhere_error_names_the_file() {
+        let error = FileError::open_elsewhere(Path::new("/d/plan.md"));
+        assert_eq!(error.code, FileErrorCode::OpenElsewhere);
+        assert_eq!(error.message, "plan.md is open in another window.");
+        assert_eq!(
+            FileError::owned_elsewhere(Path::new("/d/plan.md")).message,
+            "plan.md is open in another window. Close it there first."
+        );
+    }
 
     fn scratch(name: &str) -> PathBuf {
         let nanos = std::time::SystemTime::now()

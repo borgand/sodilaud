@@ -481,7 +481,8 @@ export function createFileEditor({
 
   async function syncOpenList() {
     try {
-      await invoke("file_set_open", { paths: model.paths() });
+      const active = (showingStartPage ? null : model.active()?.path) ?? null;
+      await invoke("file_set_open", { paths: model.paths(), active });
     } catch (error) {
       console.error("Could not update the open files", error);
     }
@@ -527,6 +528,8 @@ export function createFileEditor({
     try {
       return await opened(await invoke("file_doc_open", { path }));
     } catch (error) {
+      // Rust has already brought the owning window forward.
+      if (error?.code === "OpenElsewhere") return null;
       notify(error?.message ?? "Could not open the file");
       return null;
     }
@@ -791,15 +794,15 @@ export function createFileEditor({
   }
 
   async function takePending() {
-    let paths = [];
+    let entries = [];
     try {
-      paths = await invoke("file_take_pending");
+      entries = await invoke("file_take_pending");
     } catch (error) {
       console.error("Could not read files opened from outside", error);
     }
     let last = null;
-    for (const path of Array.isArray(paths) ? paths : []) {
-      last = (await openPath(path)) ?? last;
+    for (const entry of Array.isArray(entries) ? entries : []) {
+      last = (await openPath(entry.path)) ?? last;
     }
     return last;
   }

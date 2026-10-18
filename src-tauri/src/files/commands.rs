@@ -3,15 +3,14 @@
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
-use tauri::{State, Window};
+use tauri::{AppHandle, State, Window};
 
 use super::io::{self, LineEnding};
-use super::store::{FileLists, SavedWindow};
-use super::{FileError, Files, OpenedDocument};
+use super::windows::{Claim, MAIN_LABEL};
+use super::{FileError, Files, OpenedDocument, PendingOpen};
 use crate::docs::commands::SharedRegistry;
 use crate::docs::files::{FileOpened, FileSaved, Resolve};
 use crate::docs::registry::{Pulled, Pushed, Update};
-use crate::quicknotes::window::MAIN_LABEL;
 
 pub const OPEN_REQUEST_EVENT: &str = "file-open-request";
 const TEXT_EXTENSIONS: &[&str] = &["md", "markdown", "txt"];
@@ -42,30 +41,15 @@ pub struct RecentFile {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Lists {
+pub struct ListsView {
     open: Vec<String>,
     recent: Vec<RecentFile>,
 }
 
-// Temporary single-window bookkeeping until the window set replaces it.
-fn push_open(lists: &mut FileLists, path: &str) {
-    if lists.windows.is_empty() {
-        lists.windows.push(SavedWindow::default());
-    }
-    if !lists.windows[0].open.iter().any(|open| open == path) {
-        lists.windows[0].open.push(path.to_string());
-    }
-}
-
-fn lists_view(lists: FileLists) -> Lists {
-    Lists {
-        open: lists
-            .windows
-            .iter()
-            .flat_map(|window| window.open.clone())
-            .collect(),
-        recent: lists
-            .recent
+fn lists_view(open: Vec<String>, recent: Vec<String>) -> ListsView {
+    ListsView {
+        open,
+        recent: recent
             .into_iter()
             .map(|path| RecentFile {
                 name: io::file_name(Path::new(&path)),
@@ -119,13 +103,19 @@ pub fn file_save_as_dialog(
         return Ok(None);
     };
     let path: PathBuf = files.grant(&chosen)?;
+    let path_text = path.to_string_lossy().to_string();
+    let label = window.label();
+    let owner = files.read(|lists| lists.windows.owner(&path_text));
+    if owner.is_some_and(|owner| owner != label) {
+        return Err(FileError::owned_elsewhere(&chosen));
+    }
     // A document open at that path would otherwise autosave over this write.
     registry.file_discard(&path);
     let hash = files.write(&path, &text, line_ending, bom)?;
-    let path_text = path.to_string_lossy().to_string();
-    files.update_lists(|lists| {
+    // An unknown window surfaces when the page opens the saved file.
+    files.update(|lists| {
         lists.opened_recent(&path_text);
-        push_open(lists, &path_text);
+        lists.windows.claim(label, &path_text);
     });
     Ok(Some(Saved {
         name: io::file_name(&path),
@@ -135,9 +125,11 @@ pub fn file_save_as_dialog(
 }
 
 /// Opens a granted file in the registry: from the dialog, the recent list,
-/// Finder, or at start-up.
+/// Finder, or at start-up. A file another window has open is not opened here:
+/// that window is brought forward and shows it instead.
 #[tauri::command]
 pub fn file_doc_open(
+    app: AppHandle,
     window: Window,
     files: State<'_, Files>,
     registry: State<'_, SharedRegistry>,
@@ -145,12 +137,55 @@ pub fn file_doc_open(
 ) -> Result<FileOpened, FileError> {
     require_main(&window)?;
     let path = files.require(&path)?;
-    let opened = registry.file_open(&path, &*files)?;
-    files.update_lists(|lists| {
-        lists.opened_recent(&opened.path);
-        push_open(lists, &opened.path);
+    let path_text = path.to_string_lossy().to_string();
+    let label = window.label();
+    let (claim, was_open) = files.update(|lists| {
+        let was_open = lists.windows.owner(&path_text).is_some();
+        (lists.windows.claim(label, &path_text), was_open)
     });
+    match claim {
+        None => return Err(FileError::wrong_window()),
+        Some(Claim::Elsewhere(owner)) => {
+            files.queue(
+                &owner,
+                vec![PendingOpen {
+                    path: path_text,
+                    view: None,
+                }],
+            );
+            let handle = app.clone();
+            let _ = app.run_on_main_thread(move || crate::main_window::present(&handle, &owner));
+            return Err(FileError::open_elsewhere(&path));
+        }
+        Some(Claim::Mine) => {}
+    }
+    let opened = match registry.file_open(&path, &*files) {
+        Ok(opened) => opened,
+        Err(error) => {
+            if !was_open {
+                files.update(|lists| release(lists, label, &path_text));
+            }
+            return Err(error);
+        }
+    };
+    files.update(|lists| lists.opened_recent(&opened.path));
     Ok(opened)
+}
+
+/// Takes back a claim for a file that then failed to open, so it neither
+/// reopens at the next launch nor sends other windows here.
+fn release(lists: &mut super::Lists, label: &str, path: &str) {
+    let Some(entry) = lists.windows.entry(label) else {
+        return;
+    };
+    let open = entry
+        .open
+        .iter()
+        .filter(|open| *open != path)
+        .cloned()
+        .collect();
+    let active = entry.active.clone();
+    lists.windows.set_open(label, open, active);
 }
 
 /// Grants the file a link in the open document `from_path` names by a relative
@@ -238,47 +273,53 @@ pub fn file_doc_resolve(
     registry.file_resolve(&files.require(&path)?, keep, &*files)
 }
 
+/// This window's open files, and the recent files.
 #[tauri::command]
-pub fn file_lists(window: Window, files: State<'_, Files>) -> Result<Lists, FileError> {
+pub fn file_lists(window: Window, files: State<'_, Files>) -> Result<ListsView, FileError> {
     require_main(&window)?;
-    Ok(lists_view(files.lists()))
+    let (open, recent) = files.read(|lists| {
+        let open = lists
+            .windows
+            .entry(window.label())
+            .map(|entry| entry.open.clone())
+            .unwrap_or_default();
+        (open, lists.recent.clone())
+    });
+    Ok(lists_view(open, recent))
 }
 
-/// The files open in the main window, in sidebar order. Only granted paths are
-/// kept, and they are the ones watched for outside edits.
+/// The files open in this window, in sidebar order, and the one shown. Only
+/// granted paths not open in another window are kept. Every window's open
+/// files are watched for outside edits.
 #[tauri::command]
 pub fn file_set_open(
     window: Window,
     files: State<'_, Files>,
     paths: Vec<String>,
+    active: Option<String>,
 ) -> Result<(), FileError> {
     require_main(&window)?;
-    let granted: Vec<PathBuf> = paths
-        .iter()
-        .filter_map(|path| files.require(path).ok())
-        .collect();
-    let open = granted
-        .iter()
-        .map(|path| path.to_string_lossy().to_string())
-        .collect();
-    files.update_lists(|lists| {
-        if lists.windows.is_empty() {
-            lists.windows.push(SavedWindow::default());
-        }
-        lists.windows[0].open = open;
-    });
-    files.watch(granted);
+    let granted = |path: &String| {
+        files
+            .require(path)
+            .ok()
+            .map(|path| path.to_string_lossy().to_string())
+    };
+    let open = paths.iter().filter_map(granted).collect();
+    let active = active.as_ref().and_then(granted);
+    files.update(|lists| lists.windows.set_open(window.label(), open, active));
     Ok(())
 }
 
-/// Files handed over from Finder or a launch argument, already granted.
+/// Files handed to this window from Finder, a launch argument, an agent or
+/// another window, already granted.
 #[tauri::command]
 pub fn file_take_pending(
     window: Window,
     files: State<'_, Files>,
-) -> Result<Vec<String>, FileError> {
+) -> Result<Vec<PendingOpen>, FileError> {
     require_main(&window)?;
-    Ok(files.take_pending())
+    Ok(files.take_pending(window.label()))
 }
 
 #[tauri::command]
@@ -288,7 +329,7 @@ pub fn file_forget_recent(
     path: String,
 ) -> Result<(), FileError> {
     require_main(&window)?;
-    files.update_lists(|lists| lists.forget_recent(&path));
+    files.update(|lists| lists.forget_recent(&path));
     Ok(())
 }
 

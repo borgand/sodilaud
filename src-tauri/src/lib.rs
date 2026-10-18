@@ -16,6 +16,7 @@ mod docs;
 mod files;
 mod hook;
 mod integration;
+mod main_window;
 mod mcp;
 mod mcp_config;
 mod platform;
@@ -362,6 +363,14 @@ fn on_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
     #[cfg(target_os = "macos")]
     clipboard::popup::on_window_event(window, event);
     quicknotes::window::on_window_event(window, event);
+    if let tauri::WindowEvent::Focused(true) = event {
+        let label = window.label();
+        if files::windows::is_main_label(label) {
+            if let Some(files) = window.try_state::<files::Files>() {
+                files.update(|lists| lists.windows.focused(label));
+            }
+        }
+    }
     if window.label() == quicknotes::window::MAIN_LABEL {
         if let tauri::WindowEvent::CloseRequested { api, .. } = event {
             // The main window is never destroyed: closing it hides it (macOS keeps
