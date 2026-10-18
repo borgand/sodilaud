@@ -490,7 +490,29 @@ async function registerQuitHandler(listen) {
       console.error("Failed to quit Sodilaud", error);
     });
   });
+  await registerCloseHandler(listen);
   await invoke("quit_handler_ready");
+}
+
+// Rust asks before closing a window that is not the last one, once this page
+// can answer (`quit_handler_ready`): the window closes once its files are saved.
+async function registerCloseHandler(listen) {
+  let closing = false;
+  await listen("main-window-close-requested", async () => {
+    if (closing) return;
+    closing = true;
+    let ok = false;
+    try {
+      ok = await fileEditor.flushForClose();
+    } catch (error) {
+      console.error("Failed to save files before closing the window", error);
+    } finally {
+      closing = false;
+    }
+    invoke("main_window_close_done", { ok }).catch((error) => {
+      console.error("Failed to close the window", error);
+    });
+  });
 }
 
 async function registerNativeHandlers() {

@@ -6,8 +6,8 @@ use std::path::Path;
 
 use serde::Serialize;
 use tauri::{
-    AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, State, WebviewUrl, WebviewWindow,
-    WebviewWindowBuilder,
+    AppHandle, CloseRequestApi, Emitter, Manager, PhysicalPosition, PhysicalSize, State,
+    WebviewUrl, WebviewWindow, WebviewWindowBuilder, Window,
 };
 
 use crate::docs::commands::SharedRegistry;
@@ -16,6 +16,8 @@ use crate::files::windows::{is_main_label, WindowSet};
 use crate::files::{io, FileError, Files, PendingOpen};
 use crate::quicknotes::config::{clamp_frame, Frame, Screen};
 
+/// Asks one main window's page to save its files before it closes.
+pub const CLOSE_REQUESTED_EVENT: &str = "main-window-close-requested";
 /// The most view state a moved file carries, as JSON.
 pub const VIEW_LIMIT: usize = 65_536;
 const DEFAULT_WIDTH: f64 = 960.0;
@@ -73,6 +75,63 @@ pub fn hide_all(app: &AppHandle) {
         }
     }
     let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+}
+
+/// Closing the last main window: macOS keeps running in the menu bar, the other
+/// platforms quit once every window has saved.
+fn close_last(app: &AppHandle) {
+    #[cfg(target_os = "macos")]
+    hide_all(app);
+    #[cfg(not(target_os = "macos"))]
+    crate::quit::request(app);
+}
+
+/// A main window is never closed by the system: the last one keeps today's
+/// behavior, any other first saves through its page, which then answers with
+/// `main_window_close_done`.
+pub fn on_close_requested(window: &Window, api: &CloseRequestApi) {
+    api.prevent_close();
+    let app = window.app_handle();
+    let label = window.label();
+    if labels(app).len() < 2 {
+        close_last(app);
+    } else if !crate::quit::is_registered(app, label) {
+        close(window);
+    } else {
+        let _ = app.emit_to(label, CLOSE_REQUESTED_EVENT, ());
+    }
+}
+
+/// Forgets the window's files and destroys it, or closes the last window as
+/// before when the others went away meanwhile.
+fn close(window: &Window) {
+    let app = window.app_handle();
+    let label = window.label();
+    if labels(app).len() < 2 {
+        close_last(app);
+        return;
+    }
+    if let (Some(files), Some(registry)) =
+        (app.try_state::<Files>(), app.try_state::<SharedRegistry>())
+    {
+        let paths = files.update(|lists| lists.windows.remove(label));
+        for path in paths {
+            if let Err(error) = registry.file_close(Path::new(&path), &*files) {
+                eprintln!("Could not close {path}: {}", error.message);
+            }
+        }
+        files.drop_pending(label);
+    }
+    crate::quit::forget_window(app, label);
+    let _ = window.destroy();
+}
+
+/// The page saved its files for a close (`ok`), or kept the window open.
+#[tauri::command]
+pub fn main_window_close_done(window: Window, ok: bool) {
+    if ok && is_main_label(window.label()) {
+        close(&window);
+    }
 }
 
 /// Builds a main window. `frame` is in physical pixels: the outer position and
@@ -187,7 +246,9 @@ pub fn restore(app: &AppHandle, visible: bool) {
                 }
             }
             None => {
-                create(app, &label, frame, false);
+                if create(app, &label, frame, false).is_none() {
+                    abandon(app, &files, &label);
+                }
             }
         }
     }
@@ -252,14 +313,20 @@ pub fn summaries(set: &WindowSet, except: &str) -> Vec<WindowSummary> {
         .collect()
 }
 
+/// A window that could not be built leaves the set, and the files queued for
+/// it go to another window.
+fn abandon(app: &AppHandle, files: &Files, label: &str) {
+    files.update(|lists| lists.windows.remove(label));
+    let orphaned = files.take_pending(label);
+    crate::files::present_pending(app, files, orphaned.into_iter().map(|p| p.path).collect());
+}
+
 /// Adds a window to the set and builds it next to `source`. A window that
 /// cannot be built leaves the set again, so nothing is routed to it.
 fn open_new(app: &AppHandle, files: &Files, source: &WebviewWindow) -> Result<String, FileError> {
     let label = files.update(|lists| lists.windows.add());
     if create(app, &label, cascade_from(source), true).is_none() {
-        files.update(|lists| lists.windows.remove(&label));
-        let orphaned = files.take_pending(&label);
-        crate::files::present_pending(app, files, orphaned.into_iter().map(|p| p.path).collect());
+        abandon(app, files, &label);
         return Err(FileError::other("Could not open a new window.".to_string()));
     }
     show(app, &label);

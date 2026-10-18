@@ -311,7 +311,6 @@ impl Files {
         lock(&self.pending).remove(label).unwrap_or_default()
     }
 
-    #[allow(dead_code)]
     pub fn drop_pending(&self, label: &str) {
         lock(&self.pending).remove(label);
     }
