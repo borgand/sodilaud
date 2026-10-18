@@ -91,3 +91,49 @@ test("document-area rules use theme tokens, never colour literals", () => {
   assert.ok(checked > 20, "the scan found document rules");
   assert.deepEqual(offenders, []);
 });
+
+function declarations(selector) {
+  return [...styles.matchAll(/([^{}]+)\{([^}]*)\}/g)]
+    .filter(([, selectors]) => selectors.replace(/\/\*[\s\S]*?\*\//g, "").split(",").map(s => s.trim()).includes(selector))
+    .map(([, , body]) => body)
+    .join("\n");
+}
+
+const HEADING_SIZES = ["2.25em", "1.7em", "1.3em", "1.1em", "1em", "0.9em"];
+
+test("Live and Reading use the same heading scale", () => {
+  HEADING_SIZES.forEach((size, index) => {
+    const level = index + 1;
+    const reading = declarations(`.markdown-preview h${level}`);
+    const live = declarations(`.cm-mode-live .cm-lp-h${level}`);
+    assert.match(reading, new RegExp(`font-size:\\s*${size.replace(".", "\\.")}\\b`), `Reading h${level}`);
+    assert.match(live, new RegExp(`font-size:\\s*${size.replace(".", "\\.")}\\b`), `Live h${level}`);
+  });
+  for (const selector of [".markdown-preview h1", ".cm-mode-live .cm-lp-h1"]) {
+    assert.ok(styles.includes(selector));
+  }
+  const shared = declarations(".cm-mode-live .cm-lp-h1");
+  assert.match(shared, /font-weight:\s*700/);
+  assert.match(shared, /line-height:\s*1\.25/);
+  assert.match(shared, /letter-spacing:\s*-0\.02em/);
+  assert.match(declarations(".markdown-preview h1"), /font-weight:\s*700/);
+});
+
+test("Live heading lines use padding, not margin", () => {
+  const rules = [...styles.matchAll(/([^{}]*\.cm-mode-live \.cm-lp-(?:h[1-6]|heading-rule)[^{}]*)\{([^}]*)\}/g)];
+  assert.ok(rules.length > 0);
+  for (const [, selector, body] of rules) {
+    assert.doesNotMatch(body, /(^|[\s;])margin/, selector.trim());
+  }
+});
+
+test("only the last line of an H1 or H2 carries the rule in Live", () => {
+  assert.match(declarations(".cm-mode-live .cm-lp-heading-rule"), /border-bottom:\s*1px solid var\(--preview-hr\)/);
+  assert.doesNotMatch(declarations(".cm-mode-live .cm-lp-h1"), /border-bottom/);
+});
+
+test("Reading mode follows editor zoom and line spacing", () => {
+  const body = declarations(".markdown-preview");
+  assert.match(body, /font-size:\s*var\(--editor-font-size\)/);
+  assert.match(body, /line-height:\s*var\(--editor-line-height\)/);
+});

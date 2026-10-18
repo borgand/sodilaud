@@ -5,7 +5,7 @@ export const MIN_EDITOR_ZOOM = 0.5;
 export const MAX_EDITOR_ZOOM = 2;
 export const EDITOR_ZOOM_STEP = 0.1;
 
-export const DEFAULT_EDITOR_LINE_SPACING = 1.6;
+export const DEFAULT_EDITOR_LINE_SPACING = 1.7;
 export const MIN_EDITOR_LINE_SPACING = 1.2;
 export const MAX_EDITOR_LINE_SPACING = 2.4;
 export const EDITOR_LINE_SPACING_STEP = 0.1;

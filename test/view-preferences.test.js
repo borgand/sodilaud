@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  DEFAULT_EDITOR_LINE_SPACING,
   LAYOUT_MODES,
   normalizeEditorLineNumbers,
   normalizeEditorLineSpacing,
@@ -68,3 +69,5 @@ test("layout modes migrate legacy values and default to live", () => {
   assert.equal(normalizeLayoutMode(42), "live");
   assert.equal(normalizeLayoutMode("toString"), "live");
 });
+
+test("default line spacing is 1.7", () => assert.equal(DEFAULT_EDITOR_LINE_SPACING, 1.7));

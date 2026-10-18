@@ -420,6 +420,9 @@ const lineClasses = {};
 for (const name of ["h1", "h2", "h3", "h4", "h5", "h6", "quote", "codeblock", "hr"]) {
   lineClasses[name] = Decoration.line({ class: `cm-lp-${name}` });
 }
+for (const level of [1, 2]) {
+  lineClasses[`h${level}-rule`] = Decoration.line({ class: `cm-lp-h${level} cm-lp-heading-rule` });
+}
 for (const name of ["head", "foot", "highlighted"]) {
   lineClasses[`codeblock-${name}`] = Decoration.line({ class: `cm-lp-codeblock cm-lp-codeblock-${name}` });
 }
@@ -583,6 +586,9 @@ function buildInline(view, focused) {
           const underline = name.startsWith("Setext") ? ref.node.getChild("HeaderMark") : null;
           const textEnd = underline ? doc.lineAt(underline.from).from - 1 : to;
           markLines(from, textEnd, `h${level}`, rangeFrom, rangeTo);
+          if (level <= 2 && textEnd >= rangeFrom && textEnd <= rangeTo) {
+            lineDecorations.set(doc.lineAt(textEnd).from, lineClasses[`h${level}-rule`]);
+          }
           return true;
         }
 

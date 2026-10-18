@@ -524,3 +524,9 @@ test("code blocks draw their background under the selection, not on their lines"
     assert.ok(Number(layer.style.zIndex) < Number(selection.style.zIndex), "the backgrounds sit under the selection");
   } finally { t.done(); }
 });
+
+test("H1 and H2 carry a rule on their last text line, H3 does not", async () => {
+  const t = await setup("# One\n\n## Two\n\n### Three\n\nSetext\nheading\n===\n\nbody", { focused: false });
+  const ruled = t.lines().filter(l => l.classList.contains("cm-lp-heading-rule")).map(l => l.textContent);
+  assert.deepEqual(ruled, ["One", "Two", "heading"]);
+});

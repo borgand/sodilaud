@@ -76,7 +76,7 @@ test("the main window's appearance settings are adjustable, persistent and share
   document.getElementById("zoom-reset-btn").click();
   assert.equal(app.storage.getItem("sodilaud_editor_zoom"), "1");
   document.getElementById("line-spacing-value").click();
-  assert.equal(app.storage.getItem("sodilaud_editor_line_spacing"), "1.6");
+  assert.equal(app.storage.getItem("sodilaud_editor_line_spacing"), "1.7");
 
   document.getElementById("theme-picker-btn").click();
   document.querySelector('[aria-label="Use Default Light theme"]').click();
