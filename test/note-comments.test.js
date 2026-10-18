@@ -15,7 +15,7 @@ test("notes take comments, from the shortcut or the context menu, and agent comm
   const { document } = app.dom.window;
   const view = app.editor();
   await app.settle();
-  assert.equal(document.getElementById("comments-count-btn").textContent, "No comments");
+  assert.equal(document.getElementById("comments-count-btn").hidden, true);
 
   const from = view.state.doc.toString().indexOf("Friday");
   view.dispatch({ selection: { anchor: from, head: from + 6 } });
@@ -27,6 +27,7 @@ test("notes take comments, from the shortcut or the context menu, and agent comm
   await app.settle(300);
   assert.deepEqual(app.registry.comments("a").map(c => [c.anchoredText, c.body]), [["Friday", "Which Friday?"]]);
   assert.equal(document.getElementById("comments-count-btn").textContent, "1 comment");
+  assert.equal(document.getElementById("comments-count-btn").hidden, false);
   assert.equal(document.getElementById("comments-panel").hidden, false);
 
   app.registry.agentComment("a", "Ship", "Ship what, exactly?");

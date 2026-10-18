@@ -28,6 +28,7 @@ test("Ctrl+Alt+M comments on Linux and Windows", async () => {
   press({ key: "m", ctrlKey: true, altKey: true });
   await app.settle();
   assert.ok(app.dom.window.document.querySelector(".cm-comment-composer"));
+  assert.equal(app.dom.window.document.getElementById("comments-count-btn").hidden, true);
   app.click("comments-count-btn");
   await app.settle();
   assert.match(app.dom.window.document.getElementById("comments-panel").textContent, /Ctrl\+Alt\+M/);

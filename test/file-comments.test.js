@@ -36,8 +36,7 @@ test("a comment on a file: composer, panel, review mode, replies and agent edits
   const app = await bootMainWindow({ platform: "MacIntel", disk: { [PATH]: TEXT }, handlers: handlers([PATH]) });
   const { $, select, key, composer, items, marks } = helpers(app);
   await app.settle();
-  assert.equal($("comments-count-btn").hidden, false);
-  assert.equal($("comments-count-btn").textContent, "No comments");
+  assert.equal($("comments-count-btn").hidden, true, "no comments, no agent: hidden");
 
   // ⌘⌥M opens the composer under the selection; typing elsewhere goes on.
   select("vague");
@@ -55,6 +54,7 @@ test("a comment on a file: composer, panel, review mode, replies and agent edits
   assert.deepEqual(marks(), ["vague"]);
   assert.equal($("comments-panel").hidden, false, "the panel opens on the first comment");
   assert.equal($("comments-count-btn").textContent, "1 comment");
+  assert.equal($("comments-count-btn").hidden, false);
 
   // Hold for review keeps the next one back until Send review.
   [...$("comments-panel").querySelectorAll(".comments-mode-option")].find(b => b.textContent === "Hold for review").click();
@@ -130,4 +130,18 @@ test("a comment on a file: composer, panel, review mode, replies and agent edits
   $("comments-panel").querySelector(".comments-clear-resolved").click();
   await app.settle();
   assert.ok(!app.fileDocs.comments(PATH).some(c => c.id === first.id));
+});
+
+test("the count shows No comments while an agent listens", async () => {
+  const app = await bootMainWindow({ platform: "MacIntel", instance: 2, disk: { [PATH]: TEXT }, handlers: handlers([PATH]) });
+  const { $ } = helpers(app);
+  await app.settle();
+  app.emit("coedit-state", { holdForReview: false, listening: true });
+  await app.settle();
+  assert.equal($("comments-count-btn").hidden, false);
+  assert.equal($("comments-count-btn").textContent, "No comments");
+  assert.ok($("comments-count-btn").classList.contains("listening"));
+  app.emit("coedit-state", { holdForReview: false, listening: false });
+  await app.settle();
+  assert.equal($("comments-count-btn").hidden, true);
 });
