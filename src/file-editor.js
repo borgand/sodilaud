@@ -776,8 +776,8 @@ export function createFileEditor({
   // ----------------------------------------------------
   // Quit and start-up
   // ----------------------------------------------------
-  // Saves everything before a quit. Returns false to cancel it.
-  async function flushForQuit() {
+  // Saves everything before a quit or a window close. Returns false to cancel it.
+  async function flushAll(failureMessage) {
     for (const buffer of model.list()) {
       if (!(await resolveUnsavedNew(buffer))) return false;
     }
@@ -788,10 +788,13 @@ export function createFileEditor({
     if (!ok) {
       const failed = model.list().find((buffer) => buffer.error);
       if (failed) show(failed);
-      notify("Could not save every file; quit cancelled");
+      notify(failureMessage);
     }
     return ok;
   }
+
+  const flushForQuit = () => flushAll("Could not save every file; quit cancelled");
+  const flushForClose = () => flushAll("Could not save every file; the window stays open.");
 
   async function takePending() {
     let entries = [];
@@ -902,6 +905,7 @@ export function createFileEditor({
     toggleSidebar,
     setLayoutMode,
     flushForQuit,
+    flushForClose,
     newFile,
     openDialog,
     openPath,

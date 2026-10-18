@@ -370,13 +370,7 @@ fn on_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
         }
     }
     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-        // A main window is never destroyed: closing it hides every main window
-        // (macOS keeps running in the tray) or quits after every window has saved.
-        api.prevent_close();
-        #[cfg(target_os = "macos")]
-        clipboard::tray::hide_main(window.app_handle());
-        #[cfg(not(target_os = "macos"))]
-        quit::request(window.app_handle());
+        main_window::on_close_requested(window, api);
     }
 }
 
@@ -489,7 +483,8 @@ pub fn run(context: tauri::Context<tauri::Wry>) {
             files::commands::file_doc_resolve,
             main_window::main_window_new,
             main_window::main_window_move_file,
-            main_window::main_window_list
+            main_window::main_window_list,
+            main_window::main_window_close_done
         ])
         .setup(|app| {
             #[cfg(target_os = "macos")]

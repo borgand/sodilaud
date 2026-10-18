@@ -56,6 +56,20 @@ impl QuitCoordinator {
         }
     }
 
+    /// A window closed: a quit no longer waits for it. Returns `Exit` when it
+    /// was the last window a quit was waiting on.
+    pub fn unregister(&mut self, label: &str) -> QuitStep {
+        self.registered.remove(label);
+        let Some(pending) = self.pending.as_mut() else {
+            return QuitStep::Wait;
+        };
+        if !pending.remove(label) || !pending.is_empty() {
+            return QuitStep::Wait;
+        }
+        self.pending = None;
+        QuitStep::Exit
+    }
+
     pub fn report(&mut self, label: &str, ok: bool) -> QuitStep {
         let Some(pending) = self.pending.as_mut() else {
             return QuitStep::Wait;
@@ -87,7 +101,7 @@ impl QuitState {
 }
 
 /// Every quit starts here: the tray, Cmd+Q, and on Windows and Linux closing the
-/// main window. The clipboard history is wiped first, whatever the saves do.
+/// last main window. The clipboard history is wiped first, whatever the saves do.
 pub fn request(app: &AppHandle) {
     #[cfg(target_os = "macos")]
     {
@@ -133,6 +147,22 @@ fn exit(app: &AppHandle) {
         quick_notes.update(|config| config.windows_at_quit = Some(windows));
     }
     app.exit(0);
+}
+
+pub fn is_registered(app: &AppHandle, label: &str) -> bool {
+    app.state::<QuitState>()
+        .with(|coordinator| coordinator.registered.contains(label))
+}
+
+/// A window is about to be destroyed: a quit under way stops waiting for it.
+pub fn forget_window(app: &AppHandle, label: &str) {
+    if app
+        .state::<QuitState>()
+        .with(|coordinator| coordinator.unregister(label))
+        == QuitStep::Exit
+    {
+        exit(app);
+    }
 }
 
 /// Until a window calls this, a quit does not wait for it.
@@ -223,5 +253,25 @@ mod tests {
         coordinator.begin();
         coordinator.report("main", true);
         assert_eq!(coordinator.begin(), Begin::Ask(vec!["quicknotes".into()]));
+    }
+
+    #[test]
+    fn a_closed_window_no_longer_holds_up_a_quit() {
+        let mut coordinator = with_windows(&["main", "main-2", "quicknotes"]);
+        coordinator.begin();
+        coordinator.report("main", true);
+        coordinator.report("quicknotes", true);
+        assert_eq!(coordinator.unregister("main-2"), QuitStep::Exit);
+        assert_eq!(
+            coordinator.registered(),
+            vec!["main".to_string(), "quicknotes".to_string()]
+        );
+    }
+
+    #[test]
+    fn unregistering_outside_a_quit_only_forgets_the_window() {
+        let mut coordinator = with_windows(&["main", "main-2"]);
+        assert_eq!(coordinator.unregister("main-2"), QuitStep::Wait);
+        assert_eq!(coordinator.begin(), Begin::Ask(vec!["main".into()]));
     }
 }

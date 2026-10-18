@@ -38,6 +38,7 @@
     "allow-main-window-new",
     "allow-main-window-move-file",
     "allow-main-window-list",
+    "allow-main-window-close-done",
     "allow-comments-get",
     "allow-comment-add",
     "allow-comment-edit",
