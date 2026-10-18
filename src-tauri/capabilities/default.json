@@ -41,6 +41,8 @@
     "allow-folder-list",
     "allow-folder-set-expanded",
     "allow-folder-open-file",
+    "allow-draft-discard",
+    "allow-draft-save-to-notes",
     "allow-main-window-new",
     "allow-main-window-move-file",
     "allow-main-window-list",

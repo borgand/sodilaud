@@ -487,6 +487,8 @@ pub fn run(context: tauri::Context<tauri::Wry>) {
             files::commands::folder_list,
             files::commands::folder_set_expanded,
             files::commands::folder_open_file,
+            files::commands::draft_discard,
+            files::commands::draft_save_to_notes,
             main_window::main_window_new,
             main_window::main_window_move_file,
             main_window::main_window_list,

@@ -81,6 +81,8 @@ fn main() {
             "folder_list",
             "folder_set_expanded",
             "folder_open_file",
+            "draft_discard",
+            "draft_save_to_notes",
             "main_window_new",
             "main_window_move_file",
             "main_window_list",

@@ -105,6 +105,7 @@ impl FileDoc {
             bom: self.bom,
             saved_version: self.save.saved_version,
             external: self.external,
+            draft: false,
         }
     }
 
@@ -142,6 +143,9 @@ pub(crate) struct FileOpened {
     pub(crate) bom: bool,
     pub(crate) saved_version: u64,
     pub(crate) external: Option<External>,
+    /// An agent's draft, kept in app data until it is saved.
+    #[serde(default)]
+    pub(crate) draft: bool,
 }
 
 #[derive(Serialize, Clone, Debug, PartialEq)]

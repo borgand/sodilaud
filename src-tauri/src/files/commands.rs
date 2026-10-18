@@ -5,10 +5,13 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State, Window};
 
+use super::drafts::{self, Draft};
 use super::folders::FolderListing;
 use super::io::{self, LineEnding};
 use super::windows::{is_main_label, Claim};
-use super::{FileError, Files, FolderRoot, OpenedDocument, PendingOpen, TEXT_EXTENSIONS};
+use super::{
+    FileError, FileErrorCode, Files, FolderRoot, OpenedDocument, PendingOpen, TEXT_EXTENSIONS,
+};
 use crate::docs::commands::SharedRegistry;
 use crate::docs::files::{FileOpened, FileSaved, Resolve};
 use crate::docs::registry::{Pulled, Pushed, Update};
@@ -46,6 +49,7 @@ pub struct ListsView {
     recent: Vec<RecentFile>,
     folders: Vec<FolderRoot>,
     expanded: Vec<String>,
+    drafts: Vec<Draft>,
 }
 
 fn lists_view(
@@ -53,9 +57,11 @@ fn lists_view(
     recent: Vec<String>,
     folders: Vec<String>,
     expanded: Vec<String>,
+    drafts: Vec<Draft>,
 ) -> ListsView {
     ListsView {
         open,
+        drafts,
         folders: folders.iter().map(|root| FolderRoot::new(root)).collect(),
         expanded,
         recent: recent
@@ -193,7 +199,7 @@ pub fn file_doc_open(
         }
         Some(Claim::Mine) => {}
     }
-    let opened = match registry.file_open(&path, &*files) {
+    let mut opened = match registry.file_open(&path, &*files) {
         Ok(opened) => opened,
         Err(error) => {
             if !was_open {
@@ -202,7 +208,10 @@ pub fn file_doc_open(
             return Err(error);
         }
     };
-    files.update(|lists| lists.opened_recent(&opened.path));
+    opened.draft = files.is_draft(&path);
+    if !opened.draft {
+        files.update(|lists| lists.opened_recent(&opened.path));
+    }
     Ok(opened)
 }
 
@@ -307,7 +316,7 @@ pub fn file_doc_resolve(
     registry.file_resolve(&files.require(&path)?, keep, &*files)
 }
 
-/// This window's open files and folders, and the recent files.
+/// This window's open files and folders, the recent files and the drafts.
 #[tauri::command]
 pub fn file_lists(window: Window, files: State<'_, Files>) -> Result<ListsView, FileError> {
     require_main(window.label())?;
@@ -326,7 +335,7 @@ pub fn file_lists(window: Window, files: State<'_, Files>) -> Result<ListsView, 
         (entry, lists.recent.clone())
     });
     let (open, folders, expanded) = entry;
-    Ok(lists_view(open, recent, folders, expanded))
+    Ok(lists_view(open, recent, folders, expanded, files.drafts()))
 }
 
 /// Adds `root` (canonical) to the window's sidebar, expanded. A root the
@@ -483,6 +492,128 @@ pub fn file_forget_recent(
     require_main(window.label())?;
     files.update(|lists| lists.forget_recent(&path));
     Ok(())
+}
+
+fn not_a_draft(path: &Path) -> FileError {
+    FileError::new(
+        FileErrorCode::Unsupported,
+        format!("{} is not a draft.", io::file_name(path)),
+    )
+}
+
+/// The canonical path of the draft `path` names.
+fn require_draft(files: &Files, path: &str) -> Result<PathBuf, FileError> {
+    if !files.is_draft(Path::new(path)) {
+        return Err(not_a_draft(Path::new(path)));
+    }
+    files.require(path)
+}
+
+/// Forgets the draft everywhere and deletes its folder.
+fn discard_draft(files: &Files, registry: &SharedRegistry, path: &Path) -> Result<(), FileError> {
+    let dir = files.drafts_dir().ok_or_else(|| not_a_draft(path))?;
+    registry.file_discard(path);
+    drafts::remove(dir, path).map_err(FileError::other)?;
+    let text = path.to_string_lossy().to_string();
+    files.update(|lists| {
+        for label in lists.windows.labels() {
+            let Some(entry) = lists.windows.entry(&label) else {
+                continue;
+            };
+            let open = entry
+                .open
+                .iter()
+                .filter(|open| **open != text)
+                .cloned()
+                .collect();
+            let active = entry.active.clone().filter(|active| *active != text);
+            lists.windows.set_open(&label, open, active);
+        }
+        lists.forget_recent(&text);
+    });
+    Ok(())
+}
+
+/// Discards an agent's draft, after asking when `ask` is set. Returns whether
+/// it was discarded.
+#[tauri::command]
+pub fn draft_discard(
+    window: Window,
+    files: State<'_, Files>,
+    registry: State<'_, SharedRegistry>,
+    path: String,
+    ask: bool,
+) -> Result<bool, FileError> {
+    require_main(window.label())?;
+    let path = require_draft(&files, &path)?;
+    if ask {
+        let choice = rfd::MessageDialog::new()
+            .set_title("Discard draft?")
+            .set_description(format!(
+                "Discard the draft {}? This cannot be undone.",
+                io::file_name(&path)
+            ))
+            .set_buttons(rfd::MessageButtons::OkCancel)
+            .show();
+        if choice != rfd::MessageDialogResult::Ok {
+            return Ok(false);
+        }
+    }
+    discard_draft(&files, &registry, &path)?;
+    Ok(true)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedNote {
+    note_id: String,
+}
+
+/// Moves a draft into Quick Notes, as it reads now, shows the note there and
+/// discards the draft.
+#[tauri::command]
+pub fn draft_save_to_notes(
+    app: AppHandle,
+    window: Window,
+    files: State<'_, Files>,
+    registry: State<'_, SharedRegistry>,
+    path: String,
+) -> Result<SavedNote, FileError> {
+    require_main(window.label())?;
+    let path = require_draft(&files, &path)?;
+    let text = registry.file_open(&path, &*files)?.text;
+    if text.len() > drafts::CONTENT_LIMIT {
+        return Err(FileError::new(
+            FileErrorCode::Unsupported,
+            "This draft is larger than 100,000 bytes, which Quick Notes does not take. Save it as a file instead.".to_string(),
+        ));
+    }
+    let title = path
+        .file_stem()
+        .map(|stem| stem.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let folder = path
+        .parent()
+        .and_then(Path::file_name)
+        .map(|name| name.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let arguments = serde_json::json!({
+        "requestId": format!("draft-{folder}"),
+        "title": title,
+        "content": text,
+    });
+    let result = registry
+        .agent_write("push_quick_note", &arguments)
+        .map_err(FileError::other)?;
+    let note_id = result["note"]["id"]
+        .as_str()
+        .ok_or_else(|| FileError::other("Quick Notes did not return the note.".to_string()))?
+        .to_string();
+    let handle = app.clone();
+    let focus = crate::quicknotes::window::Focus::Id(note_id.clone());
+    let _ = app.run_on_main_thread(move || crate::quicknotes::window::reveal(&handle, focus));
+    discard_draft(&files, &registry, &path)?;
+    Ok(SavedNote { note_id })
 }
 
 #[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]

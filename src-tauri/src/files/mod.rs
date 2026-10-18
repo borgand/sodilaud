@@ -5,6 +5,7 @@
 // reformatting (see `io`), and hears about outside edits (see `watch`).
 
 pub mod commands;
+pub mod drafts;
 pub mod folders;
 pub mod grants;
 pub mod ignore;
@@ -214,6 +215,8 @@ pub struct Files {
     folder_watcher: Mutex<FolderWatcher>,
     /// Per window label.
     pending: Mutex<HashMap<String, Vec<PendingOpen>>>,
+    /// Where agents' drafts are kept; none when app data has no folder.
+    drafts_dir: Option<PathBuf>,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -237,10 +240,25 @@ impl Files {
         for path in lists.windows.all_open().iter().chain(&lists.recent) {
             let _ = grants.grant(Path::new(path));
         }
-        Self::new(lists_path, grants, lists)
+        let drafts_dir = app
+            .path()
+            .app_data_dir()
+            .ok()
+            .map(|directory| directory.join(drafts::DIRECTORY));
+        Self::new(lists_path, grants, lists, drafts_dir)
     }
 
-    fn new(lists_path: Option<PathBuf>, grants: Grants, lists: Lists) -> Self {
+    /// A draft is kept until it is saved or discarded, so every draft on disk
+    /// stays granted across restarts.
+    fn new(
+        lists_path: Option<PathBuf>,
+        mut grants: Grants,
+        lists: Lists,
+        drafts_dir: Option<PathBuf>,
+    ) -> Self {
+        for draft in drafts_dir.as_deref().map(drafts::list).unwrap_or_default() {
+            let _ = grants.grant(Path::new(&draft.path));
+        }
         let mut folder_watcher = FolderWatcher::default();
         folder_watcher.set(watched_folders(&lists.windows));
         Self {
@@ -250,16 +268,39 @@ impl Files {
             watcher: Mutex::new(Watcher::default()),
             folder_watcher: Mutex::new(folder_watcher),
             pending: Mutex::new(HashMap::new()),
+            drafts_dir,
         }
     }
 
     #[cfg(test)]
     fn for_test() -> Self {
+        Self::for_test_with_drafts(None)
+    }
+
+    #[cfg(test)]
+    fn for_test_with_drafts(drafts_dir: Option<PathBuf>) -> Self {
         let lists = Lists {
             windows: WindowSet::from_saved(vec![]),
             recent: Vec::new(),
         };
-        Self::new(None, Grants::default(), lists)
+        Self::new(None, Grants::default(), lists, drafts_dir)
+    }
+
+    pub fn drafts_dir(&self) -> Option<&Path> {
+        self.drafts_dir.as_deref()
+    }
+
+    pub fn is_draft(&self, path: &Path) -> bool {
+        self.drafts_dir
+            .as_deref()
+            .is_some_and(|dir| drafts::is_draft(dir, path))
+    }
+
+    pub fn drafts(&self) -> Vec<drafts::Draft> {
+        self.drafts_dir
+            .as_deref()
+            .map(drafts::list)
+            .unwrap_or_default()
     }
 
     pub fn grant(&self, path: &Path) -> Result<PathBuf, FileError> {
@@ -641,6 +682,43 @@ pub fn open_for_agent(app: &AppHandle, path: &str) -> Result<OpenedDocument, Fil
         .try_state::<Files>()
         .ok_or_else(|| FileError::not_granted(&resolved))?;
     let granted = files.grant(&resolved)?;
+    let opened = OpenedDocument {
+        path: granted.to_string_lossy().to_string(),
+        name: io::file_name(&granted),
+        bytes,
+    };
+    let handle = app.clone();
+    let pending = opened.path.clone();
+    let _ = app.run_on_main_thread(move || {
+        if let Some(files) = handle.try_state::<Files>() {
+            present_pending(&handle, &files, vec![pending]);
+        }
+    });
+    Ok(opened)
+}
+
+/// Puts an agent's Markdown into a new draft (or finds the one an identical
+/// retry made), grants it and shows it like `open_for_agent`.
+pub fn open_draft_for_agent(
+    app: &AppHandle,
+    request_id: &str,
+    title: &str,
+    content: &str,
+) -> Result<OpenedDocument, FileError> {
+    let files = app
+        .try_state::<Files>()
+        .ok_or_else(|| FileError::other("Drafts need the Sodilaud app.".to_string()))?;
+    let dir = files.drafts_dir().ok_or_else(|| {
+        FileError::other("Sodilaud has no app data folder to keep drafts in.".to_string())
+    })?;
+    let draft = match drafts::create(dir, request_id, title, content) {
+        Ok(drafts::Created::New(draft) | drafts::Created::Existing(draft)) => draft,
+        Err(message) => return Err(FileError::new(FileErrorCode::Unsupported, message)),
+    };
+    let granted = files.grant(Path::new(&draft.path))?;
+    let bytes = std::fs::metadata(&granted)
+        .map_err(|error| FileError::io(&granted, &error))?
+        .len();
     let opened = OpenedDocument {
         path: granted.to_string_lossy().to_string(),
         name: io::file_name(&granted),
@@ -1136,6 +1214,27 @@ mod tests {
                 .code,
             FileErrorCode::NotGranted
         );
+    }
+
+    #[test]
+    fn drafts_on_disk_are_granted_at_load() {
+        let base = scratch("drafts-load").canonicalize().unwrap();
+        let dir = base.join(super::drafts::DIRECTORY);
+        let draft = match super::drafts::create(&dir, "r", "Plan", "# Plan\n").unwrap() {
+            super::drafts::Created::New(draft) => draft,
+            super::drafts::Created::Existing(_) => panic!("a new draft"),
+        };
+        let outside = base.join("outside.md");
+        fs::write(&outside, "").unwrap();
+        let files = Files::for_test_with_drafts(Some(dir));
+        assert_eq!(
+            files.require(&draft.path).unwrap(),
+            PathBuf::from(&draft.path)
+        );
+        assert!(files.is_draft(Path::new(&draft.path)));
+        assert!(!files.is_draft(&outside));
+        assert!(files.require(text(&outside)).is_err());
+        assert!(!Files::for_test().is_draft(Path::new(&draft.path)));
     }
 
     #[test]
