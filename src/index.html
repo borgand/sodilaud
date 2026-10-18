@@ -236,6 +236,46 @@
         <button class="file-banner-btn" id="draft-discard-btn" type="button">Discard</button>
       </div>
       <div class="editor-pane" id="editor-pane">
+        <!-- Find & Replace Bar -->
+        <div class="find-bar" id="find-bar">
+          <div class="find-row">
+            <button class="find-btn find-toggle-replace" id="find-toggle-replace" title="Toggle Replace (Cmd+Alt+F)" aria-label="Toggle replace controls" aria-expanded="false">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+            </button>
+            <div class="find-input-wrapper">
+              <input type="text" id="find-input" aria-label="Find in document" placeholder="Find in document..." autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" />
+              <button class="find-option-btn find-case-toggle" id="find-case-toggle" title="Match Case (Alt+C)" aria-label="Toggle case-sensitive matching" aria-pressed="false">Aa</button>
+              <button class="find-option-btn find-exact-toggle" id="find-exact-toggle" title="Exact Match (Alt+W)" aria-label="Toggle exact whole-word matching" aria-pressed="false">ab</button>
+              <button class="find-option-btn" id="find-regex-toggle" title="Use Regular Expression (Alt+R)" aria-pressed="false">.*</button>
+            </div>
+            <span class="find-count" id="find-count">0 of 0</span>
+            <button class="find-btn" id="find-prev" title="Previous Match (Shift+Enter)" aria-label="Previous match">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="18 15 12 9 6 15" />
+              </svg>
+            </button>
+            <button class="find-btn" id="find-next" title="Next Match (Enter)" aria-label="Next match">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </button>
+            <button class="find-btn find-close" id="find-close" title="Close (Esc)" aria-label="Close find controls">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+          <div class="replace-row" id="replace-row" style="display: none;">
+            <div class="find-input-wrapper replace-input-wrapper">
+              <input type="text" id="replace-input" aria-label="Replacement text" placeholder="Replace with..." autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" />
+            </div>
+            <button class="find-action-btn" id="replace-one-btn" title="Replace Current Match">Replace</button>
+            <button class="find-action-btn" id="replace-all-btn" title="Replace All Matches">Replace All</button>
+          </div>
+        </div>
         <div class="editor-wrapper" id="editor-wrapper">
           <div class="editor-host" id="editor-host"></div>
         </div>
@@ -351,6 +391,14 @@
             <div class="shortcut-row">
               <span class="shortcut-desc">Close File</span>
               <div class="shortcut-keys"><kbd>Cmd</kbd><span class="key-plus">+</span><kbd>W</kbd></div>
+            </div>
+            <div class="shortcut-row">
+              <span class="shortcut-desc">Find</span>
+              <div class="shortcut-keys"><kbd>Cmd</kbd><span class="key-plus">+</span><kbd>F</kbd></div>
+            </div>
+            <div class="shortcut-row">
+              <span class="shortcut-desc">Find and Replace</span>
+              <div class="shortcut-keys"><kbd data-shortcut-off-mac="Ctrl+H">Cmd+Alt+F</kbd></div>
             </div>
           </div>
 

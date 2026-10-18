@@ -457,6 +457,8 @@ function handleKeydown(event) {
     } else if (actionsDropdown.classList.contains("show")) {
       event.preventDefault();
       toggleActionsDropdown(false);
+    } else if (fileEditor.closeFind()) {
+      event.preventDefault();
     }
   }
 }

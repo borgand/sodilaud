@@ -34,6 +34,7 @@ import { commentsExtension } from "./editor-comments.js";
 import { createComments } from "./comments-panel.js";
 import { createOpenFileMenu } from "./open-file-menu.js";
 import { createFolderSidebar } from "./folder-sidebar.js";
+import { createFindBar } from "./find-bar.js";
 import { isMacLikePlatform } from "./platform-labels.js";
 import { EditorState, EditorView, Transaction } from "./vendor/codemirror.js";
 
@@ -117,6 +118,14 @@ export function createFileEditor({
   });
   mermaid?.onChange(renderPreview);
 
+  const findBar = createFindBar({
+    document,
+    editor: () => editor,
+    preview: () => preview,
+    isReading: () => layoutMode === "reading",
+    notify
+  });
+
   const sync = createDocSync({
     push: ({ path, docId }, version, updates) => invoke("file_doc_push", { path, docId, version, updates }),
     pull: ({ path, docId }, since) => invoke("file_doc_pull", { path, docId, since }),
@@ -197,6 +206,13 @@ export function createFileEditor({
     const extensions = buffer.path === null ? [] : sync.extension({ path: buffer.path, docId: buffer.docId }, buffer.version);
     editor.loadText(buffer.text, { extensions });
     applyKind(buffer);
+    refreshFind();
+  }
+
+  // The editor's matches belong to the text it showed before.
+  function refreshFind() {
+    if (findBar.isOpen()) findBar.run({ preserveActive: true, selectActive: false });
+    else findBar.refreshHighlights();
   }
 
   function applyKind(buffer) {
@@ -352,6 +368,7 @@ export function createFileEditor({
       pre.className = "plain-text-preview";
       pre.textContent = editor.getText();
       preview.replaceChildren(pre);
+      findBar.refreshPreview();
       return;
     }
     try {
@@ -368,6 +385,7 @@ export function createFileEditor({
       console.error("Could not render the file", error);
       preview.textContent = editor.getText();
     }
+    findBar.refreshPreview();
   }
 
   // Reading mode shows the folds Live mode keeps in the editor state.
@@ -467,6 +485,7 @@ export function createFileEditor({
       if (buffer.editorState) {
         editor.restoreState(buffer.editorState);
         applyKind(buffer);
+        refreshFind();
       } else loadBuffer(buffer);
       shownId = buffer.id;
       renderPreview();
@@ -491,6 +510,8 @@ export function createFileEditor({
     const buffer = model.get(shownId);
     if (!buffer) return;
     model.edit(buffer.id, text);
+    // Replace reads the new matches straight after its edit.
+    if (findBar.isOpen()) findBar.run({ preserveActive: true, selectActive: false });
     renderTitle();
     renderSidebar();
     scheduleOutline();
@@ -946,6 +967,7 @@ export function createFileEditor({
     sync.receive(event);
     const buffer = model.docUpdated(event);
     if (buffer && buffer.id === shownId) {
+      if (findBar.isOpen()) findBar.run({ preserveActive: true, selectActive: false });
       renderPreview();
       scheduleOutline();
     }
@@ -981,6 +1003,8 @@ export function createFileEditor({
     $("comment-btn").disabled = layoutMode === "reading";
     comments.render();
     renderPreview();
+    // Leaving Reading mode keeps the old preview, highlights and all.
+    findBar.refreshPreview();
     if (persist) {
       storage.setItem(LAYOUT_KEY, layoutMode);
       broadcast(LAYOUT_KEY);
@@ -1058,6 +1082,9 @@ export function createFileEditor({
 
   function attach() {
     formatToolbar.attach();
+    findBar.attach();
+    // The markup names the macOS chord, which is not Cmd+H turned into Ctrl+H.
+    if (!isMac()) $("find-toggle-replace").title = "Toggle Replace (Ctrl+H)";
     for (const [mode, button] of Object.entries(layoutButtons)) {
       button.addEventListener("click", () => setLayoutMode(mode));
     }
@@ -1111,20 +1138,48 @@ export function createFileEditor({
     return browsable(buffer) ? folders.browseFolder(buffer.path) : Promise.resolve();
   }
 
-  // Cmd+Shift+O on macOS, Ctrl+Shift+O elsewhere.
-  const isFolderChord = (event) => (isMacLikePlatform(document.defaultView?.navigator)
+  const isMac = () => isMacLikePlatform(document.defaultView?.navigator);
+
+  // Cmd on macOS, Ctrl elsewhere.
+  const isCommandChord = (event) => (isMac()
     ? event.metaKey && !event.ctrlKey
     : event.ctrlKey && !event.metaKey);
 
+  // Cmd+Alt+F on macOS, where Option+F is a dead key, so the physical key is
+  // matched. Ctrl+H elsewhere, but not AltGr+H.
+  const isReplaceShortcut = (event) => (isMac()
+    ? event.metaKey && event.altKey && !event.ctrlKey && !event.shiftKey && event.code === "KeyF"
+    : event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey &&
+      event.key.toLowerCase() === "h" && !event.getModifierState?.("AltGraph"));
+
+  function handleFindShortcut(event) {
+    if (showingStartPage || !model.active()) return false;
+    let replace;
+    if (isCommandChord(event) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "f") replace = false;
+    else if (isReplaceShortcut(event)) replace = true;
+    else return findBar.handleKeydown(event);
+    event.preventDefault();
+    findBar.open({ replace });
+    return true;
+  }
+
+  // Escape closes the find bar first. Returns whether it did.
+  function closeFind() {
+    if (showingStartPage || !findBar.isOpen()) return false;
+    findBar.close();
+    return true;
+  }
+
   // File shortcuts. Returns whether the event was one.
   function handleShortcut(event) {
+    if (handleFindShortcut(event)) return true;
     const isMeta = event.metaKey || event.ctrlKey;
     if (!isMeta || event.altKey) return false;
     const key = event.key.toLowerCase();
     let action = null;
     if (key === "n" && !event.shiftKey) action = newFile;
     else if (key === "o" && !event.shiftKey) action = openDialog;
-    else if (key === "o" && event.shiftKey && isFolderChord(event)) action = openFolderDialog;
+    else if (key === "o" && event.shiftKey && isCommandChord(event)) action = openFolderDialog;
     else if (key === "s" && event.shiftKey && model.active()) action = () => saveAs();
     // Ctrl+Cmd+S toggles the sidebar on macOS.
     else if (key === "s" && !event.shiftKey && !(event.ctrlKey && event.metaKey) && model.active()) action = () => save();
@@ -1149,6 +1204,7 @@ export function createFileEditor({
     receiveComments: event => comments.receive(event),
     setCoeditState: state => comments.setState(state),
     handleShortcut,
+    closeFind,
     toggleSidebar,
     setLayoutMode,
     flushForQuit,
