@@ -107,7 +107,11 @@ pub fn on_close_requested(window: &Window, api: &CloseRequestApi) {
 fn close(window: &Window) {
     let app = window.app_handle();
     let label = window.label();
-    if labels(app).len() < 2 {
+    let live = labels(app);
+    if !live.iter().any(|live| live == label) {
+        return;
+    }
+    if live.len() < 2 {
         close_last(app);
         return;
     }
@@ -120,7 +124,8 @@ fn close(window: &Window) {
                 eprintln!("Could not close {path}: {}", error.message);
             }
         }
-        files.drop_pending(label);
+        let orphaned = files.take_pending(label);
+        crate::files::present_pending(app, &files, orphaned.into_iter().map(|p| p.path).collect());
     }
     crate::quit::forget_window(app, label);
     let _ = window.destroy();

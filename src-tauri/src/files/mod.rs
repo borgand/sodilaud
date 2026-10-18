@@ -310,10 +310,6 @@ impl Files {
     pub fn take_pending(&self, label: &str) -> Vec<PendingOpen> {
         lock(&self.pending).remove(label).unwrap_or_default()
     }
-
-    pub fn drop_pending(&self, label: &str) {
-        lock(&self.pending).remove(label);
-    }
 }
 
 impl Disk for Files {
