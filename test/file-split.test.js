@@ -257,6 +257,29 @@ test("typing waits in both panes while Save As asks where to save", async () => 
   assert.equal(app.fileDocs.text("/d/a.md"), `right ${A}`);
 });
 
+test("moving a file waits while Save As asks where to save it", async () => {
+  let answer = null;
+  const app = await bootSplit(15, {
+    handlers: {
+      file_save_as_dialog: () => new Promise((resolve) => { answer = resolve; }),
+      main_window_list: () => [],
+      main_window_move_file: () => "main-2"
+    }
+  });
+  app.click("menu-save-as-btn");
+  await app.until(() => answer !== null);
+  const menu = byId(app, "open-file-menu");
+  fileItem(app, "a.md").dispatchEvent(new app.dom.window.MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 40, clientY: 80 }));
+  await app.until(() => !menu.hidden);
+  [...menu.querySelectorAll(".context-menu-item")].find((item) => item.textContent.trim().startsWith("Move to New Window")).click();
+  await app.settle();
+  assert.equal(calls(app, "main_window_move_file").length, 0);
+  typeAt(app.editor("primary"), "late ");
+  assert.equal(app.editorText("primary"), A, "Save As still holds the edit lock");
+  answer(null);
+  await app.settle();
+});
+
 test("Save, Save As and Close act on the file of the focused pane", async () => {
   const app = await bootSplit(13, { handlers: { file_save_as_dialog: () => null } });
   const right = () => app.editor("secondary").contentDOM;

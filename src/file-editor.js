@@ -686,7 +686,7 @@ export function createFileEditor({
 
   async function saveDraftToNotes(id = model.active()?.id) {
     const buffer = model.get(id);
-    if (!buffer?.draft) return false;
+    if (!buffer?.draft || lockedId !== null) return false;
     lockedId = buffer.id;
     try {
       if (!(await sync.flush((doc) => doc.docId === buffer.docId))) {
@@ -999,6 +999,7 @@ export function createFileEditor({
       notify(`Save ${buffer.name} first to move it.`);
       return false;
     }
+    if (lockedId !== null) return false;
     lockedId = buffer.id;
     try {
       if (!(await sync.flush((doc) => doc.docId === buffer.docId))) {

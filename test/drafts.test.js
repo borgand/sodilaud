@@ -189,3 +189,22 @@ test("typing waits while a draft is saved to Quick Notes", async () => {
   typeAt(app, 7, "kept\n");
   assert.equal(app.editorText(), "# Plan\nkept\n", "typing works again after a failure");
 });
+
+test("Save to Quick Notes waits while Save As asks where to save the draft", async () => {
+  let answer = null;
+  const { app, openDraft } = await bootWithDraft({
+    instance: 40,
+    handlers: { file_save_as_dialog: () => new Promise((resolve) => { answer = resolve; }) }
+  });
+  await openDraft();
+  byId(app, "draft-save-as-btn").click();
+  await app.until(() => answer !== null);
+  byId(app, "draft-save-notes-btn").click();
+  await app.settle();
+  assert.equal(called(app, "draft_save_to_notes").length, 0);
+  const before = app.editorText();
+  typeAt(app, 0, "late ");
+  assert.equal(app.editorText(), before, "Save As still holds the edit lock");
+  answer(null);
+  await app.settle();
+});
