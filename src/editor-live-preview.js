@@ -420,9 +420,11 @@ const lineClasses = {};
 for (const name of ["h1", "h2", "h3", "h4", "h5", "h6", "quote", "codeblock", "hr"]) {
   lineClasses[name] = Decoration.line({ class: `cm-lp-${name}` });
 }
-for (const level of [1, 2]) {
-  lineClasses[`h${level}-rule`] = Decoration.line({ class: `cm-lp-h${level} cm-lp-heading-rule` });
-}
+const headingLines = new Map();
+const headingLine = classes => {
+  if (!headingLines.has(classes)) headingLines.set(classes, Decoration.line({ class: classes }));
+  return headingLines.get(classes);
+};
 for (const name of ["head", "foot", "highlighted"]) {
   lineClasses[`codeblock-${name}`] = Decoration.line({ class: `cm-lp-codeblock cm-lp-codeblock-${name}` });
 }
@@ -586,8 +588,16 @@ function buildInline(view, focused) {
           const underline = name.startsWith("Setext") ? ref.node.getChild("HeaderMark") : null;
           const textEnd = underline ? doc.lineAt(underline.from).from - 1 : to;
           markLines(from, textEnd, `h${level}`, rangeFrom, rangeTo);
-          if (level <= 2 && textEnd >= rangeFrom && textEnd <= rangeTo) {
-            lineDecorations.set(doc.lineAt(textEnd).from, lineClasses[`h${level}-rule`]);
+          const first = doc.lineAt(from).number;
+          const last = doc.lineAt(textEnd).number;
+          for (let n = Math.max(first, doc.lineAt(rangeFrom).number); n <= Math.min(last, doc.lineAt(rangeTo).number); n++) {
+            const line = doc.line(n);
+            if (lineDecorations.get(line.from) !== lineClasses[`h${level}`]) continue;
+            const classes = [`cm-lp-h${level}`];
+            if (level <= 2 && n === last) classes.push("cm-lp-heading-rule");
+            if (n > first) classes.push("cm-lp-heading-cont");
+            if (n < last) classes.push("cm-lp-heading-more");
+            if (classes.length > 1) lineDecorations.set(line.from, headingLine(classes.join(" ")));
           }
           return true;
         }

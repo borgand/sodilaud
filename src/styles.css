@@ -1728,6 +1728,12 @@ html:not(.editor-line-numbers-enabled) .app-container.compare-mode .editor-host 
   margin: 0 0 var(--doc-gap);
 }
 
+.markdown-preview li > ul,
+.markdown-preview li > ol,
+.markdown-preview blockquote > :last-child {
+  margin-bottom: 0;
+}
+
 .markdown-preview > :first-child {
   padding-top: 0;
 }
@@ -3503,10 +3509,8 @@ kbd {
 .cm-mode-live .cm-lp-h6 { font-size: 0.9em; padding-top: 0.4em; padding-bottom: 0.1em; }
 .cm-mode-live .cm-lp-heading-rule { border-bottom: 1px solid var(--preview-hr); }
 /* A multi-line setext heading is one heading: padding belongs to its ends only. */
-.cm-mode-live .cm-lp-h1 + .cm-lp-h1,
-.cm-mode-live .cm-lp-h2 + .cm-lp-h2 { padding-top: 0; }
-.cm-mode-live .cm-lp-h1:has(+ .cm-lp-h1),
-.cm-mode-live .cm-lp-h2:has(+ .cm-lp-h2) { padding-bottom: 0; }
+.cm-mode-live .cm-lp-heading-cont { padding-top: 0; }
+.cm-mode-live .cm-lp-heading-more { padding-bottom: 0; }
 
 .cm-mode-live .cm-lp-code {
   background-color: var(--preview-code-bg);

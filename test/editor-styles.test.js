@@ -137,3 +137,10 @@ test("Reading mode follows editor zoom and line spacing", () => {
   assert.match(body, /font-size:\s*var\(--editor-font-size\)/);
   assert.match(body, /line-height:\s*var\(--editor-line-height\)/);
 });
+
+test("Reading nested lists and quote endings add no extra gap, and Live avoids :has()", () => {
+  for (const selector of [".markdown-preview li > ul", ".markdown-preview li > ol", ".markdown-preview blockquote > :last-child"]) {
+    assert.match(declarations(selector), /margin-bottom:\s*0/, selector);
+  }
+  assert.doesNotMatch(styles, /\.cm-lp-h[12]:has\(/);
+});

@@ -530,3 +530,18 @@ test("H1 and H2 carry a rule on their last text line, H3 does not", async () => 
   const ruled = t.lines().filter(l => l.classList.contains("cm-lp-heading-rule")).map(l => l.textContent);
   assert.deepEqual(ruled, ["One", "Two", "heading"]);
 });
+
+test("a heading inside a quote keeps the quote line class", async () => {
+  const t = await setup("> # Title\n\nbody", { focused: false });
+  const line = t.lines().find(l => l.textContent === "Title");
+  assert.ok(line.classList.contains("cm-lp-quote"));
+});
+
+test("only setext continuation lines are marked as continuations", async () => {
+  const t = await setup("# A\n# B\n\nSetext\nheading\n===\n\nbody", { focused: false });
+  const by = text => t.lines().find(l => l.textContent === text).classList;
+  assert.ok(!by("A").contains("cm-lp-heading-cont") && !by("B").contains("cm-lp-heading-cont"));
+  assert.ok(!by("A").contains("cm-lp-heading-more"));
+  assert.ok(by("Setext").contains("cm-lp-heading-more") && !by("Setext").contains("cm-lp-heading-cont"));
+  assert.ok(by("heading").contains("cm-lp-heading-cont") && by("heading").contains("cm-lp-heading-rule"));
+});
