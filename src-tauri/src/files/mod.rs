@@ -9,6 +9,7 @@ pub mod grants;
 pub mod io;
 pub mod store;
 pub mod watch;
+pub mod windows;
 
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Mutex, MutexGuard, PoisonError};
@@ -167,7 +168,12 @@ impl Files {
             .map(|directory| directory.join(store::FILE_NAME));
         let lists = lists_path.as_deref().map(store::load).unwrap_or_default();
         let mut grants = Grants::default();
-        for path in lists.open.iter().chain(&lists.recent) {
+        for path in lists
+            .windows
+            .iter()
+            .flat_map(|window| &window.open)
+            .chain(&lists.recent)
+        {
             let _ = grants.grant(Path::new(path));
         }
         Self {
