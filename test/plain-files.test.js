@@ -22,9 +22,9 @@ function lists(open) {
 const bootPlain = (instance, extra = {}) => bootMainWindow({
   instance,
   platform: "MacIntel",
-  disk: { "/d/a.txt": A_TXT, "/d/t.tsv": "a\tb\n", "/d/n.md": N_MD },
+  disk: { "/d/a.txt": A_TXT, "/d/t.tsv": "a\tb\n", "/d/m.tsv": "a\tb\n", "/d/n.md": N_MD },
   beforeBoot: (dom) => { dom.window.marked = marked; },
-  handlers: { ...lists(["/d/a.txt", "/d/t.tsv", "/d/n.md"]), ...extra }
+  handlers: { ...lists(["/d/a.txt", "/d/t.tsv", "/d/m.tsv", "/d/n.md"]), ...extra }
 });
 
 const doc = (app) => app.dom.window.document;
@@ -67,6 +67,45 @@ test("Tab in a .tsv inserts a tab character", async () => {
   assert.equal(event.defaultPrevented, true);
   assert.equal(app.editorText(), "a\tb\n\t");
   assert.equal(app.editor().state.selection.main.head, 5);
+});
+
+test("Tab in a .tsv replaces a mid-line selection with a tab", async () => {
+  const app = await bootPlain(8);
+  await show(app, "m.tsv");
+  app.editor().dispatch({ selection: { anchor: 0, head: 3 } });
+  const event = keydown(app, { key: "Tab" });
+  assert.equal(event.defaultPrevented, true);
+  assert.equal(app.editorText(), "\t\n");
+  assert.equal(app.editor().state.selection.main.head, 1);
+});
+
+test("fold chevrons follow the switch between Markdown and plain text", async () => {
+  const app = await bootPlain(9);
+  const chevrons = () => doc(app).querySelectorAll("#editor-host .cm-heading-fold").length;
+  await show(app, "n.md");
+  const markdown = chevrons();
+  assert.ok(markdown > 0, "a Markdown file shows fold chevrons");
+  await show(app, "a.txt");
+  assert.equal(chevrons(), 0);
+  await show(app, "n.md");
+  assert.equal(chevrons(), markdown);
+});
+
+test("a comment on a .txt file anchors to the selected text", async () => {
+  const app = await bootPlain(10);
+  await show(app, "a.txt");
+  const from = A_TXT.indexOf("Title");
+  app.editor().dispatch({ selection: { anchor: from, head: from + 5 } });
+  doc(app).getElementById("comment-btn").click();
+  await app.settle();
+  const composer = doc(app).querySelector(".cm-comment-composer textarea");
+  assert.ok(composer !== null);
+  composer.value = "Rename this";
+  doc(app).querySelector(".cm-comment-add").click();
+  await app.settle(300);
+  const [comment] = app.fileDocs.comments("/d/a.txt");
+  assert.equal(comment.anchoredText, "Title");
+  assert.equal(comment.body, "Rename this");
 });
 
 test("Reading mode shows plain text as preformatted text", async () => {

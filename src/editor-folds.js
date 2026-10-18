@@ -169,7 +169,10 @@ const chevronPlugin = ViewPlugin.fromClass(class {
   update(update) {
     const before = foldedSections(update.startState);
     const after = foldedSections(update.state);
-    if (update.docChanged || update.viewportChanged || before !== after) this.decorations = chevrons(update.view);
+    if (
+      update.docChanged || update.viewportChanged || before !== after ||
+      update.startState.facet(plainTextFacet) !== update.state.facet(plainTextFacet)
+    ) this.decorations = chevrons(update.view);
   }
 }, { decorations: plugin => plugin.decorations });
 
