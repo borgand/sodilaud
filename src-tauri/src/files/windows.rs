@@ -120,6 +120,21 @@ impl WindowSet {
         self.windows.remove(index).open
     }
 
+    /// Removes a window and hands its open files to the focused window that
+    /// remains. Returns that window, or `None` when nothing was removed.
+    pub fn fold_into_target(&mut self, label: &str) -> Option<String> {
+        self.entry(label)?;
+        if self.windows.len() < 2 {
+            return None;
+        }
+        let open = self.remove(label);
+        let target = self.target();
+        for path in open {
+            self.claim(&target, &path);
+        }
+        Some(target)
+    }
+
     pub fn focused(&mut self, label: &str) {
         if self.entry(label).is_none() {
             return;
@@ -281,6 +296,28 @@ mod tests {
         let mut set = WindowSet::from_saved(vec![saved(&["/a.md"])]);
         assert!(set.remove("main").is_empty());
         assert_eq!(set.labels(), ["main"]);
+    }
+
+    #[test]
+    fn a_window_folded_away_hands_its_files_to_the_focused_one() {
+        let mut set = WindowSet::from_saved(vec![
+            saved(&["/a.md"]),
+            saved(&["/b.md", "/c.md"]),
+            saved(&["/d.md"]),
+        ]);
+        set.focused("main-3");
+        set.focused("main-2");
+        assert_eq!(set.fold_into_target("main-2").as_deref(), Some("main-3"));
+        assert_eq!(set.labels(), ["main", "main-3"]);
+        assert_eq!(
+            set.entry("main-3").unwrap().open,
+            ["/d.md", "/b.md", "/c.md"]
+        );
+        assert_eq!(set.owner("/b.md").as_deref(), Some("main-3"));
+        assert_eq!(set.fold_into_target("main-9"), None);
+        set.fold_into_target("main-3");
+        assert_eq!(set.fold_into_target("main"), None, "the last window stays");
+        assert_eq!(set.entry("main").unwrap().open.len(), 4);
     }
 
     #[test]
