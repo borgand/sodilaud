@@ -309,6 +309,114 @@
   opacity: 1;
 }
 
+.folders-section {
+  margin-top: 16px;
+}
+
+.folders-section[hidden] {
+  display: none;
+}
+
+.folder-tree {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.folder-row {
+  display: flex;
+  align-items: center;
+  padding-inline-start: calc(var(--level) * 12px);
+  border-radius: 6px;
+  outline: none;
+}
+
+.folder-row.active {
+  background: var(--bg-note-active);
+}
+
+.folder-row:hover:not(.active) {
+  background: var(--bg-note-hover);
+}
+
+.folder-row:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--accent-color);
+}
+
+.folder-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px 4px 0;
+  border: 0;
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.folder-row-file .folder-name {
+  padding-inline-start: 10px;
+}
+
+.folder-row[aria-expanded] > .folder-name::before {
+  content: "";
+  flex-shrink: 0;
+  border-left: 4px solid var(--text-muted);
+  border-top: 3.5px solid transparent;
+  border-bottom: 3.5px solid transparent;
+  transition: transform 0.12s;
+}
+
+.folder-row[aria-expanded="true"] > .folder-name::before {
+  transform: rotate(90deg);
+}
+
+.folder-row-root > .folder-name {
+  font-weight: 600;
+}
+
+.folder-missing,
+.folder-row-note {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.folder-missing {
+  flex-shrink: 0;
+  margin-right: 4px;
+}
+
+.folder-row-note {
+  padding-block: 4px;
+  padding-inline-start: calc(var(--level) * 12px + 10px);
+}
+
+.folder-remove {
+  width: 22px;
+  height: 22px;
+  margin-right: 4px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.folder-row:hover .folder-remove,
+.folder-row:focus-within .folder-remove,
+.folder-row-root:has(.folder-missing) .folder-remove {
+  opacity: 1;
+}
+
 .file-editor {
   display: flex;
   flex-direction: column;

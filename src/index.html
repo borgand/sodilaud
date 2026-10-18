@@ -93,6 +93,8 @@
                 <button class="dropdown-item" id="menu-new-file-btn" title="New File (Cmd+N)">New File</button>
                 <button class="dropdown-item" id="menu-new-window-btn" title="New Window (Cmd+Alt+N)">New Window</button>
                 <button class="dropdown-item" id="menu-open-file-btn" title="Open File (Cmd+O)">Open File…</button>
+                <button class="dropdown-item" id="menu-open-folder-btn" title="Open Folder (Cmd+Shift+O)">Open Folder…</button>
+                <button class="dropdown-item" id="menu-browse-folder-btn" disabled>Show Folder in Sidebar</button>
                 <button class="dropdown-item" id="menu-save-file-btn" title="Save (Cmd+S)" disabled>Save</button>
                 <button class="dropdown-item" id="menu-save-as-btn" title="Save As (Cmd+Shift+S)" disabled>Save As…</button>
                 <button class="dropdown-item" id="menu-close-file-btn" title="Close File (Cmd+W)" disabled>Close File</button>
@@ -171,6 +173,10 @@
     <aside class="files-sidebar" id="files-sidebar" aria-labelledby="files-sidebar-title" hidden>
       <h2 class="files-sidebar-title" id="files-sidebar-title">Open files</h2>
       <ul class="open-files-list" id="open-files-list"></ul>
+      <section class="folders-section" id="folders-section" aria-labelledby="folders-title" hidden>
+        <h2 class="files-sidebar-title" id="folders-title">Folders</h2>
+        <ul class="folder-tree" id="folder-tree" role="tree" aria-labelledby="folders-title"></ul>
+      </section>
       <section class="outline-section" id="outline-section" aria-label="Outline" hidden>
         <button class="files-sidebar-title outline-toggle" id="outline-toggle-btn" type="button" aria-expanded="true" aria-controls="outline-list">Outline</button>
         <ul class="outline-list" id="outline-list"></ul>
@@ -192,6 +198,7 @@
         <h2 class="start-section-title" id="start-actions-title">Start</h2>
         <button class="start-link" id="start-new-file-btn" type="button">New File…</button>
         <button class="start-link" id="start-open-file-btn" type="button">Open File…</button>
+        <button class="start-link" id="start-open-folder-btn" type="button">Open Folder…</button>
       </section>
 
       <section class="start-section" id="recent-files" aria-labelledby="recent-files-title" hidden>
@@ -321,6 +328,10 @@
             <div class="shortcut-row">
               <span class="shortcut-desc">Open File</span>
               <div class="shortcut-keys"><kbd>Cmd</kbd><span class="key-plus">+</span><kbd>O</kbd></div>
+            </div>
+            <div class="shortcut-row">
+              <span class="shortcut-desc">Open Folder</span>
+              <div class="shortcut-keys"><kbd>Cmd</kbd><span class="key-plus">+</span><kbd>Shift</kbd><span class="key-plus">+</span><kbd>O</kbd></div>
             </div>
             <div class="shortcut-row">
               <span class="shortcut-desc">Save / Save As</span>

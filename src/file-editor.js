@@ -33,6 +33,8 @@ import { createFilesModel, isDirty, needsPrompt } from "./files.js";
 import { commentsExtension } from "./editor-comments.js";
 import { createComments } from "./comments-panel.js";
 import { createOpenFileMenu } from "./open-file-menu.js";
+import { createFolderSidebar } from "./folder-sidebar.js";
+import { isMacLikePlatform } from "./platform-labels.js";
 import { EditorState, EditorView, Transaction } from "./vendor/codemirror.js";
 
 const LAYOUT_KEY = "sodilaud_layout_mode";
@@ -164,6 +166,8 @@ export function createFileEditor({
     onClose: (id) => keepFocus(id, () => closeFile(id))
   });
 
+  const folders = createFolderSidebar({ document, invoke, openPath, notify, onChange: renderSidebar });
+
   // The file's button disappears with the file, which would drop keyboard
   // focus onto the page; it goes to the neighbouring file or the start page.
   async function keepFocus(id, action) {
@@ -223,9 +227,13 @@ export function createFileEditor({
 
   function renderSidebar() {
     const buffers = model.list();
-    sidebar.hidden = buffers.length === 0 || sidebarHidden;
-    sidebarToggle.hidden = buffers.length === 0;
+    const hasRoots = folders.hasRoots();
+    const content = buffers.length > 0 || hasRoots;
+    sidebar.hidden = !content || sidebarHidden;
+    sidebarToggle.hidden = !content;
     sidebarToggle.setAttribute("aria-expanded", String(!sidebar.hidden));
+    $("files-sidebar-title").hidden = buffers.length === 0 && hasRoots;
+    $("folders-section").hidden = !hasRoots;
     const active = showingStartPage ? null : model.active();
     openList.replaceChildren(...buffers.map((buffer) => {
       const item = document.createElement("li");
@@ -395,6 +403,7 @@ export function createFileEditor({
     $("menu-save-file-btn").disabled = !buffer;
     $("menu-save-as-btn").disabled = !buffer;
     $("menu-close-file-btn").disabled = !buffer;
+    $("menu-browse-folder-btn").disabled = !browsable(buffer);
     $("menu-start-page-btn").disabled = showingStartPage;
   }
 
@@ -422,6 +431,7 @@ export function createFileEditor({
       preview.scrollTop = buffer.previewTop ?? 0;
     }
     if (showEditor) formatToolbar.layout();
+    folders.setActivePath(showEditor ? buffer.path : null);
     comments.shown();
     renderTitle();
     renderSidebar();
@@ -888,7 +898,7 @@ export function createFileEditor({
   }
 
   function toggleSidebar() {
-    if (model.list().length === 0) return;
+    if (model.list().length === 0 && !folders.hasRoots()) return;
     sidebarHidden = !sidebarHidden;
     renderSidebar();
   }
@@ -953,6 +963,7 @@ export function createFileEditor({
     // A file handed over at launch wins; otherwise the last file reopened shows.
     if (!(await takePending())) showingStartPage = model.list().length === 0;
     render();
+    await folders.restore(lists);
   }
 
   function attach() {
@@ -993,6 +1004,21 @@ export function createFileEditor({
     setLayoutMode(layoutMode, { persist: false });
   }
 
+  // A draft lives in app data, so its folder cannot be shown.
+  const browsable = (buffer) => Boolean(buffer?.path) && buffer.draft !== true;
+
+  const openFolderDialog = () => folders.openFolderDialog();
+
+  function browseFolder() {
+    const buffer = showingStartPage ? null : model.active();
+    return browsable(buffer) ? folders.browseFolder(buffer.path) : Promise.resolve();
+  }
+
+  // Cmd+Shift+O on macOS, Ctrl+Shift+O elsewhere.
+  const isFolderChord = (event) => (isMacLikePlatform(document.defaultView?.navigator)
+    ? event.metaKey && !event.ctrlKey
+    : event.ctrlKey && !event.metaKey);
+
   // File shortcuts. Returns whether the event was one.
   function handleShortcut(event) {
     const isMeta = event.metaKey || event.ctrlKey;
@@ -1001,6 +1027,7 @@ export function createFileEditor({
     let action = null;
     if (key === "n" && !event.shiftKey) action = newFile;
     else if (key === "o" && !event.shiftKey) action = openDialog;
+    else if (key === "o" && event.shiftKey && isFolderChord(event)) action = openFolderDialog;
     else if (key === "s" && event.shiftKey && model.active()) action = () => saveAs();
     // Ctrl+Cmd+S toggles the sidebar on macOS.
     else if (key === "s" && !event.shiftKey && !(event.ctrlKey && event.metaKey) && model.active()) action = () => save();
@@ -1031,6 +1058,9 @@ export function createFileEditor({
     flushForClose,
     newFile,
     openDialog,
+    openFolderDialog,
+    browseFolder,
+    folderChanged: (payload) => folders.folderChanged(payload),
     openPath,
     save,
     saveAs,

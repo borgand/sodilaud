@@ -351,6 +351,15 @@ function attachListeners() {
   });
   $("open-quicknotes-menu-btn").addEventListener("click", closeMenuThen(() => showQuickNotes()));
   $("menu-new-window-btn").addEventListener("click", closeMenuThen(openNewWindow));
+  $("menu-open-folder-btn").addEventListener("click", () => {
+    toggleActionsDropdown(false);
+    fileEditor.openFolderDialog();
+  });
+  $("menu-browse-folder-btn").addEventListener("click", () => {
+    toggleActionsDropdown(false);
+    fileEditor.browseFolder();
+  });
+  $("start-open-folder-btn").addEventListener("click", () => fileEditor.openFolderDialog());
   // The sodilaud command is a shell script; Windows has no install for it.
   const cliToolBtn = $("menu-cli-tool-btn");
   cliToolBtn.hidden = isWindowsPlatform(navigator);
@@ -538,6 +547,7 @@ async function registerNativeHandlers() {
     await listen("file-doc-saved", ({ payload }) => fileEditor.handleSaved(payload));
     await listen("file-doc-external", ({ payload }) => fileEditor.handleExternal(payload));
     await listen("file-open-request", () => fileEditor.takePending());
+    await listen("folder-changed", ({ payload }) => fileEditor.folderChanged(payload));
     await listen("comments-changed", ({ payload }) => fileEditor.receiveComments(payload));
     await listen("coedit-state", ({ payload }) => fileEditor.setCoeditState(payload));
     await agentAccess.listen(listen);
