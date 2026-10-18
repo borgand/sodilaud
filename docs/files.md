@@ -1,7 +1,7 @@
 # Editing files
 
 Main Sodilaud windows edit Markdown and plain-text files on disk: `.md`, `.markdown` and
-`.txt`. It uses the same editor as Quick Notes (Live, Source and Reading modes, the formatting
+`.txt`. They use the same editor as Quick Notes (Live, Source and Reading modes, the formatting
 toolbar, and the smart editing keys), but files and notes never mix: files do not appear in
 Quick Notes, in search or in trash, and notes do not appear here. An agent can read or edit
 a file only while it is open here, and only with the co-editing permissions on (see

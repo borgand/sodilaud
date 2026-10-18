@@ -93,7 +93,10 @@ pub fn on_close_requested(window: &Window, api: &CloseRequestApi) {
     api.prevent_close();
     let app = window.app_handle();
     let label = window.label();
-    if labels(app).len() < 2 {
+    let last = app
+        .try_state::<Files>()
+        .is_none_or(|files| files.read(|lists| is_last(&lists.windows, label)));
+    if last {
         close_last(app);
     } else if !crate::quit::is_registered(app, label) {
         close(window);
@@ -102,31 +105,56 @@ pub fn on_close_requested(window: &Window, api: &CloseRequestApi) {
     }
 }
 
+/// What closing a window leaves to do. It is decided against the set, in one
+/// update, so two windows closing together cannot both pass as "not the last
+/// one": a destroyed window stays a live webview until its Destroyed event.
+#[derive(Debug, PartialEq)]
+enum Closing {
+    /// The window left the set already.
+    Gone,
+    /// It is the last window, which stays.
+    Last,
+    /// It left the set with these open files.
+    Removed(Vec<String>),
+}
+
+fn begin_close(set: &mut WindowSet, label: &str) -> Closing {
+    if set.entry(label).is_none() {
+        return Closing::Gone;
+    }
+    set.remove(label).map_or(Closing::Last, Closing::Removed)
+}
+
+fn is_last(set: &WindowSet, label: &str) -> bool {
+    set.entry(label).is_some() && set.labels().len() < 2
+}
+
 /// Forgets the window's files and destroys it, or closes the last window as
 /// before when the others went away meanwhile.
 fn close(window: &Window) {
     let app = window.app_handle();
     let label = window.label();
-    let live = labels(app);
-    if !live.iter().any(|live| live == label) {
-        return;
-    }
-    if live.len() < 2 {
+    let Some(files) = app.try_state::<Files>() else {
         close_last(app);
         return;
-    }
-    if let (Some(files), Some(registry)) =
-        (app.try_state::<Files>(), app.try_state::<SharedRegistry>())
-    {
-        let paths = files.update(|lists| lists.windows.remove(label));
+    };
+    let paths = match files.update(|lists| begin_close(&mut lists.windows, label)) {
+        Closing::Gone => return,
+        Closing::Last => {
+            close_last(app);
+            return;
+        }
+        Closing::Removed(paths) => paths,
+    };
+    if let Some(registry) = app.try_state::<SharedRegistry>() {
         for path in paths {
             if let Err(error) = registry.file_close(Path::new(&path), &*files) {
                 eprintln!("Could not close {path}: {}", error.message);
             }
         }
-        let orphaned = files.take_pending(label);
-        crate::files::present_pending(app, &files, orphaned.into_iter().map(|p| p.path).collect());
     }
+    let orphaned = files.take_pending(label);
+    crate::files::present_pending(app, &files, orphaned.into_iter().map(|p| p.path).collect());
     crate::quit::forget_window(app, label);
     let _ = window.destroy();
 }
@@ -503,5 +531,26 @@ mod tests {
             placements(&set, &[])[1].1,
             Some(frame(9000.0, 9000.0, 960.0, 680.0))
         );
+    }
+
+    #[test]
+    fn two_windows_closing_together_leave_one() {
+        let mut set =
+            WindowSet::from_saved(vec![saved(&["/d/a.md"], None), saved(&["/d/b.md"], None)]);
+        assert!(!is_last(&set, "main"));
+        assert!(!is_last(&set, "main-2"));
+        assert_eq!(
+            begin_close(&mut set, "main"),
+            Closing::Removed(vec!["/d/a.md".to_string()])
+        );
+        assert_eq!(
+            begin_close(&mut set, "main-2"),
+            Closing::Last,
+            "the second close must not destroy the only window left"
+        );
+        assert_eq!(set.labels(), ["main-2"]);
+        assert!(is_last(&set, "main-2"));
+        assert_eq!(begin_close(&mut set, "main"), Closing::Gone);
+        assert!(!is_last(&set, "main"));
     }
 }
