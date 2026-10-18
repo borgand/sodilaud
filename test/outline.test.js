@@ -9,6 +9,7 @@ import {
   applyReadingFolds,
   outlineEntries,
   readingFoldsHiding,
+  renderOutlineList,
   reviewProgress,
   reviewProgressText,
   sectionEnds
@@ -208,4 +209,15 @@ test("the next unreviewed hunk is the first one after the reading position, wrap
   assert.equal(nextUnreviewed(hunks, 10), "h00003", "the hunk being read is not picked again");
   assert.equal(nextUnreviewed(hunks, 30), "h00001", "past the last one it wraps");
   assert.equal(nextUnreviewed(hunks.map(hunk => ({ ...hunk, reviewed: true })), 0), null);
+});
+
+test("outline rows carry their heading id and no tooltip", () => {
+  const { window } = new JSDOM("<ul></ul>");
+  const list = window.document.querySelector("ul");
+  renderOutlineList(list, [
+    { id: "a", level: 1, text: "Alpha", total: 0, reviewed: 0 },
+    { id: "b", level: 2, text: "Beta", total: 0, reviewed: 0 }
+  ], () => {});
+  assert.deepEqual([...list.children].map(li => li.dataset.outlineId), ["a", "b"]);
+  assert.equal(list.querySelector(".outline-link").hasAttribute("title"), false);
 });

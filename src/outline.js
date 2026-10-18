@@ -66,12 +66,12 @@ export function renderOutlineList(list, entries, onSelect) {
   list.replaceChildren(...entries.map(entry => {
     const item = document.createElement("li");
     item.className = "outline-item";
+    item.dataset.outlineId = entry.id;
     item.style.setProperty("--outline-depth", String(entry.level - top));
     const link = document.createElement("button");
     link.type = "button";
     link.className = "outline-link";
     link.textContent = entry.text;
-    link.title = entry.text;
     link.addEventListener("click", () => onSelect(entry.id));
     item.append(link);
     if (entry.total) {
