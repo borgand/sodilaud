@@ -20,8 +20,12 @@ import { reviewHunkFences, setHunkReviewed } from "./editor-hunks.js";
 import { foldedSections, revealAnchor, sectionFolding, setSectionFolded } from "./editor-folds.js";
 import {
   applyReadingFolds,
+  isScrolledToEnd,
+  markCurrentOutline,
   nextUnreviewed,
   outlineEntries,
+  outlineIdAt,
+  readingHeadingAt,
   readingFoldsHiding,
   renderOutlineList,
   reviewProgress,
@@ -84,6 +88,8 @@ export function createFileEditor({
   let shownId = null;
   let recent = [];
   let outlineTimer = null;
+  let outlineShown = [];
+  let currentOutlineId = null;
   const navHistory = createNavHistory();
 
   const editor = createMarkdownEditor({
@@ -282,6 +288,27 @@ export function createFileEditor({
     });
   }
 
+  // A hunk this close below the top of the view counts as the one being read,
+  // so a hunk a jump just scrolled to is not picked again.
+  const TOP_SLACK_PX = 8;
+
+  function updateCurrentOutline() {
+    if (outlineSection.hidden) return;
+    let id;
+    if (layoutMode === "reading") {
+      const box = preview.getBoundingClientRect();
+      id = readingHeadingAt(preview, isScrolledToEnd(preview) ? box.bottom : box.top + TOP_SLACK_PX);
+    } else {
+      const { view } = editor;
+      const box = view.scrollDOM.getBoundingClientRect();
+      const edge = isScrolledToEnd(view.scrollDOM) ? box.bottom : box.top + TOP_SLACK_PX;
+      id = outlineIdAt(outlineShown, view.lineBlockAtHeight(edge - view.documentTop).from);
+    }
+    if (id === currentOutlineId) return;
+    currentOutlineId = id;
+    markCurrentOutline(outlineList, id)?.scrollIntoView?.({ block: "nearest" });
+  }
+
   function renderOutline() {
     clearTimeout(outlineTimer);
     outlineTimer = null;
@@ -289,18 +316,19 @@ export function createFileEditor({
     const { state } = editor.view;
     const hunks = buffer ? reviewHunkFences(state) : [];
     const entries = buffer ? outlineEntries(documentAnchors(state), hunks, state.doc.length) : [];
+    outlineShown = entries;
     outlineSection.hidden = entries.length === 0;
-    if (entries.length) renderOutlineList(outlineList, entries, jumpTo);
+    if (entries.length) {
+      renderOutlineList(outlineList, entries, jumpTo);
+      markCurrentOutline(outlineList, currentOutlineId);
+      updateCurrentOutline();
+    } else currentOutlineId = null;
     const progress = reviewProgress(hunks);
     reviewStatus.hidden = progress.total === 0;
     reviewStatus.textContent = reviewProgressText(progress);
     reviewStatus.classList.toggle("complete", progress.total > 0 && progress.reviewed === progress.total);
     reviewNext.hidden = progress.reviewed === progress.total;
   }
-
-  // A hunk this close below the top of the view counts as the one being read,
-  // so a hunk a jump just scrolled to is not picked again.
-  const TOP_SLACK_PX = 8;
 
   function nextUnreviewedHunk() {
     if (layoutMode === "reading") {
@@ -758,6 +786,7 @@ export function createFileEditor({
     $("comment-btn").disabled = layoutMode === "reading";
     comments.render();
     renderPreview();
+    updateCurrentOutline();
     if (persist) {
       storage.setItem(LAYOUT_KEY, layoutMode);
       broadcast(LAYOUT_KEY);
@@ -831,6 +860,8 @@ export function createFileEditor({
     for (const [mode, button] of Object.entries(layoutButtons)) {
       button.addEventListener("click", () => setLayoutMode(mode));
     }
+    editor.view.scrollDOM.addEventListener("scroll", updateCurrentOutline, { passive: true });
+    preview.addEventListener("scroll", updateCurrentOutline, { passive: true });
     sidebarToggle.addEventListener("click", toggleSidebar);
     outlineToggle.addEventListener("click", toggleOutline);
     reviewNext.addEventListener("click", goToNextUnreviewed);

@@ -296,6 +296,70 @@ test("a file without headings or hunks shows no outline and no review count", as
   assert.equal(doc(app).getElementById("review-progress").hidden, true);
 });
 
+const BOOK_TEXT = "# Book\n\nIntro\n\n## Engine\n\nBody\n\n## Notes\n\nDeep\n";
+
+test("the outline marks the section in view in Reading mode", async () => {
+  const fake = lists({ open: ["/docs/book.md"] });
+  let scrolls = 0;
+  const app = await bootMainWindow({
+    instance: 13,
+    disk: { "/docs/book.md": BOOK_TEXT },
+    beforeBoot: (dom) => {
+      dom.window.marked = marked;
+      dom.window.HTMLElement.prototype.scrollIntoView = () => { scrolls += 1; };
+    },
+    handlers: fake.handlers
+  });
+  const page = doc(app);
+  app.click("mode-reading");
+  const preview = page.getElementById("markdown-preview");
+  const rect = (top) => () => ({ top, bottom: top });
+  preview.getBoundingClientRect = rect(0);
+  const place = (book, engine, notes) => {
+    page.querySelector("#markdown-preview [data-anchor=book]").getBoundingClientRect = rect(book);
+    page.querySelector("#markdown-preview [data-anchor=engine]").getBoundingClientRect = rect(engine);
+    page.querySelector("#markdown-preview [data-anchor=notes]").getBoundingClientRect = rect(notes);
+  };
+  const current = () => page.querySelector(".outline-item.current");
+  place(-300, -20, 400);
+  const before = scrolls;
+  preview.dispatchEvent(new app.dom.window.Event("scroll"));
+  assert.equal(current().dataset.outlineId, "engine");
+  assert.equal(current().querySelector(".outline-link").getAttribute("aria-current"), "location");
+  assert.equal(scrolls, before + 1);
+  place(-300, -20, -5);
+  preview.dispatchEvent(new app.dom.window.Event("scroll"));
+  assert.equal(current().dataset.outlineId, "notes");
+  const after = scrolls;
+  preview.dispatchEvent(new app.dom.window.Event("scroll"));
+  assert.equal(scrolls, after, "an unchanged section does not scroll the sidebar");
+});
+
+test("the outline mark follows Live scrolling and survives a re-render", async () => {
+  const fake = lists({ open: ["/docs/book.md"] });
+  let scrolls = 0;
+  const app = await bootMainWindow({
+    instance: 14,
+    disk: { "/docs/book.md": BOOK_TEXT },
+    beforeBoot: (dom) => {
+      dom.window.marked = marked;
+      dom.window.HTMLElement.prototype.scrollIntoView = () => { scrolls += 1; };
+    },
+    handlers: fake.handlers
+  });
+  const page = doc(app);
+  const view = app.editor();
+  view.lineBlockAtHeight = () => ({ from: BOOK_TEXT.indexOf("## Notes") });
+  view.scrollDOM.dispatchEvent(new app.dom.window.Event("scroll"));
+  const current = () => page.querySelector(".outline-item.current");
+  assert.equal(current().dataset.outlineId, "notes");
+  const before = scrolls;
+  typeAt(app, BOOK_TEXT.length, "x");
+  await app.settle(250);
+  assert.equal(current().dataset.outlineId, "notes");
+  assert.equal(scrolls, before, "a re-render does not scroll the sidebar");
+});
+
 test("Save As onto the file's own path right after typing keeps every change", async () => {
   const fake = lists({ open: ["/docs/s.md"] });
   let disk;

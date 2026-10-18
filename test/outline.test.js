@@ -7,6 +7,10 @@ import { marked } from "marked";
 import { installEditorDom } from "./helpers/cm-dom.js";
 import {
   applyReadingFolds,
+  isScrolledToEnd,
+  markCurrentOutline,
+  outlineIdAt,
+  readingHeadingAt,
   outlineEntries,
   readingFoldsHiding,
   renderOutlineList,
@@ -220,4 +224,51 @@ test("outline rows carry their heading id and no tooltip", () => {
   ], () => {});
   assert.deepEqual([...list.children].map(li => li.dataset.outlineId), ["a", "b"]);
   assert.equal(list.querySelector(".outline-link").hasAttribute("title"), false);
+});
+
+test("outlineIdAt picks the last heading at or above a position", () => {
+  const entries = [{ id: "a", from: 0 }, { id: "b", from: 10 }, { id: "c", from: 20 }];
+  assert.equal(outlineIdAt(entries, 15), "b");
+  assert.equal(outlineIdAt(entries, 20), "c");
+  assert.equal(outlineIdAt(entries, 0), "a");
+  assert.equal(outlineIdAt([{ id: "x", from: 5 }], 2), null);
+  assert.equal(outlineIdAt([], 2), null);
+});
+
+test("readingHeadingAt skips folded headings and returns the last one above the line", () => {
+  const { window } = new JSDOM(
+    '<div><h1 data-anchor="a"></h1><p></p><h2 data-anchor="b" class="section-fold-hidden"></h2><h2 data-anchor="c"></h2></div>'
+  );
+  const root = window.document.querySelector("div");
+  const tops = { a: 0, b: 50, c: 100 };
+  for (const heading of root.querySelectorAll("h1, h2")) {
+    heading.getBoundingClientRect = () => ({ top: tops[heading.getAttribute("data-anchor")] });
+  }
+  assert.equal(readingHeadingAt(root, 60), "a");
+  assert.equal(readingHeadingAt(root, 100), "c");
+  assert.equal(readingHeadingAt(root, -1), null);
+});
+
+test("isScrolledToEnd needs a scrolled view at its bottom", () => {
+  const at = (scrollTop, clientHeight, scrollHeight) => isScrolledToEnd({ scrollTop, clientHeight, scrollHeight });
+  assert.equal(at(0, 100, 100), false);
+  assert.equal(at(50, 100, 150), true);
+  assert.equal(at(49, 100, 152), false);
+  assert.equal(at(47, 100, 149), true);
+});
+
+test("markCurrentOutline moves the mark and aria-current", () => {
+  const { window } = new JSDOM("<ul></ul>");
+  const list = window.document.querySelector("ul");
+  renderOutlineList(list, [
+    { id: "a", level: 1, text: "Alpha", total: 0, reviewed: 0 },
+    { id: "b", level: 2, text: "Beta", total: 0, reviewed: 0 }
+  ], () => {});
+  const marked = markCurrentOutline(list, "b");
+  assert.ok(marked === list.children[1]);
+  assert.ok(marked.classList.contains("current"));
+  assert.equal(marked.querySelector(".outline-link").getAttribute("aria-current"), "location");
+  assert.ok(!list.children[0].classList.contains("current"));
+  assert.equal(markCurrentOutline(list, null), null);
+  assert.equal(list.querySelectorAll(".current, [aria-current]").length, 0);
 });
