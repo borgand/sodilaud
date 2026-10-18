@@ -377,6 +377,15 @@ mod tests {
     }
 
     #[test]
+    fn a_removed_window_receives_no_routed_opens() {
+        let mut set = WindowSet::from_saved(vec![saved(&["/a.md"]), saved(&["/b.md"])]);
+        set.focused("main-2");
+        set.remove("main-2");
+        let routed = set.route(&["/a.md".into(), "/b.md".into(), "/new.md".into()]);
+        assert!(routed.iter().all(|(label, _)| label == "main"));
+    }
+
+    #[test]
     fn saved_keeps_window_order_and_frames() {
         let mut set = WindowSet::from_saved(vec![saved(&["/a.md"]), saved(&["/b.md"])]);
         let frame = Frame {

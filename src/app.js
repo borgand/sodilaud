@@ -481,6 +481,7 @@ function isSidebarShortcut(event) {
 // hotkey. Option+N is a dead key on macOS, so the physical key is matched.
 function isNewWindowShortcut(event) {
   if (event.code !== "KeyN" || !event.altKey || event.shiftKey) return false;
+  if (event.getModifierState?.("AltGraph")) return false;
   return isMacLikePlatform(navigator)
     ? event.metaKey && !event.ctrlKey
     : event.ctrlKey && !event.metaKey;
