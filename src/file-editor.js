@@ -75,6 +75,7 @@ export function createFileEditor({
   const bannerText = $("file-banner-text");
   const bannerPrimary = $("file-banner-primary-btn");
   const bannerSecondary = $("file-banner-secondary-btn");
+  const draftBar = $("draft-bar");
   const layoutButtons = {
     live: $("mode-live"),
     source: $("mode-source"),
@@ -90,6 +91,7 @@ export function createFileEditor({
   // dropped when the editor lets go of it.
   let movingDocId = null;
   let recent = [];
+  let drafts = [];
   let outlineTimer = null;
   const navHistory = createNavHistory();
 
@@ -275,7 +277,14 @@ export function createFileEditor({
         const rect = open.getBoundingClientRect();
         fileMenu.open(buffer, { x: rect.left, y: rect.bottom }, open);
       });
-      item.append(open, close);
+      item.append(open);
+      if (buffer.draft) {
+        const tag = document.createElement("span");
+        tag.className = "open-file-tag";
+        tag.textContent = "Draft";
+        item.append(tag);
+      }
+      item.append(close);
       return item;
     }));
   }
@@ -299,6 +308,20 @@ export function createFileEditor({
     }));
   }
 
+  function renderDrafts() {
+    $("drafts-section").hidden = drafts.length === 0;
+    $("drafts-list").replaceChildren(...drafts.map((draft) => {
+      const item = document.createElement("li");
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "start-link";
+      button.textContent = draft.name;
+      button.addEventListener("click", () => openPath(draft.path));
+      item.append(button);
+      return item;
+    }));
+  }
+
   function renderBanner() {
     const buffer = showingStartPage ? null : model.active();
     const error = buffer?.error;
@@ -310,6 +333,7 @@ export function createFileEditor({
     } else if (error) {
       content = [`Could not save ${buffer.name}: ${error}`, "Try again", () => saveNow(buffer.id), "Save As…", () => saveAs(buffer.id)];
     }
+    draftBar.hidden = buffer?.draft !== true;
     banner.hidden = content === null;
     if (!content) return;
     const [text, primary, onPrimary, secondary, onSecondary] = content;
@@ -515,6 +539,7 @@ export function createFileEditor({
     const existing = model.byPath(saved.path);
     if (existing && existing.id !== id) model.close(existing.id, { force: true });
     const previousPath = buffer.path;
+    const wasDraft = buffer.draft;
     if (previousPath !== null && previousPath !== saved.path) {
       await invoke("file_doc_close", { path: previousPath }).catch((error) => console.error("Could not close the old file", error));
     }
@@ -532,17 +557,52 @@ export function createFileEditor({
       loadBuffer(buffer);
       editor.setSelection(selection.start, selection.end, { scroll: false });
     }
+    if (wasDraft && previousPath !== saved.path) {
+      await invoke("draft_discard", { path: previousPath, ask: false })
+        .catch((error) => console.error("Could not discard the saved draft", error));
+    }
     await syncOpenList();
     await refreshRecent();
     render();
     return true;
   }
 
-  // Cmd+S: a new file asks where to go; a saved one is written at once.
+  // Cmd+S: a new file or a draft asks where to go; a saved one is written at once.
   function save(id = model.active()?.id) {
     const buffer = model.get(id);
     if (!buffer) return Promise.resolve(false);
-    return buffer.path === null ? saveAs(id) : saveNow(id);
+    return buffer.path === null || buffer.draft ? saveAs(id) : saveNow(id);
+  }
+
+  async function saveDraftToNotes(id = model.active()?.id) {
+    const buffer = model.get(id);
+    if (!buffer?.draft) return false;
+    if (!(await sync.flush((doc) => doc.docId === buffer.docId))) {
+      notify(`Could not save ${buffer.name}: unsaved changes could not be sent.`);
+      return false;
+    }
+    try {
+      await invoke("draft_save_to_notes", { path: buffer.path });
+    } catch (error) {
+      notify(errorMessage(error));
+      return false;
+    }
+    // Rust discarded the draft's document, so there is nothing to close.
+    await forget(id, { detach: true });
+    return true;
+  }
+
+  async function discardDraft(id = model.active()?.id) {
+    const buffer = model.get(id);
+    if (!buffer?.draft) return false;
+    try {
+      if (!(await invoke("draft_discard", { path: buffer.path, ask: true }))) return false;
+    } catch (error) {
+      notify(errorMessage(error));
+      return false;
+    }
+    await forget(id, { detach: true });
+    return true;
   }
 
   // ----------------------------------------------------
@@ -564,15 +624,21 @@ export function createFileEditor({
     }
   }
 
+  function takeLists(lists) {
+    recent = Array.isArray(lists?.recent) ? lists.recent : [];
+    drafts = Array.isArray(lists?.drafts) ? lists.drafts : [];
+    renderRecent();
+    renderDrafts();
+  }
+
   async function refreshRecent() {
+    let lists = null;
     try {
-      const lists = await invoke("file_lists");
-      recent = Array.isArray(lists?.recent) ? lists.recent : [];
+      lists = await invoke("file_lists");
     } catch (error) {
       console.error("Could not read the recent files", error);
-      recent = [];
     }
-    renderRecent();
+    takeLists(lists);
     return recent;
   }
 
@@ -738,7 +804,8 @@ export function createFileEditor({
     if (!buffer) return false;
     if (!force) {
       if (!(await resolveUnsavedNew(buffer))) return false;
-      if (buffer.path !== null && !(await save(id))) return false;
+      // Not save(), which asks where to save a draft: a closed draft stays in app data.
+      if (buffer.path !== null && !(await saveNow(id))) return false;
     }
     if (buffer.path !== null) {
       try {
@@ -751,13 +818,22 @@ export function createFileEditor({
         }
       }
     }
+    await forget(id);
+    return true;
+  }
+
+  // Drops a buffer this window no longer edits. `detach` lets go of a
+  // document that is gone or belongs to another window now.
+  async function forget(id, { detach = false } = {}) {
     model.close(id, { force: true });
-    if (shownId === id) shownId = null;
+    if (shownId === id) {
+      shownId = null;
+      if (detach) editor.loadText("");
+    }
     if (!model.active()) showingStartPage = true;
     await syncOpenList();
     await refreshRecent();
     render();
-    return true;
   }
 
   // ----------------------------------------------------
@@ -820,15 +896,7 @@ export function createFileEditor({
     } finally {
       movingDocId = null;
     }
-    model.close(id, { force: true });
-    if (shownId === id) {
-      shownId = null;
-      // Detaches the editor from the document, which now belongs to the other window.
-      editor.loadText("");
-    }
-    if (!model.active()) showingStartPage = true;
-    await syncOpenList();
-    render();
+    await forget(id, { detach: true });
     return true;
   }
 
@@ -968,8 +1036,7 @@ export function createFileEditor({
     } catch (error) {
       console.error("Could not read the file lists", error);
     }
-    recent = Array.isArray(lists?.recent) ? lists.recent : [];
-    renderRecent();
+    takeLists(lists);
     for (const path of Array.isArray(lists?.open) ? lists.open : []) {
       try {
         model.openFile(await invoke("file_doc_open", { path }));
@@ -1018,6 +1085,13 @@ export function createFileEditor({
     $("menu-start-page-btn").addEventListener("click", () => { closeMenus(); showStartPage(); });
     $("comment-btn").addEventListener("click", () => comments.start());
     $("comments-count-btn").addEventListener("click", () => comments.toggle());
+    $("draft-save-as-btn").addEventListener("click", () => saveAs());
+    for (const [button, action] of [["draft-save-notes-btn", saveDraftToNotes], ["draft-discard-btn", discardDraft]]) {
+      $(button).addEventListener("click", () => {
+        const id = model.active()?.id;
+        if (id) keepFocus(id, () => action(id));
+      });
+    }
     $("start-actions").hidden = false;
     $("recent-files").hidden = false;
     setLayoutMode(layoutMode, { persist: false });
@@ -1085,6 +1159,8 @@ export function createFileEditor({
     saveAs,
     closeFile,
     moveFile,
+    saveDraftToNotes,
+    discardDraft,
     showStartPage,
     closeFormatMenus: () => formatToolbar.closeMenus(),
     setLineNumbers: (enabled) => editor.setLineNumbers(enabled),

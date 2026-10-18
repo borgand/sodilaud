@@ -15,6 +15,7 @@ export const fileKind = (name) => (/\.(txt|csv|tsv)$/i.test(name ?? "") ? "plain
 // keeps its text here). `latest` is the newest version the registry reported
 // and `savedVersion` the newest one on disk. `external` is null, "conflict"
 // (changed on disk while edited here) or "removed" (deleted or moved away).
+// `draft` marks an agent's draft kept in app data until the owner saves it.
 function createBuffer(id, fields) {
   const buffer = {
     id,
@@ -30,6 +31,7 @@ function createBuffer(id, fields) {
     external: null,
     error: null,
     editorState: null,
+    draft: false,
     ...fields
   };
   buffer.kind = fileKind(buffer.name);
@@ -46,7 +48,8 @@ const fromOpened = (opened) => ({
   savedVersion: opened.savedVersion,
   lineEnding: opened.lineEnding,
   bom: opened.bom,
-  external: opened.external ?? null
+  external: opened.external ?? null,
+  draft: opened.draft === true
 });
 
 // `unsent`: the editor holds changes the registry has not confirmed yet.

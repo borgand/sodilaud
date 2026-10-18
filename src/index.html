@@ -207,6 +207,11 @@
         <p class="start-muted" id="recent-files-empty">No recent files.</p>
       </section>
 
+      <section class="start-section" id="drafts-section" aria-labelledby="drafts-title" hidden>
+        <h2 class="start-section-title" id="drafts-title">Drafts</h2>
+        <ul class="recent-list" id="drafts-list"></ul>
+      </section>
+
       <section class="start-section" id="quicknotes-card" aria-labelledby="quicknotes-card-title">
         <h2 class="start-section-title" id="quicknotes-card-title">Quick Notes</h2>
         <p class="start-muted">
@@ -223,6 +228,12 @@
         <span class="file-banner-text" id="file-banner-text"></span>
         <button class="file-banner-btn" id="file-banner-primary-btn" type="button">Reload</button>
         <button class="file-banner-btn" id="file-banner-secondary-btn" type="button">Keep mine</button>
+      </div>
+      <div class="draft-bar" id="draft-bar" role="status" hidden>
+        <span class="draft-bar-text">Draft from an agent. It stays in Sodilaud until you save it.</span>
+        <button class="file-banner-btn" id="draft-save-as-btn" type="button">Save As…</button>
+        <button class="file-banner-btn" id="draft-save-notes-btn" type="button">Save to Quick Notes</button>
+        <button class="file-banner-btn" id="draft-discard-btn" type="button">Discard</button>
       </div>
       <div class="editor-pane" id="editor-pane">
         <div class="editor-wrapper" id="editor-wrapper">

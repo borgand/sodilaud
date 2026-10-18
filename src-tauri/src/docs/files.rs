@@ -494,6 +494,16 @@ impl Registry {
         self.coedit_forget_file(path);
     }
 
+    /// Deletes the comments stored for `path`, which is gone for good.
+    pub(crate) fn file_remove_comments(&self, path: &Path) {
+        let Some(directory) = self.comment_dir() else {
+            return;
+        };
+        if let Err(error) = crate::store::comments::save(&directory, path, &[]) {
+            eprintln!("{error}");
+        }
+    }
+
     fn emit_external(&self, path: &Path, doc: &FileDoc, kind: ExternalKind) {
         if let Some(sink) = self.sink() {
             sink.file_external(&FileExternal {

@@ -513,6 +513,7 @@ fn require_draft(files: &Files, path: &str) -> Result<PathBuf, FileError> {
 fn discard_draft(files: &Files, registry: &SharedRegistry, path: &Path) -> Result<(), FileError> {
     let dir = files.drafts_dir().ok_or_else(|| not_a_draft(path))?;
     registry.file_discard(path);
+    registry.file_remove_comments(path);
     drafts::remove(dir, path).map_err(FileError::other)?;
     let text = path.to_string_lossy().to_string();
     files.update(|lists| {
@@ -653,7 +654,43 @@ pub fn file_confirm_discard(window: Window, name: String) -> Result<DiscardChoic
 
 #[cfg(test)]
 mod tests {
-    use super::save_filters;
+    use super::*;
+    use crate::docs::comments::{Author, Comment, State as CommentState};
+    use crate::docs::registry::Registry;
+    use crate::store::comments;
+
+    #[test]
+    fn discarding_a_draft_deletes_its_folder_and_its_comments() {
+        let base = std::env::temp_dir().join(format!(
+            "sodilaud-discard-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let dir = base.join(drafts::DIRECTORY);
+        let draft = match drafts::create(&dir, "r", "Plan", "# Plan\n").unwrap() {
+            drafts::Created::New(draft) | drafts::Created::Existing(draft) => draft,
+        };
+        let path = PathBuf::from(&draft.path);
+        let files = Files::for_test_with_drafts(Some(dir));
+        let registry: SharedRegistry = std::sync::Arc::new(Registry::default());
+        let comment_dir = base.join(comments::DIRECTORY);
+        registry.set_comment_dir(comment_dir.clone());
+        let comment = Comment::new(
+            Author::Owner,
+            CommentState::Held,
+            "# Plan",
+            (2, 6),
+            "b".into(),
+            None,
+            1,
+        );
+        comments::save(&comment_dir, &path, &[comment]).unwrap();
+        registry.file_open(&path, &files).unwrap();
+        discard_draft(&files, &registry, &path).unwrap();
+        assert!(!path.exists());
+        assert!(!path.parent().unwrap().exists());
+        assert!(!comments::file_for(&comment_dir, &path).exists());
+        assert!(files.drafts().is_empty());
+    }
 
     #[test]
     fn save_as_offers_the_files_own_type_first() {
