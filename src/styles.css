@@ -3888,6 +3888,14 @@ kbd {
   margin-bottom: 0;
 }
 
+.cm-mode-live .cm-lp-table-composer {
+  cursor: auto;
+}
+
+.cm-mode-live .cm-lp-table-composer .cm-comment-composer {
+  max-width: 560px;
+}
+
 .cm-mode-live .cm-lp-mermaid {
   margin-inline: 0;
   padding: 4px 0;

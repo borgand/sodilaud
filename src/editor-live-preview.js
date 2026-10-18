@@ -18,6 +18,7 @@ import { isSafeMarkdownUrl, renderMarkdown, resolveLinkAction } from "./markdown
 import { scrollToAnchor } from "./editor-anchors.js";
 import { buildHunkElement, languageForPath, reviewHunkMeta } from "./diff-hunk.js";
 import { highlightRanges } from "./syntax-highlighting.js";
+import { paintSourceMarks } from "./source-map.js";
 import { paintDots, paintMarks, setHunkComposer } from "./hunk-comments.js";
 import {
   hunkFenceAt,
@@ -32,6 +33,7 @@ import {
   activeComment,
   commentComposer,
   commentsDiffer,
+  composerHost,
   createComposerElement,
   selectComment,
   shownComments,
@@ -48,7 +50,7 @@ export function __tableCacheSize() {
 function tableHtml(source) {
   let html = tableHtmlCache.get(source);
   if (html === undefined) {
-    html = renderMarkdown(source);
+    html = renderMarkdown(source, "", undefined, { positions: true });
     tableHtmlCache.set(source, html);
     if (tableHtmlCache.size > TABLE_CACHE_LIMIT) {
       tableHtmlCache.delete(tableHtmlCache.keys().next().value);
@@ -229,22 +231,55 @@ class MermaidWidget extends WidgetType {
   }
 }
 
+// Returns whether the composer appeared or went away, which changes the height.
+function setTableComposer(dom, view, composer) {
+  const existing = dom.querySelector(":scope > .cm-lp-table-composer");
+  if (composer && existing?.dataset.key === String(composer.key)) return false;
+  existing?.remove();
+  if (!composer) return Boolean(existing);
+  const row = dom.ownerDocument.createElement("div");
+  row.className = "cm-lp-table-composer";
+  row.dataset.key = String(composer.key);
+  row.append(createComposerElement(view, composer.key));
+  dom.append(row);
+  return true;
+}
+
+function showTableReview(dom, view, widget) {
+  paintSourceMarks(dom, widget.review.marks, widget.source);
+  if (setTableComposer(dom, view, widget.review.composer)) view.requestMeasure();
+}
+
+// Like a hunk, a rendered table draws its own comment tints and hosts the
+// composer for text in it, since a replacing widget hides CodeMirror's.
 class TableWidget extends WidgetType {
-  constructor(source) {
+  constructor(source, review) {
     super();
     this.source = source;
+    this.review = review;
   }
 
   eq(other) {
-    return other.source === this.source;
+    return other.source === this.source && sameReview(other.review, this.review);
+  }
+
+  // Focus moving into the composer must not rebuild the table and drop it.
+  updateDOM(dom, view) {
+    if (dom.tableSource !== this.source) return false;
+    showTableReview(dom, view, this);
+    return true;
   }
 
   toDOM(view) {
     const wrapper = document.createElement("div");
     wrapper.className = "cm-lp-table markdown-preview";
     wrapper.innerHTML = tableHtml(this.source);
+    wrapper.tableSource = this.source;
+    showTableReview(wrapper, view, this);
     wrapper.addEventListener("mousedown", event => {
-      const link = eventElement(event)?.closest("a[href]");
+      const element = eventElement(event);
+      if (element?.closest(".cm-lp-table-composer")) return;
+      const link = element?.closest("a[href]");
       if (link && isOpenLinkClick(event, view)) {
         event.preventDefault();
         followHref(view, link.getAttribute("href"));
@@ -252,6 +287,11 @@ class TableWidget extends WidgetType {
       }
       if (!isPrimaryClick(event, view)) return;
       event.preventDefault();
+      const marked = element?.closest("[data-comment-id]");
+      if (marked) {
+        selectComment(view, marked.getAttribute("data-comment-id"));
+        return;
+      }
       const anchor = view.posAtDOM(wrapper);
       view.dispatch({ selection: EditorSelection.cursor(anchor) });
       view.focus();
@@ -294,6 +334,27 @@ function hunkReview(state, found) {
 }
 
 const sameReview = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+const composerWithin = (composer, from, to) => composer.from >= from && composer.to <= to;
+
+// The comments and the open composer a table widget at `from..to` shows, in
+// offsets into the table's source.
+function tableReview(state, from, to) {
+  const active = activeComment(state);
+  const marks = shownComments(state)
+    .filter(comment => !comment.orphaned && comment.state !== "resolved" && comment.to > comment.from)
+    .filter(comment => comment.from < to && comment.to > from)
+    .map(comment => ({
+      from: Math.max(comment.from, from) - from,
+      to: Math.min(comment.to, to) - from,
+      className: `cm-comment cm-comment-${comment.author}${comment.id === active ? " cm-comment-active" : ""}`,
+      id: comment.id
+    }));
+  const composer = commentComposer(state);
+  if (!composer || !composerWithin(composer, from, to)) return { marks, composer: null };
+  marks.push({ from: composer.from - from, to: composer.to - from, className: "cm-comment cm-comment-draft" });
+  return { marks, composer: { key: composer.key } };
+}
 
 // A click in the editor's margin level with a hunk widget would put the cursor
 // inside the fence and reveal it. Revealing is for the path click only.
@@ -755,11 +816,33 @@ function fenceBody(state, node) {
   return text ? state.doc.sliceString(text.from, text.to) : "";
 }
 
+// A block shown as a widget fills its lines: nothing before it on its first
+// line, nothing after it on its last.
+function fillsLines(doc, ref) {
+  const start = doc.lineAt(ref.from);
+  return /^\s*$/.test(doc.sliceString(start.from, ref.from)) && ref.to === doc.lineAt(ref.to).to;
+}
+
+// Whether the composer's whole range lies in one table that renders as a widget.
+function tableHostsComposer(state, composer) {
+  let hosted = false;
+  syntaxTree(state).iterate({
+    enter: ref => {
+      if (hosted) return false;
+      if (TABLE_CONTAINERS.has(ref.name)) return true;
+      if (ref.name === "Table" && fillsLines(state.doc, ref) && composerWithin(composer, ref.from, ref.to)) hosted = true;
+      return false;
+    }
+  });
+  return hosted;
+}
+
 function buildBlocks(state, focused) {
   if (!isLive(state)) return Decoration.none;
   const { doc } = state;
   const mermaid = state.facet(mermaidFacet);
   const revealed = revealedLines(state, focused);
+  const composer = commentComposer(state);
   const ranges = [];
   syntaxTree(state).iterate({
     enter: ref => {
@@ -769,15 +852,19 @@ function buildBlocks(state, focused) {
       const hunkInfo = ref.name === "FencedCode" && !isMermaid ? fenceInfo(state, ref.node) : "";
       const isHunk = hunkInfo !== "" && reviewHunkMeta(hunkInfo) !== null;
       if (!isTable && !isMermaid && !isHunk) return false;
+      if (!fillsLines(doc, ref)) return false;
       const start = doc.lineAt(ref.from);
       const end = doc.lineAt(ref.to);
-      const prefix = doc.sliceString(start.from, ref.from);
-      if (!/^\s*$/.test(prefix) || ref.to !== end.to) return false;
       const inside = touchesRevealed(state, revealed, ref.from, ref.to);
       if (isTable) {
-        if (!inside) {
+        // A composer reaching past the table is drawn under its last line,
+        // which a widget would hide.
+        const hosts = composer !== null && composerWithin(composer, ref.from, ref.to);
+        const partial = composer !== null && !hosts && composer.from < ref.to && composer.to > ref.from;
+        if ((!inside || hosts) && !partial) {
           const source = doc.sliceString(ref.from, ref.to);
-          ranges.push(Decoration.replace({ widget: new TableWidget(source), block: true }).range(start.from, end.to));
+          const widget = new TableWidget(source, tableReview(state, ref.from, ref.to));
+          ranges.push(Decoration.replace({ widget, block: true }).range(start.from, end.to));
         }
         return false;
       }
@@ -978,6 +1065,7 @@ export function livePreview({ onOpenLink, onFollowAnchor, mermaid } = {}) {
   return [
     mermaidFacet.of(mermaid ?? null),
     followFacet.of(follow),
+    composerHost.of((state, composer) => isLive(state) && tableHostsComposer(state, composer)),
     blockField,
     codeBlockLayer,
     blockFocusSync,

@@ -14,7 +14,8 @@ import {
   getSyncedVersion,
   gutter,
   keymap,
-  sendableUpdates
+  sendableUpdates,
+  syntaxTree
 } from "./vendor/codemirror.js";
 
 // Comments anchored to text, shown as tinted ranges with a gutter marker, an
@@ -313,7 +314,9 @@ export function commentsExtension({ onSubmit, onSelect = () => {} }) {
   const composerDecorations = StateField.define({
     create: buildComposerDecorations,
     update: (value, tr) =>
-      tr.docChanged || tr.reconfigured || tr.startState.field(composerField) !== tr.state.field(composerField)
+      tr.docChanged || tr.reconfigured || tr.startState.field(composerField) !== tr.state.field(composerField) ||
+      // A host's claim can depend on the tree, which a background parse completes later.
+      syntaxTree(tr.startState) !== syntaxTree(tr.state)
         ? buildComposerDecorations(tr.state)
         : value,
     provide: field => EditorView.decorations.from(field)

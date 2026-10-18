@@ -32,9 +32,15 @@ function elementOf(node) {
   return node.nodeType === 1 ? node : node.parentElement;
 }
 
+// Text directly in these is the renderer's layout whitespace: it aligns with
+// arbitrary source spaces, and a mark span cannot sit there.
+const NO_TEXT = "table, thead, tbody, tfoot, tr, ul, ol";
+
 function isSkipped(node) {
   const el = elementOf(node);
-  return !el || el.closest(SKIPPED) !== null;
+  if (!el) return true;
+  if (node.nodeType === 3 && el.matches(NO_TEXT)) return true;
+  return el.closest(SKIPPED) !== null;
 }
 
 function textNodesOf(el) {

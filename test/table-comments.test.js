@@ -2,6 +2,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
+import { marked } from "marked";
 
 import { bootMainWindow } from "./helpers/app-harness.js";
 
@@ -15,7 +16,13 @@ const handlers = () => ({
   file_take_pending: () => []
 });
 
-const boot = instance => bootMainWindow({ platform: "MacIntel", instance, disk: { [PATH]: TEXT }, handlers: handlers() });
+const boot = instance => bootMainWindow({
+  platform: "MacIntel",
+  instance,
+  disk: { [PATH]: TEXT },
+  handlers: handlers(),
+  beforeBoot: dom => { dom.window.marked = marked; }
+});
 
 function select(view, needle) {
   const from = view.state.doc.toString().indexOf(needle);
@@ -31,7 +38,7 @@ function textNode(app, root, needle) {
   return null;
 }
 
-test("Live: ⌘⌥M on a middle table row keeps the composer open and focused", { todo: "item 9: fixed in Task 5" }, async () => {
+test("Live: ⌘⌥M on a middle table row keeps the composer open and focused", async () => {
   const app = await boot(1);
   const doc = app.dom.window.document;
   const view = app.editor();
@@ -43,7 +50,7 @@ test("Live: ⌘⌥M on a middle table row keeps the composer open and focused", 
 
   const input = doc.querySelector(".cm-comment-composer textarea");
   assert.ok(input, "the composer is still open");
-  assert.equal(doc.activeElement, input, "focus is in the composer");
+  assert.ok(doc.activeElement === input, "focus is in the composer");
   assert.ok(view.contentDOM.querySelector(".cm-lp-table"), "the table is rendered");
   assert.equal(view.contentDOM.querySelector(".cm-lp-table .cm-comment-draft")?.textContent, "middle row");
   input.value = "Why middle?";
@@ -55,7 +62,7 @@ test("Live: ⌘⌥M on a middle table row keeps the composer open and focused", 
   assert.equal(view.contentDOM.querySelector(".cm-lp-table .cm-comment-owner")?.textContent, "middle row");
 });
 
-test("Live: the Comment button on a first row opens the composer under the rendered table", { todo: "item 9: fixed in Task 5" }, async () => {
+test("Live: the Comment button on a first row opens the composer under the rendered table", async () => {
   const app = await boot(2);
   const doc = app.dom.window.document;
   const view = app.editor();
@@ -70,7 +77,7 @@ test("Live: the Comment button on a first row opens the composer under the rende
   const input = doc.querySelector(".cm-comment-composer textarea");
   assert.ok(input, "the composer opened");
   assert.ok(input.closest(".cm-lp-table"), "the composer is inside the rendered table");
-  assert.equal(doc.activeElement, input, "focus is in the composer");
+  assert.ok(doc.activeElement === input, "focus is in the composer");
 });
 
 test("Reading: a selection in a table cell and in prose takes a comment", { todo: "item 9: fixed in Task 7" }, async () => {

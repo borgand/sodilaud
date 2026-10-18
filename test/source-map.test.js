@@ -157,6 +157,21 @@ test("paintSourceMarks wraps the matching characters and repaints cleanly", () =
   }
 });
 
+test("paintSourceMarks never wraps the whitespace between table rows and cells", () => {
+  const source = "| Name | Note |\n|---|---|\n| alpha | first row |\n| beta | middle row |";
+  const { env, root } = mount("");
+  try {
+    root.innerHTML = renderMarkdown(source, "", marked, { positions: true });
+    const from = source.indexOf("middle row");
+    paintSourceMarks(root, [{ from, to: from + "middle row".length, className: "cm-comment" }], source);
+    const spans = Array.from(root.querySelectorAll("span.source-mark"));
+    assert.deepEqual(spans.map((s) => s.textContent), ["middle row"]);
+    assert.equal(spans[0].parentElement.tagName, "TD");
+  } finally {
+    env.cleanup();
+  }
+});
+
 test("blockForSource returns the innermost annotated element", () => {
   const { env, root } = mount(
     '<table data-src-from="0" data-src-to="19"><tbody><tr>' +

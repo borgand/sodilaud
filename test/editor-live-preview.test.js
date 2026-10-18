@@ -15,25 +15,29 @@ function loadHighlighter() {
 
 const settle = () => new Promise(resolve => setTimeout(resolve, 0));
 
-async function setup(text, { focused = true, mermaid, hljs } = {}) {
+async function setup(text, { focused = true, mermaid, hljs, comments = false } = {}) {
   const env = installEditorDom();
   env.window.marked = marked;
   if (hljs) env.window.hljs = hljs;
   const { createMarkdownEditor } = await import("../src/editor-view.js");
   const live = await import("../src/editor-live-preview.js");
+  const commentsApi = await import("../src/editor-comments.js");
   const opened = [];
   const changes = [];
+  const selected = [];
+  const extensions = [live.livePreview({ onOpenLink: href => opened.push(href), mermaid: mermaid?.(env.document) })];
+  if (comments) extensions.push(commentsApi.commentsExtension({ onSubmit: async () => {}, onSelect: id => selected.push(id) }));
   const editor = createMarkdownEditor({
     parent: env.document.getElementById("host"),
     ariaLabel: "t",
     onChange: value => changes.push(value),
-    extensions: [live.livePreview({ onOpenLink: href => opened.push(href), mermaid: mermaid?.(env.document) })]
+    extensions
   });
   let hasFocus = focused;
   Object.defineProperty(editor.view, "hasFocus", { get: () => hasFocus, configurable: true });
   editor.loadText(text);
   const t = {
-    env, editor, opened, changes, live,
+    env, editor, opened, changes, live, commentsApi, selected,
     view: editor.view,
     lines: () => [...editor.view.contentDOM.querySelectorAll(".cm-line")],
     lineTexts: () => t.lines().map(line => line.textContent),
@@ -255,6 +259,114 @@ test("clicking a table widget moves the caret into the table", async () => {
     await settle();
     assert.equal(t.editor.getSelection().start, 7);
     assert.equal(t.view.contentDOM.querySelector(".cm-lp-table"), null);
+  } finally { t.done(); }
+});
+
+// Never pass an editor DOM node to assert.equal: its cmTile property makes a
+// failure message inspect the whole editor, which once took 150 GB.
+const COMMENT_TABLE = "intro\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\nafter";
+
+function selectText(t, needle, end = needle) {
+  const text = t.editor.getText();
+  const from = text.indexOf(needle);
+  t.editor.setSelection(from, text.indexOf(end) + end.length);
+}
+
+test("a composer inside a table keeps the table rendered and sits below it", async () => {
+  const t = await setup(COMMENT_TABLE, { comments: true });
+  try {
+    selectText(t, "2 |", "2");
+    await settle();
+    assert.ok(t.commentsApi.startComment(t.view));
+    await settle();
+    const table = t.view.contentDOM.querySelector(".cm-lp-table");
+    assert.ok(table);
+    assert.equal(table.querySelector(".cm-comment-draft")?.textContent, "2");
+    const composer = table.querySelector(".cm-lp-table-composer .cm-comment-composer");
+    assert.ok(composer);
+    const selection = t.editor.getSelection();
+    const event = t.mousedown(composer.querySelector("textarea"));
+    assert.equal(event.defaultPrevented, false);
+    assert.deepEqual(t.editor.getSelection(), selection);
+  } finally { t.done(); }
+});
+
+test("focus leaving for the composer does not rebuild the table", async () => {
+  const t = await setup(COMMENT_TABLE, { comments: true });
+  try {
+    selectText(t, "2 |", "2");
+    await settle();
+    t.commentsApi.startComment(t.view);
+    await settle();
+    const table = t.view.contentDOM.querySelector(".cm-lp-table");
+    const input = table.querySelector(".cm-comment-composer textarea");
+    let updates = 0;
+    const update = t.view.update.bind(t.view);
+    t.view.update = transactions => {
+      if (++updates > 20) throw new Error("the focus sync and the table keep updating each other");
+      update(transactions);
+    };
+    t.setFocus(false);
+    t.view.dispatch({});
+    await settle();
+    await settle();
+    assert.ok(updates >= 1 && updates <= 3, `${updates} updates`);
+    assert.ok(table.isConnected);
+    assert.ok(input.isConnected);
+    assert.ok(t.view.contentDOM.querySelector(".cm-lp-table") === table, "the same table element");
+  } finally { t.done(); }
+});
+
+test("comments on table text are tinted in the widget", async () => {
+  const t = await setup(COMMENT_TABLE, { comments: true });
+  try {
+    await t.caret(0);
+    const from = t.editor.getText().indexOf("1 |");
+    const { setComments } = t.commentsApi;
+    t.view.dispatch({ effects: setComments.of([{ id: "c1", from, to: from + 1, author: "agent", state: "open", orphaned: false }]) });
+    await settle();
+    const table = t.view.contentDOM.querySelector(".cm-lp-table");
+    const mark = table.querySelector('.cm-comment-agent[data-comment-id="c1"]');
+    assert.equal(mark?.textContent, "1");
+    const event = t.mousedown(mark);
+    assert.ok(event.defaultPrevented);
+    assert.deepEqual(t.selected, ["c1"]);
+    assert.equal(t.editor.getSelection().start, 0);
+    t.view.dispatch({ effects: setComments.of([]) });
+    await settle();
+    assert.ok(!table.querySelector(".cm-comment"), "no tint left");
+    assert.ok(t.view.contentDOM.querySelector(".cm-lp-table") === table, "the same table element");
+  } finally { t.done(); }
+});
+
+test("a composer over a table and the line after keeps the table raw", async () => {
+  const t = await setup(COMMENT_TABLE, { comments: true });
+  try {
+    selectText(t, "2 |", "after");
+    await settle();
+    t.commentsApi.startComment(t.view);
+    await settle();
+    assert.ok(!t.view.contentDOM.querySelector(".cm-lp-table"), "the table is raw");
+    assert.ok(t.view.contentDOM.querySelector(".cm-comment-composer"));
+    t.setFocus(false);
+    t.view.dispatch({});
+    await settle();
+    await settle();
+    assert.ok(!t.view.contentDOM.querySelector(".cm-lp-table"), "the table stays raw");
+  } finally { t.done(); }
+});
+
+test("Source mode draws the plain composer for table text", async () => {
+  const t = await setup(COMMENT_TABLE, { comments: true });
+  try {
+    t.editor.setMode("source");
+    selectText(t, "2 |", "2");
+    await settle();
+    t.commentsApi.startComment(t.view);
+    await settle();
+    const composer = t.view.contentDOM.querySelector(".cm-comment-composer");
+    assert.ok(composer);
+    assert.ok(!composer.closest(".cm-lp-table"), "the composer is outside any table");
   } finally { t.done(); }
 });
 
