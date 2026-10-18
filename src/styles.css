@@ -1940,6 +1940,11 @@ html.readable-width .markdown-preview {
   margin-bottom: var(--doc-gap);
 }
 
+.markdown-preview .table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
 .markdown-preview table {
   border-collapse: collapse;
   width: 100%;
@@ -3658,6 +3663,8 @@ kbd {
 .cm-mode-live .cm-lp-table.markdown-preview {
   flex: none;
   overflow: visible;
+  min-width: 0;
+  max-width: 100%;
   margin-inline: 0;
   padding: 4px 0;
   font-family: var(--font-sans);

@@ -151,3 +151,21 @@ test("Live lines have no inline padding so blocks share the text column", () => 
   assert.match(declarations("html.readable-width .editor-host .cm-editor .cm-content"), /max-width:\s*calc\(var\(--content-width\) \+ 48px\)/);
   assert.match(declarations("html.readable-width .markdown-preview"), /padding-inline:\s*max\(24px/);
 });
+
+test("wide tables scroll inside the column in Reading and Live", () => {
+  const scroll = declarations(".markdown-preview .table-scroll");
+  assert.match(scroll, /overflow-x:\s*auto/);
+  assert.match(scroll, /max-width:\s*100%/);
+  const live = declarations(".cm-mode-live .cm-lp-table.markdown-preview");
+  assert.match(live, /min-width:\s*0/);
+  assert.match(live, /max-width:\s*100%/);
+  assert.doesNotMatch(live, /overflow-x:\s*(visible|hidden)/);
+});
+
+test("Live quote keeps its 12px left padding over the line reset", () => {
+  const quote = ".cm-editor.cm-mode-live .cm-lp-quote";
+  const line = ".cm-editor.cm-mode-live .cm-line";
+  assert.match(declarations(quote), /padding-left:\s*12px/);
+  assert.ok(compare(specificity(quote), specificity(line)) >= 0);
+  assert.ok(styles.indexOf(`${quote} {`) > styles.indexOf(`${line} {`), "quote rule comes after the line reset");
+});
