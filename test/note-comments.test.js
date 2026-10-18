@@ -98,3 +98,133 @@ test("split-note Reading takes no comments, and leaving split re-renders the sin
   assert.ok(!document.getElementById("comment-btn").disabled, "the Comment button is back");
   assert.ok(document.getElementById("markdown-preview").textContent.includes("Ship on Friday."), "the single preview is rendered again");
 });
+
+const TABLE_NOTES = [
+  { id: "t", title: "Table", content: "# Table\n\n| Name | Note |\n|---|---|\n| alpha | first row |\n| beta | middle row |\n\nAfter.\n", updatedAt: 2, isTitleLocked: true },
+  { id: "o", title: "Other", content: "Other note\n", updatedAt: 1, isTitleLocked: true }
+];
+
+async function showNote(app, id) {
+  app.dom.window.document.querySelector(`.note-item[data-id="${id}"]`).click();
+  await app.settle();
+}
+
+test("a Reading composer left in another note is gone after switching back in Live", async () => {
+  const app = await bootApp({
+    platform: "MacIntel",
+    instance: 4,
+    registry: { seed: { notes: TABLE_NOTES, imported: true } },
+    beforeBoot: dom => { dom.window.marked = marked; }
+  });
+  const { document } = app.dom.window;
+  const { commentComposer } = await import("../src/editor-comments.js");
+  await app.settle();
+  await showNote(app, "t");
+  app.click("mode-reading");
+  await app.settle();
+  const walker = document.createTreeWalker(document.querySelector("#markdown-preview table"), 4);
+  let node = walker.nextNode();
+  while (node && !node.nodeValue.includes("middle")) node = walker.nextNode();
+  app.dom.window.getSelection().setBaseAndExtent(node, 0, node, 6);
+  app.click("comment-btn");
+  await app.settle();
+  assert.ok(document.querySelector("#markdown-preview .reading-composer"), "the Reading composer opened");
+
+  await showNote(app, "o");
+  app.click("mode-live");
+  await app.settle();
+  await showNote(app, "t");
+  const view = app.editor();
+  assert.ok(commentComposer(view.state) === null, "the Reading composer did not come back");
+
+  view.focus();
+  view.dispatch({ selection: { anchor: view.state.doc.toString().indexOf("middle") } });
+  await app.settle(100);
+  assert.ok(!document.querySelector(".cm-comment-composer"), "no composer lingers");
+  assert.ok(!view.contentDOM.querySelector(".cm-lp-table"), "the table reveals its source with the caret inside");
+});
+
+test("a Live composer left in another note is gone after switching back in Reading", async () => {
+  const app = await bootApp({
+    platform: "MacIntel",
+    instance: 5,
+    registry: { seed: { notes: TABLE_NOTES, imported: true } },
+    beforeBoot: dom => { dom.window.marked = marked; }
+  });
+  const { document } = app.dom.window;
+  const { commentComposer } = await import("../src/editor-comments.js");
+  await app.settle();
+  await showNote(app, "t");
+  const view = app.editor();
+  const from = view.state.doc.toString().indexOf("After");
+  view.focus();
+  view.dispatch({ selection: { anchor: from, head: from + 5 } });
+  view.contentDOM.blur();
+  await app.settle();
+  app.click("comment-btn");
+  await app.settle(100);
+  assert.ok(document.querySelector(".cm-comment-composer"), "the Live composer opened");
+
+  await showNote(app, "o");
+  app.click("mode-reading");
+  await app.settle();
+  await showNote(app, "t");
+  assert.ok(commentComposer(app.editor().state) === null, "the Live composer did not come back");
+  assert.ok(!document.querySelector(".cm-comment-composer"), "no composer lingers");
+});
+
+test("Reading re-renders a note that catches up on remote edits", async () => {
+  let app = null;
+  let hold = null;
+  app = await bootApp({
+    platform: "MacIntel",
+    instance: 6,
+    registry: { seed: { notes: NOTES, imported: true } },
+    handlers: {
+      // Holds the editor's catch-up pull so it lands after the page has re-rendered.
+      doc_pull: async args => {
+        if (!app) return { updates: [] };
+        const gate = hold;
+        hold = null;
+        if (gate) await gate;
+        return structuredClone(app.registry.commands.doc_pull(args));
+      }
+    },
+    beforeBoot: dom => { dom.window.marked = marked; }
+  });
+  const { document } = app.dom.window;
+  await app.settle();
+  app.click("mode-reading");
+  await app.settle();
+  const preview = document.getElementById("markdown-preview");
+
+  // Two remote updates the page only hears the second of.
+  const target = app.registry.workspace().notes.find(note => note.id === "a");
+  const intro = { clientID: "agent", changes: [[0, "Intro.", "", ""], target.content.length] };
+  const edited = "Intro.\n\n" + target.content;
+  const outro = { clientID: "agent", changes: [edited.length, [0, "Outro."]] };
+  target.updates.push(intro, outro);
+  target.content = edited + "Outro.";
+  target.version = 2;
+  let release;
+  hold = new Promise(resolve => { release = resolve; });
+  app.emit("notes-doc-updates", {
+    collectionId: app.registry.state().collectionId,
+    noteId: "a",
+    from: 1,
+    updates: [outro],
+    version: 2,
+    title: target.title,
+    updatedAt: Date.now()
+  });
+  await app.settle();
+  release();
+  await app.until(() => app.editorText().includes("Outro."));
+  await app.settle();
+
+  const text = app.editorText();
+  const paragraph = [...preview.querySelectorAll("p")].find(p => p.textContent.includes("Friday"));
+  assert.ok(paragraph, "the preview shows the note");
+  assert.ok(preview.textContent.includes("Intro."), "the preview shows the remote edit");
+  assert.equal(Number(paragraph.getAttribute("data-src-from")), text.indexOf("Ship on Friday."));
+});

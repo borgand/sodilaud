@@ -212,3 +212,86 @@ test("Reading: an agent edit while composing keeps the text and focus and moves 
   await app.until(() => app.fileDocs.comments(PATH).length === 1);
   assert.equal(app.fileDocs.comments(PATH)[0].anchoredText, "beta");
 });
+
+const OTHER = "/docs/other.md";
+
+const bootTwo = instance => bootMainWindow({
+  platform: "MacIntel",
+  instance,
+  disk: { [PATH]: TEXT, [OTHER]: "Other file.\n" },
+  handlers: { ...handlers(), file_lists: () => ({ open: [PATH, OTHER], recent: [] }) },
+  beforeBoot: dom => { dom.window.marked = marked; }
+});
+
+async function showFile(app, path) {
+  const name = path.split("/").pop();
+  const button = [...app.dom.window.document.querySelectorAll(".open-file-name")].find(el => el.textContent.includes(name));
+  assert.ok(button, `${name} is open`);
+  button.click();
+  await app.settle();
+}
+
+test("a Reading composer left in another file is gone after switching back in Live", async () => {
+  const app = await bootTwo(8);
+  const doc = app.dom.window.document;
+  const { commentComposer } = await import("../src/editor-comments.js");
+  await app.settle();
+  await showFile(app, PATH);
+  app.click("mode-reading");
+  await app.settle();
+  selectIn(app, doc.querySelector("#markdown-preview table"), "middle");
+  app.click("comment-btn");
+  await app.settle();
+  assert.ok(doc.querySelector("#markdown-preview .reading-composer"), "the Reading composer opened");
+
+  await showFile(app, OTHER);
+  app.click("mode-live");
+  await app.settle();
+  await showFile(app, PATH);
+  const view = app.editor();
+  assert.ok(commentComposer(view.state) === null, "the Reading composer did not come back");
+
+  view.focus();
+  view.dispatch({ selection: { anchor: view.state.doc.toString().indexOf("middle") } });
+  await app.settle(100);
+  assert.ok(!doc.querySelector(".cm-comment-composer"), "no composer lingers");
+  assert.ok(!view.contentDOM.querySelector(".cm-lp-table"), "the table reveals its source with the caret inside");
+});
+
+test("a Live composer left in another file is gone after switching back in Reading", async () => {
+  const app = await bootTwo(9);
+  const doc = app.dom.window.document;
+  const { commentComposer } = await import("../src/editor-comments.js");
+  await app.settle();
+  await showFile(app, PATH);
+  const view = app.editor();
+  view.focus();
+  select(view, "vague");
+  view.contentDOM.blur();
+  await app.settle();
+  app.click("comment-btn");
+  await app.settle(100);
+  assert.ok(doc.querySelector(".cm-comment-composer"), "the Live composer opened");
+
+  await showFile(app, OTHER);
+  app.click("mode-reading");
+  await app.settle();
+  await showFile(app, PATH);
+  assert.ok(commentComposer(app.editor().state) === null, "the Live composer did not come back");
+  assert.ok(!doc.querySelector(".cm-comment-composer"), "no composer lingers");
+});
+
+test("Live: a table ignores a Reading composer and reveals its source around the caret", async () => {
+  const app = await boot(10);
+  const doc = app.dom.window.document;
+  const { startCommentAt } = await import("../src/editor-comments.js");
+  await app.settle();
+  const view = app.editor();
+  const from = TEXT.indexOf("middle");
+  assert.equal(startCommentAt(view, from, from + 6, { outside: true }), true);
+  view.focus();
+  view.dispatch({ selection: { anchor: from } });
+  await app.settle(100);
+  assert.ok(!doc.querySelector(".cm-comment-composer"), "the Reading composer is not drawn in Live");
+  assert.ok(!view.contentDOM.querySelector(".cm-lp-table"), "the table reveals its source with the caret inside");
+});

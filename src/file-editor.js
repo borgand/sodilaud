@@ -36,7 +36,7 @@ import { createDocSync } from "./doc-sync.js";
 import { createFilesModel, isDirty, needsPrompt } from "./files.js";
 import { commentsExtension, startComment } from "./editor-comments.js";
 import { createComments } from "./comments-panel.js";
-import { createReadingComments } from "./reading-comments.js";
+import { createReadingComments, dropStrayComposer } from "./reading-comments.js";
 import { EditorView } from "./vendor/codemirror.js";
 
 const LAYOUT_KEY = "sodilaud_layout_mode";
@@ -101,7 +101,8 @@ export function createFileEditor({
   const reading = createReadingComments({
     preview,
     view: () => editor.view,
-    enabled: () => layoutMode === "reading" && Boolean(model.active())
+    enabled: () => layoutMode === "reading" && Boolean(model.active()),
+    onShortcut: () => comments.start()
   });
   const editor = createMarkdownEditor({
     parent: $("editor-host"),
@@ -424,8 +425,10 @@ export function createFileEditor({
         previous.scroll = editor.scrollPlace();
         previous.previewTop = preview.scrollTop;
       }
-      if (buffer.editorState) editor.restoreState(buffer.editorState);
-      else loadBuffer(buffer);
+      if (buffer.editorState) {
+        editor.restoreState(buffer.editorState);
+        dropStrayComposer(editor.view, layoutMode === "reading" ? "reading" : "editor");
+      } else loadBuffer(buffer);
       shownId = buffer.id;
       currentOutlineId = null;
       renderPreview();

@@ -9,7 +9,7 @@ import { bootMainWindow } from "./helpers/app-harness.js";
 const PATH = "/docs/linux.md";
 const TEXT = "# T\n\nThe intro is vague.\n";
 
-test("Linux: Ctrl+Alt+M comments in Reading, Meta+Alt+M does not", async () => {
+test("Linux: Ctrl+Alt+M comments in Reading or asks for a selection, Meta+Alt+M does not", async () => {
   const app = await bootMainWindow({
     platform: "Linux x86_64",
     disk: { [PATH]: TEXT },
@@ -33,6 +33,12 @@ test("Linux: Ctrl+Alt+M comments in Reading, Meta+Alt+M does not", async () => {
   const press = modifier => doc.body.dispatchEvent(new window.KeyboardEvent("keydown", {
     code: "KeyM", key: "m", altKey: true, [modifier]: true, bubbles: true, cancelable: true
   }));
+
+  window.getSelection().removeAllRanges();
+  press("ctrlKey");
+  await app.settle();
+  assert.ok(!preview.querySelector(".reading-composer"), "nothing selected opens no composer");
+  assert.equal(doc.getElementById("app-notification").textContent, "Select the text to comment on first");
 
   window.getSelection().setBaseAndExtent(node, from, node, from + 5);
   press("metaKey");

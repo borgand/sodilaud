@@ -26,12 +26,25 @@ const DRAFT = "cm-comment cm-comment-draft";
 const elementOf = node => (node?.nodeType === 1 ? node : node?.parentElement ?? null);
 
 /**
+ * Closes a composer a restored editor state brought back into a view that
+ * cannot draw it: one taken in Reading shows only in the preview, any other
+ * only in the editor.
+ * @param {import("./vendor/codemirror.js").EditorView} view
+ * @param {"editor" | "reading" | null} shown what the user sees for this view
+ */
+export function dropStrayComposer(view, shown) {
+  const composer = commentComposer(view.state);
+  if (composer && shown !== (composer.outside ? "reading" : "editor")) closeComposer(view);
+}
+
+/**
  * @param {object} options
  * @param {HTMLElement} options.preview the Reading preview
  * @param {() => import("./vendor/codemirror.js").EditorView | null} options.view the hidden editor
  * @param {() => boolean} options.enabled whether the preview is showing
+ * @param {() => void} [options.onShortcut] the comment shortcut, which defaults to start
  */
-export function createReadingComments({ preview, view, enabled }) {
+export function createReadingComments({ preview, view, enabled, onShortcut }) {
   const document = preview.ownerDocument;
   const selection = () => document.getSelection();
   let cached = null;
@@ -243,7 +256,7 @@ export function createReadingComments({ preview, view, enabled }) {
     if (!(isMacLikePlatform() ? event.metaKey : event.ctrlKey) || !event.altKey || event.code !== "KeyM") return;
     if (event.target?.closest?.("textarea, input")) return;
     event.preventDefault();
-    start();
+    (onShortcut ?? start)();
   };
 
   preview.addEventListener("mouseup", onMouseUp);

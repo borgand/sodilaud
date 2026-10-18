@@ -849,7 +849,9 @@ function buildBlocks(state, focused) {
   const { doc } = state;
   const mermaid = state.facet(mermaidFacet);
   const revealed = revealedLines(state, focused);
-  const composer = commentComposer(state);
+  const opened = commentComposer(state);
+  // A Reading composer is drawn in the preview, never in a table here.
+  const composer = opened?.outside ? null : opened;
   const ranges = [];
   syntaxTree(state).iterate({
     enter: ref => {

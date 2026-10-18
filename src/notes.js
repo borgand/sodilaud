@@ -21,10 +21,11 @@ import { createAgentAccess } from "./agent-access.js";
 import { applyPlatformShortcutLabels, isMacLikePlatform } from "./platform-labels.js";
 import { compareNoteText, emptyNoteComparison } from "./note-compare.js";
 import { findTextMatches } from "./find.js";
+import { EditorView } from "./vendor/codemirror.js";
 import { createMarkdownEditor } from "./editor-view.js";
 import { closeComposer, commentsExtension, startComment } from "./editor-comments.js";
 import { createComments } from "./comments-panel.js";
-import { createReadingComments } from "./reading-comments.js";
+import { createReadingComments, dropStrayComposer } from "./reading-comments.js";
 import { stripSourceAnnotations } from "./source-map.js";
 import { markdownEditingCommands, runFormatAction } from "./editor-commands.js";
 import { createFormatToolbar } from "./format-toolbar.js";
@@ -426,6 +427,13 @@ function forgetPaneStates(noteId = null) {
   }
 }
 
+// What the user sees for a pane's note: its editor, the Reading preview that
+// takes comments, or a preview that does not.
+const shownIn = pane => {
+  if (currentLayoutMode !== "reading") return "editor";
+  return pane === "primary" && readingComments() ? "reading" : null;
+};
+
 function showNoteInPane(pane, editor, note) {
   const previous = paneNoteIds[pane];
   if (previous === note.id) return;
@@ -435,8 +443,10 @@ function showNoteInPane(pane, editor, note) {
   paneNoteIds[pane] = note.id;
   const cached = paneStates[pane].get(note.id);
   paneStates[pane].delete(note.id);
-  if (cached) editor.restoreState(cached);
-  else editor.loadText(note.syncedContent ?? note.content, { extensions: noteSync.extension(note.id, note.version ?? 0) });
+  if (cached) {
+    editor.restoreState(cached);
+    dropStrayComposer(editor.view, shownIn(pane));
+  } else editor.loadText(note.syncedContent ?? note.content, { extensions: noteSync.extension(note.id, note.version ?? 0) });
   comments.shown();
 }
 
@@ -619,7 +629,8 @@ const readingComments = () => currentLayoutMode === "reading" && !isSplitNoteMod
 const reading = createReadingComments({
   preview: markdownPreview,
   view: () => primaryEditor?.view ?? null,
-  enabled: readingComments
+  enabled: readingComments,
+  onShortcut: () => comments.start()
 });
 const comments = createComments({
   document,
@@ -736,7 +747,17 @@ function readLocalCollection() {
 async function init() {
   // 1. Localize shortcut labels and attach event listeners immediately.
   applyPlatformShortcutLabels(document, navigator);
-  primaryEditor = createAppEditor(editorHost, { ariaLabel: "Sodilaud content", pane: "primary", extensions: [reading.extension] });
+  primaryEditor = createAppEditor(editorHost, {
+    ariaLabel: "Sodilaud content",
+    pane: "primary",
+    extensions: [
+      reading.extension,
+      // The preview's source offsets go stale with any edit, the owner's or a remote one.
+      EditorView.updateListener.of(update => {
+        if (update.docChanged) updateMarkdownPreview();
+      })
+    ]
+  });
   secondaryEditor = createAppEditor(secondaryEditorHost, {
     ariaLabel: "Secondary scratchpad content",
     pane: "secondary"
@@ -1518,17 +1539,6 @@ function handleEditorInput(text) {
   // The collab client sends the change; this only shows it is on its way.
   triggerSavingState();
   scheduleNoteListRender();
-
-  // Live markdown compilation
-  clearTimeout(previewDebounceTimer);
-  if (currentLayoutMode === "reading") {
-    // A comment started right after an edit must see current data-src offsets.
-    updateMarkdownPreview();
-  } else {
-    previewDebounceTimer = setTimeout(() => {
-      updateMarkdownPreview();
-    }, 150);
-  }
 }
 
 function handleTitleInput() {
