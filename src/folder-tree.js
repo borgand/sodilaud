@@ -129,12 +129,12 @@ export function createFolderTree() {
       for (const key of expandedSet) if (isUnder(key, path)) expandedSet.delete(key);
     },
     expanded() {
-      const ordered = rootList.map(root => root.path).filter(path => expandedSet.has(path));
+      const ordered = new Set(rootList.map(root => root.path).filter(path => expandedSet.has(path)));
       for (const { row } of walk()) {
-        if (row.kind === "folder" && row.expanded && !ordered.includes(row.path)) ordered.push(row.path);
+        if (row.kind === "folder" && row.expanded) ordered.add(row.path);
       }
-      for (const path of expandedSet) if (!ordered.includes(path)) ordered.push(path);
-      return ordered;
+      for (const path of expandedSet) ordered.add(path);
+      return [...ordered];
     },
     needsListing() {
       return walk()
