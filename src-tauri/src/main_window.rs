@@ -458,6 +458,7 @@ mod tests {
             open: open.iter().map(|p| p.to_string()).collect(),
             active: active.map(str::to_string),
             frame: None,
+            ..Default::default()
         }
     }
 

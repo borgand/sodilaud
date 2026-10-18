@@ -5,7 +5,8 @@
 // never leaves the root, even through a symbolic link.
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 use serde::Serialize;
 
@@ -14,6 +15,7 @@ use super::{FileError, TEXT_EXTENSIONS};
 
 pub const LIST_LIMIT: usize = 2000;
 pub const SCAN_LIMIT: usize = 20000;
+pub const FOLDER_WATCH_LIMIT: usize = 128;
 
 #[derive(Serialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -120,6 +122,83 @@ fn list_within(
         entries,
         truncated,
     })
+}
+
+struct Watched {
+    root: PathBuf,
+    folder: PathBuf,
+    modified: Option<SystemTime>,
+    /// `None` while the folder cannot be listed.
+    listing: Option<FolderListing>,
+}
+
+impl Watched {
+    fn new(root: PathBuf, folder: PathBuf) -> Self {
+        let mut watched = Self {
+            root,
+            folder,
+            modified: None,
+            listing: None,
+        };
+        watched.read();
+        watched
+    }
+
+    fn read(&mut self) {
+        self.modified = fs::metadata(&self.folder)
+            .and_then(|metadata| metadata.modified())
+            .ok();
+        self.listing = list(&self.root, &self.folder).ok();
+    }
+}
+
+/// Polls the watched folders for changes the sidebar would show. A folder whose modification time is
+/// unchanged is not listed again.
+#[derive(Default)]
+pub struct FolderWatcher {
+    watched: Vec<Watched>,
+}
+
+impl FolderWatcher {
+    /// Watches exactly `folders` ((root, folder) pairs), keeping state of those already watched.
+    pub fn set(&mut self, folders: Vec<(PathBuf, PathBuf)>) {
+        let mut previous = std::mem::take(&mut self.watched);
+        for (root, folder) in folders {
+            if self
+                .watched
+                .iter()
+                .any(|watched| watched.root == root && watched.folder == folder)
+            {
+                continue;
+            }
+            let kept = previous
+                .iter()
+                .position(|watched| watched.root == root && watched.folder == folder);
+            self.watched.push(match kept {
+                Some(index) => previous.swap_remove(index),
+                None => Watched::new(root, folder),
+            });
+        }
+    }
+
+    /// Folders whose visible listing changed since the last poll; each change reported once.
+    pub fn poll(&mut self) -> Vec<String> {
+        let mut changed = Vec::new();
+        for watched in &mut self.watched {
+            let modified = fs::metadata(&watched.folder)
+                .and_then(|metadata| metadata.modified())
+                .ok();
+            if modified.is_some() && modified == watched.modified {
+                continue;
+            }
+            let before = watched.listing.take();
+            watched.read();
+            if watched.listing != before {
+                changed.push(watched.folder.to_string_lossy().into_owned());
+            }
+        }
+        changed
+    }
 }
 
 /// Whether `path` (canonical) would be shown by `list` of its parent: under `root`, no component
@@ -305,5 +384,58 @@ mod tests {
         fs::write(root.join("ok.md"), "").unwrap();
         let listing = list(&root, &root).unwrap();
         assert_eq!(names(&listing), ["ok.md"]);
+    }
+
+    fn bump(folder: &Path, seconds: u64) {
+        let handle = fs::File::open(folder).unwrap();
+        handle
+            .set_modified(SystemTime::now() + std::time::Duration::from_secs(seconds))
+            .unwrap();
+    }
+
+    #[test]
+    fn the_folder_watcher_reports_a_visible_change_once() {
+        let root = scratch("watch");
+        let mut watcher = FolderWatcher::default();
+        watcher.set(vec![(root.clone(), root.clone())]);
+        assert!(watcher.poll().is_empty());
+        fs::write(root.join("new.md"), "").unwrap();
+        bump(&root, 5);
+        assert_eq!(watcher.poll(), [root.to_string_lossy().into_owned()]);
+        assert!(watcher.poll().is_empty());
+    }
+
+    #[test]
+    fn an_invisible_change_is_not_reported() {
+        let root = scratch("invisible");
+        let mut watcher = FolderWatcher::default();
+        watcher.set(vec![(root.clone(), root.clone())]);
+        fs::write(root.join(".hidden.md"), "").unwrap();
+        fs::write(root.join("p.png"), "").unwrap();
+        bump(&root, 5);
+        assert!(watcher.poll().is_empty());
+    }
+
+    #[test]
+    fn a_removed_folder_is_reported_once() {
+        let root = scratch("removed");
+        let sub = root.join("sub");
+        fs::create_dir(&sub).unwrap();
+        let mut watcher = FolderWatcher::default();
+        watcher.set(vec![(root.clone(), sub.clone())]);
+        fs::remove_dir(&sub).unwrap();
+        assert_eq!(watcher.poll(), [sub.to_string_lossy().into_owned()]);
+        assert!(watcher.poll().is_empty());
+    }
+
+    #[test]
+    fn setting_again_keeps_the_state_of_folders_still_watched() {
+        let root = scratch("keep");
+        let mut watcher = FolderWatcher::default();
+        watcher.set(vec![(root.clone(), root.clone())]);
+        fs::write(root.join("new.md"), "").unwrap();
+        bump(&root, 5);
+        watcher.set(vec![(root.clone(), root.clone())]);
+        assert_eq!(watcher.poll().len(), 1);
     }
 }

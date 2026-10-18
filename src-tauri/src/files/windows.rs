@@ -3,6 +3,8 @@
 // The main windows and which one has which file open. Pure bookkeeping: no
 // windows are created here. A path belongs to at most one window.
 
+use std::path::Path;
+
 use super::store::SavedWindow;
 use crate::quicknotes::config::Frame;
 
@@ -29,6 +31,8 @@ pub struct WindowEntry {
     pub open: Vec<String>,
     pub active: Option<String>,
     pub frame: Option<Frame>,
+    pub folders: Vec<String>,
+    pub expanded: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -60,6 +64,8 @@ impl WindowSet {
                 open: window.open,
                 active: window.active,
                 frame: window.frame,
+                folders: window.folders,
+                expanded: window.expanded,
             })
             .collect();
         let mut set = Self {
@@ -104,6 +110,8 @@ impl WindowSet {
             open: Vec::new(),
             active: None,
             frame: None,
+            folders: Vec::new(),
+            expanded: Vec::new(),
         });
         self.focus.insert(0, label.clone());
         label
@@ -123,10 +131,25 @@ impl WindowSet {
     /// Removes a window and hands its open files to the focused window that
     /// remains. Returns that window, or `None` when nothing was removed.
     pub fn fold_into_target(&mut self, label: &str) -> Option<String> {
+        let (folders, expanded) = self
+            .entry(label)
+            .map(|entry| (entry.folders.clone(), entry.expanded.clone()))?;
         let open = self.remove(label)?;
         let target = self.target();
         for path in open {
             self.claim(&target, &path);
+        }
+        if let Some(entry) = self.entry_mut(&target) {
+            for root in folders {
+                if !entry.folders.contains(&root) {
+                    entry.folders.push(root);
+                }
+            }
+            for folder in expanded {
+                if !entry.expanded.contains(&folder) {
+                    entry.expanded.push(folder);
+                }
+            }
         }
         Some(target)
     }
@@ -229,6 +252,76 @@ impl WindowSet {
         }
     }
 
+    // The folder allows below are removed when the folder commands land.
+    /// Appends `root` (canonical) and expands it; false when the window is unknown or already has it.
+    #[allow(dead_code)]
+    pub fn add_folder(&mut self, label: &str, root: &str) -> bool {
+        let Some(entry) = self.entry_mut(label) else {
+            return false;
+        };
+        if entry.folders.iter().any(|folder| folder == root) {
+            return false;
+        }
+        entry.folders.push(root.to_string());
+        if !entry.expanded.iter().any(|folder| folder == root) {
+            entry.expanded.push(root.to_string());
+        }
+        true
+    }
+
+    /// Removes the root and every expanded path under it.
+    #[allow(dead_code)]
+    pub fn remove_folder(&mut self, label: &str, root: &str) {
+        if let Some(entry) = self.entry_mut(label) {
+            entry.folders.retain(|folder| folder != root);
+            entry
+                .expanded
+                .retain(|folder| !Path::new(folder).starts_with(root));
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn folders(&self, label: &str) -> Vec<String> {
+        self.entry(label)
+            .map(|entry| entry.folders.clone())
+            .unwrap_or_default()
+    }
+
+    /// Keeps only paths equal to or below one of the window's roots (component-wise prefix), without
+    /// duplicates, in the given order.
+    #[allow(dead_code)]
+    pub fn set_expanded(&mut self, label: &str, paths: Vec<String>) {
+        let Some(entry) = self.entry_mut(label) else {
+            return;
+        };
+        let mut kept: Vec<String> = Vec::new();
+        for path in paths {
+            let inside = entry
+                .folders
+                .iter()
+                .any(|root| Path::new(&path).starts_with(root));
+            if inside && !kept.contains(&path) {
+                kept.push(path);
+            }
+        }
+        entry.expanded = kept;
+    }
+
+    /// Roots then expanded folders of every window, window order, without duplicates, at most `limit`.
+    #[allow(dead_code)]
+    pub fn watched_folders(&self, limit: usize) -> Vec<String> {
+        let mut watched: Vec<String> = Vec::new();
+        for entry in &self.windows {
+            for folder in entry.folders.iter().chain(&entry.expanded) {
+                if !watched.contains(folder) {
+                    watched.push(folder.clone());
+                }
+            }
+        }
+        watched.truncate(limit);
+        watched
+    }
+
     pub fn saved(&self) -> Vec<SavedWindow> {
         self.windows
             .iter()
@@ -236,6 +329,8 @@ impl WindowSet {
                 open: w.open.clone(),
                 active: w.active.clone(),
                 frame: w.frame,
+                folders: w.folders.clone(),
+                expanded: w.expanded.clone(),
             })
             .collect()
     }
@@ -399,5 +494,80 @@ mod tests {
         assert_eq!(out[0].frame, None);
         assert_eq!(out[1].open, ["/b.md"]);
         assert_eq!(out[1].frame, Some(frame));
+    }
+
+    #[test]
+    fn each_window_keeps_its_own_folders() {
+        let mut set = WindowSet::from_saved(vec![saved(&[]), saved(&[])]);
+        assert!(set.add_folder("main", "/r"));
+        assert!(set.add_folder("main-2", "/r"));
+        assert!(!set.add_folder("main", "/r"));
+        assert!(!set.add_folder("main-9", "/r"));
+        assert_eq!(set.folders("main"), ["/r"]);
+        assert_eq!(set.entry("main").unwrap().expanded, ["/r"]);
+    }
+
+    #[test]
+    fn expanded_folders_must_lie_in_a_root() {
+        let mut set = WindowSet::from_saved(vec![saved(&[])]);
+        set.add_folder("main", "/r");
+        set.set_expanded(
+            "main",
+            vec![
+                "/r/a".into(),
+                "/elsewhere".into(),
+                "/r/a".into(),
+                "/rx".into(),
+            ],
+        );
+        assert_eq!(set.entry("main").unwrap().expanded, ["/r/a"]);
+    }
+
+    #[test]
+    fn removing_a_root_drops_its_expanded_folders() {
+        let mut set = WindowSet::from_saved(vec![saved(&[])]);
+        set.add_folder("main", "/r");
+        set.add_folder("main", "/s");
+        set.set_expanded("main", vec!["/r".into(), "/r/a".into(), "/s".into()]);
+        set.remove_folder("main", "/r");
+        assert_eq!(set.folders("main"), ["/s"]);
+        assert_eq!(set.entry("main").unwrap().expanded, ["/s"]);
+    }
+
+    #[test]
+    fn watched_folders_are_the_union_capped() {
+        let mut set = WindowSet::from_saved(vec![saved(&[]), saved(&[])]);
+        set.add_folder("main", "/r");
+        set.add_folder("main-2", "/r");
+        set.set_expanded("main", vec!["/r".into(), "/r/a".into()]);
+        set.set_expanded("main-2", vec!["/r".into(), "/r/b".into()]);
+        assert_eq!(set.watched_folders(2), ["/r", "/r/a"]);
+        assert_eq!(set.watched_folders(10), ["/r", "/r/a", "/r/b"]);
+    }
+
+    #[test]
+    fn a_failed_window_hands_its_folders_on() {
+        let mut set = WindowSet::from_saved(vec![saved(&[]), saved(&[])]);
+        set.add_folder("main", "/r");
+        set.add_folder("main-2", "/r");
+        set.add_folder("main-2", "/s");
+        set.set_expanded("main-2", vec!["/s/x".into()]);
+        set.focused("main");
+        assert_eq!(set.fold_into_target("main-2").as_deref(), Some("main"));
+        let main = set.entry("main").unwrap();
+        assert_eq!(main.folders, ["/r", "/s"]);
+        assert_eq!(main.expanded, ["/r", "/s/x"]);
+    }
+
+    #[test]
+    fn folders_survive_saving() {
+        let mut set = WindowSet::from_saved(vec![saved(&[])]);
+        set.add_folder("main", "/r");
+        set.set_expanded("main", vec!["/r/a".into()]);
+        let out = set.saved();
+        assert_eq!(out[0].folders, ["/r"]);
+        assert_eq!(out[0].expanded, ["/r/a"]);
+        let again = WindowSet::from_saved(out);
+        assert_eq!(again.folders("main"), ["/r"]);
     }
 }
