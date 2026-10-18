@@ -29,9 +29,10 @@ export function bootApp(options = {}) {
   return bootPage({ ...options, page: "notes.html", script: "notes.js", label: "quicknotes" });
 }
 
-// The main window: start page, Sodilaud menu and file editor.
+// The main window: start page, Sodilaud menu and file editor. `label` boots it
+// as another main window, `main-2` say.
 export function bootMainWindow(options = {}) {
-  return bootPage({ ...options, page: "index.html", script: "app.js", label: "main" });
+  return bootPage({ label: "main", ...options, page: "index.html", script: "app.js" });
 }
 
 // `registry` seeds the fake Rust notes registry: `{ seed, files, open, fallback }`
@@ -47,6 +48,7 @@ async function bootPage({ page, script, label, storage = {}, handlers = {}, regi
   }
 
   const eventListeners = new Map();
+  const listenOptions = new Map();
   let registry;
   let fileDocs;
 
@@ -56,7 +58,7 @@ async function bootPage({ page, script, label, storage = {}, handlers = {}, regi
     const handler = handlers[command];
     if (typeof handler === "function") return handler(args);
     // Comment commands exist for notes and files alike; each window has its own.
-    const [first, second] = label === "main" ? [fileDocs, registry] : [registry, fileDocs];
+    const [first, second] = label.startsWith("main") ? [fileDocs, registry] : [registry, fileDocs];
     const fake = first.commands[command] ?? second.commands[command];
     if (fake) return structuredClone(fake(structuredClone(args ?? {})) ?? null);
     return null;
@@ -67,8 +69,9 @@ async function bootPage({ page, script, label, storage = {}, handlers = {}, regi
     core: { invoke },
     window: { getCurrentWindow: () => ({ label, onCloseRequested: async () => () => {} }), ...windowApi },
     event: {
-      listen: async (name, handler) => {
+      listen: async (name, handler, options) => {
         eventListeners.set(name, handler);
+        listenOptions.set(name, options);
         return () => eventListeners.delete(name);
       },
       emit: async (name, payload) => { emitted.push({ name, payload }); }
@@ -126,6 +129,7 @@ async function bootPage({ page, script, label, storage = {}, handlers = {}, regi
     emit: (name, payload) => eventListeners.get(name)?.({ payload }),
     emitted,
     invocations,
+    listenOptions,
     registry,
     fileDocs,
     // What Rust has saved, once pending writes and events have settled.

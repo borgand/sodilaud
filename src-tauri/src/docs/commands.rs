@@ -2,7 +2,7 @@
 
 //! Tauri commands for the notes registry, and the events it sends: note
 //! events to the Quick Notes window, the only one that may see note contents,
-//! and file events to the main window, the only one that edits files.
+//! and file events to the main windows, the only ones that edit files.
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -16,6 +16,8 @@ use super::files::{FileDocUpdates, FileExternal, FileSaved};
 use super::registry::{
     DocUpdates, LocalCollection, Pulled, Pushed, Registry, Sink, State, Structure, Update,
 };
+use crate::files::windows::is_main_label;
+use crate::main_window;
 use crate::quicknotes;
 use crate::store::workspace as store;
 use crate::workspace::Workspaces;
@@ -44,34 +46,28 @@ impl Sink for AppSink {
             .emit_to(quicknotes::window::LABEL, DOC_EVENT, updates);
     }
     fn file_doc(&self, updates: &FileDocUpdates) {
-        let _ = self
-            .0
-            .emit_to(quicknotes::window::MAIN_LABEL, FILE_DOC_EVENT, updates);
+        main_window::emit_all(&self.0, FILE_DOC_EVENT, updates);
     }
     fn file_saved(&self, saved: &FileSaved) {
-        let _ = self
-            .0
-            .emit_to(quicknotes::window::MAIN_LABEL, FILE_SAVED_EVENT, saved);
+        main_window::emit_all(&self.0, FILE_SAVED_EVENT, saved);
     }
     fn file_external(&self, external: &FileExternal) {
-        let _ = self.0.emit_to(
-            quicknotes::window::MAIN_LABEL,
-            FILE_EXTERNAL_EVENT,
-            external,
-        );
+        main_window::emit_all(&self.0, FILE_EXTERNAL_EVENT, external);
     }
     fn comments(&self, comments: &CommentsEvent) {
-        let window = if comments.note_id.is_some() {
-            quicknotes::window::LABEL
+        if comments.note_id.is_some() {
+            let _ = self
+                .0
+                .emit_to(quicknotes::window::LABEL, COMMENTS_EVENT, comments);
         } else {
-            quicknotes::window::MAIN_LABEL
-        };
-        let _ = self.0.emit_to(window, COMMENTS_EVENT, comments);
+            main_window::emit_all(&self.0, COMMENTS_EVENT, comments);
+        }
     }
     fn coedit_state(&self, state: &CoeditState) {
-        for window in [quicknotes::window::LABEL, quicknotes::window::MAIN_LABEL] {
-            let _ = self.0.emit_to(window, COEDIT_EVENT, state);
-        }
+        let _ = self
+            .0
+            .emit_to(quicknotes::window::LABEL, COEDIT_EVENT, state);
+        main_window::emit_all(&self.0, COEDIT_EVENT, state);
     }
 }
 
@@ -323,7 +319,7 @@ pub(crate) struct DocAddress {
     doc_id: Option<String>,
 }
 
-/// Notes are only the Quick Notes window's, files only the main window's,
+/// Notes are only the Quick Notes window's, files only the main windows',
 /// and a file must be one the owner opened.
 fn page_doc(window: &Window, doc: DocAddress) -> Result<PageDoc, String> {
     match doc {
@@ -341,7 +337,7 @@ fn page_doc(window: &Window, doc: DocAddress) -> Result<PageDoc, String> {
             doc_id: Some(doc_id),
             note_id: None,
             ..
-        } if window.label() == quicknotes::window::MAIN_LABEL => {
+        } if is_main_label(window.label()) => {
             let files = window.state::<crate::files::Files>();
             let path = files.require(&path).map_err(|error| error.message)?;
             Ok(PageDoc::File { path, doc_id })

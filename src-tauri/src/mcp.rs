@@ -223,12 +223,10 @@ struct AppEvents(tauri::AppHandle);
 impl McpEvents for AppEvents {
     fn state_changed(&self, event: &McpStateChanged) {
         use tauri::Emitter;
-        for window in [
-            crate::quicknotes::window::LABEL,
-            crate::quicknotes::window::MAIN_LABEL,
-        ] {
-            let _ = self.0.emit_to(window, STATE_EVENT, event);
-        }
+        let _ = self
+            .0
+            .emit_to(crate::quicknotes::window::LABEL, STATE_EVENT, event);
+        crate::main_window::emit_all(&self.0, STATE_EVENT, event);
     }
 }
 

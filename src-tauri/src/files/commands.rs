@@ -6,7 +6,7 @@ use serde::Serialize;
 use tauri::{AppHandle, State, Window};
 
 use super::io::{self, LineEnding};
-use super::windows::{Claim, MAIN_LABEL};
+use super::windows::{is_main_label, Claim};
 use super::{FileError, Files, OpenedDocument, PendingOpen};
 use crate::docs::commands::SharedRegistry;
 use crate::docs::files::{FileOpened, FileSaved, Resolve};
@@ -16,7 +16,7 @@ pub const OPEN_REQUEST_EVENT: &str = "file-open-request";
 const TEXT_EXTENSIONS: &[&str] = &["md", "markdown", "txt"];
 
 fn require_main(window: &Window) -> Result<(), FileError> {
-    if window.label() == MAIN_LABEL {
+    if is_main_label(window.label()) {
         Ok(())
     } else {
         Err(FileError::wrong_window())

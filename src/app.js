@@ -3,12 +3,13 @@
 // The main window: the start page, the Sodilaud menu and the file editor. Notes
 // live in the Quick Notes panel (notes.html), which owns their storage.
 
-import { acceleratorFromKeyEvent, formatAccelerator, isMacPlatform } from "./clipboard-settings.js";
+import { CLIPBOARD_SETTINGS_KEY, acceleratorFromKeyEvent, formatAccelerator, isMacPlatform } from "./clipboard-settings.js";
 import { setupClipboardHistory, syncClipboardPopupTheme } from "./clipboard-settings-ui.js";
 import { createThemes } from "./themes.js";
 import { createAppearance } from "./appearance.js";
 import { createDocumentFonts } from "./document-fonts.js";
 import { broadcastPreference, onPreferenceChange } from "./preferences.js";
+import { listenHere } from "./window-events.js";
 import { trapModalFocus } from "./modal-focus.js";
 import { applyPlatformShortcutLabels } from "./platform-labels.js";
 import { resolveLinkAction } from "./markdown.js";
@@ -166,6 +167,8 @@ function acceptQuickNotesStatus(status) {
   renderQuickNotes();
 }
 
+const QUICK_NOTES_HOTKEY_KEY = "sodilaud_quicknotes_hotkey";
+
 async function loadQuickNotesConfig() {
   try {
     acceptQuickNotesStatus(await invoke("qn_get_config"));
@@ -178,6 +181,7 @@ async function loadQuickNotesConfig() {
 async function setQuickNotesHotkey(hotkey) {
   try {
     acceptQuickNotesStatus(await invoke("qn_set_hotkey", { hotkey }));
+    broadcastPreference(window, QUICK_NOTES_HOTKEY_KEY);
   } catch (error) {
     console.error("Could not change the Quick Notes hotkey", error);
     hotkeyStatus.textContent = "Could not change the hotkey.";
@@ -296,6 +300,14 @@ function handleLinkClick(event) {
 function followPreferenceChange(key) {
   if (appearance.reload(key)) return;
   if (fonts.reload(key)) return;
+  if (key === CLIPBOARD_SETTINGS_KEY) {
+    clipboard?.reload();
+    return;
+  }
+  if (key === QUICK_NOTES_HOTKEY_KEY) {
+    loadQuickNotesConfig();
+    return;
+  }
   if (key === "sodilaud_layout_mode") {
     fileEditor.setLayoutMode(localStorage.getItem(key), { persist: false });
     return;
@@ -482,8 +494,8 @@ async function registerQuitHandler(listen) {
 }
 
 async function registerNativeHandlers() {
-  const listen = window.__TAURI__?.event?.listen;
-  if (typeof listen !== "function") return;
+  if (typeof window.__TAURI__?.event?.listen !== "function") return;
+  const listen = (name, handler) => listenHere(window, name, handler);
   try {
     await registerQuitHandler(listen);
     await listen("sodilaud-open-about", openAboutModal);
@@ -500,6 +512,8 @@ async function registerNativeHandlers() {
   }
 }
 
+let clipboard = null;
+
 async function startApp() {
   applyPlatformShortcutLabels(document, navigator);
   attachListeners();
@@ -509,10 +523,11 @@ async function startApp() {
   await registerNativeHandlers();
   await onPreferenceChange(window, followPreferenceChange);
   try {
-    await setupClipboardHistory({
+    clipboard = await setupClipboardHistory({
       document,
       invoke,
-      listen: window.__TAURI__?.event?.listen,
+      listen: (name, handler) => listenHere(window, name, handler),
+      broadcast: (key) => broadcastPreference(window, key),
       storage: localStorage,
       notify: showNotification,
       isMac: isMac && Boolean(window.__TAURI__)
