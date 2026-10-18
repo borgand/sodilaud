@@ -313,10 +313,11 @@ pub fn summaries(set: &WindowSet, except: &str) -> Vec<WindowSummary> {
         .collect()
 }
 
-/// A window that could not be built leaves the set, and the files queued for
-/// it go to another window.
+/// A window that could not be built leaves the set. Its open files join the
+/// focused window's open list, which that page reopens when it loads, and the
+/// files queued for it go to another window.
 fn abandon(app: &AppHandle, files: &Files, label: &str) {
-    files.update(|lists| lists.windows.remove(label));
+    files.update(|lists| lists.windows.fold_into_target(label));
     let orphaned = files.take_pending(label);
     crate::files::present_pending(app, files, orphaned.into_iter().map(|p| p.path).collect());
 }
