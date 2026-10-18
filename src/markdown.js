@@ -21,14 +21,12 @@ const MARKDOWN_ALLOWED_ATTRIBUTES = {
   code: new Set(["class", "data-hunk", "data-path", "data-lines", "data-reviewed", "data-elided"]),
   img: new Set(["alt", "src", "title"]),
   input: new Set(["checked", "disabled", "type"]),
-  ol: new Set(["start", SOURCE_FROM, SOURCE_TO]),
-  td: new Set(["align", SOURCE_FROM, SOURCE_TO]),
-  th: new Set(["align", SOURCE_FROM, SOURCE_TO])
+  ol: new Set(["start"]),
+  td: new Set(["align"]),
+  th: new Set(["align"])
 };
 
-for (const tag of ["p", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "ul", "li", "table", "pre"]) {
-  MARKDOWN_ALLOWED_ATTRIBUTES[tag] = new Set([SOURCE_FROM, SOURCE_TO]);
-}
+const POSITION_TAGS = new Set(["p", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "ul", "ol", "li", "table", "th", "td", "pre"]);
 
 const CODE_DATA_PATTERNS = [
   ["data-hunk", HUNK_ID],
@@ -104,7 +102,10 @@ export function resolveLinkAction(href) {
   return { kind: "ignore" };
 }
 
-export function sanitizeMarkdownHtml(html) {
+// `positionKey` names the one-render attribute suffix the position renderer
+// used; only attributes carrying it become data-src-*, so positions written in
+// the document can never be mistaken for real ones.
+export function sanitizeMarkdownHtml(html, positionKey = null) {
   const template = document.createElement("template");
   template.innerHTML = html;
 
@@ -121,6 +122,8 @@ export function sanitizeMarkdownHtml(html) {
       return;
     }
 
+    const fromKey = positionKey && element.getAttribute(`${SOURCE_FROM}-${positionKey}`);
+    const toKey = positionKey && element.getAttribute(`${SOURCE_TO}-${positionKey}`);
     const allowedAttributes = MARKDOWN_ALLOWED_ATTRIBUTES[tag] || new Set();
     Array.from(element.attributes).forEach(attribute => {
       if (!allowedAttributes.has(attribute.name.toLowerCase())) {
@@ -128,13 +131,9 @@ export function sanitizeMarkdownHtml(html) {
       }
     });
 
-    if (element.hasAttribute(SOURCE_FROM) || element.hasAttribute(SOURCE_TO)) {
-      const from = element.getAttribute(SOURCE_FROM);
-      const to = element.getAttribute(SOURCE_TO);
-      if (!/^\d+$/.test(from ?? "") || !/^\d+$/.test(to ?? "") || Number(from) > Number(to)) {
-        element.removeAttribute(SOURCE_FROM);
-        element.removeAttribute(SOURCE_TO);
-      }
+    if (POSITION_TAGS.has(tag) && /^\d+$/.test(fromKey ?? "") && /^\d+$/.test(toKey ?? "") && Number(fromKey) <= Number(toKey)) {
+      element.setAttribute(SOURCE_FROM, fromKey);
+      element.setAttribute(SOURCE_TO, toKey);
     }
 
     if (tag === "a") {
@@ -379,16 +378,16 @@ function annotateTokens(tokens, source) {
   }
 }
 
-function withSourceAttributes(html, token) {
+function withSourceAttributes(html, token, key) {
   if (!Number.isInteger(token.srcFrom) || !Number.isInteger(token.srcTo)) return html;
-  return html.replace(/^(\s*<[a-z0-9]+)/i, `$1 ${SOURCE_FROM}="${token.srcFrom}" ${SOURCE_TO}="${token.srcTo}"`);
+  return html.replace(/^(\s*<[a-z0-9]+)/i, `$1 ${SOURCE_FROM}-${key}="${token.srcFrom}" ${SOURCE_TO}-${key}="${token.srcTo}"`);
 }
 
-function positionRenderer(renderer) {
+function positionRenderer(renderer, key) {
   for (const name of ["paragraph", "heading", "blockquote", "list", "listitem", "table", "tablecell", "code"]) {
     const original = renderer[name];
     renderer[name] = function (token) {
-      return withSourceAttributes(original.call(this, token), token);
+      return withSourceAttributes(original.call(this, token), token, key);
     };
   }
   return renderer;
@@ -402,8 +401,9 @@ export function renderMarkdown(rawText, emptyFallback = "", markedApi = globalTh
     if (positions && rawText && renderer && typeof markedApi.lexer === "function" && typeof markedApi.parser === "function") {
       const tokens = markedApi.lexer(source);
       annotateTokens(tokens, source);
-      renderer = positionRenderer(renderer);
-      return sanitizeMarkdownHtml(markedApi.parser(tokens, { renderer }));
+      const key = Math.random().toString(36).slice(2) + Date.now().toString(36);
+      renderer = positionRenderer(renderer, key);
+      return sanitizeMarkdownHtml(markedApi.parser(tokens, { renderer }), key);
     }
     return sanitizeMarkdownHtml(renderer ? markedApi.parse(source, { renderer }) : markedApi.parse(source));
   }

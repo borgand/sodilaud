@@ -331,10 +331,12 @@ test("only the outer blockquote is annotated", () => {
 
 test("sanitizer validates source attributes", () => {
   const html = sanitizeMarkdownHtml(
-    '<p data-src-from="x" data-src-to="3">a</p><p data-src-from="5" data-src-to="2">b</p>' +
-    '<p data-src-from="1" data-src-to="2">c</p><span data-src-from="1" data-src-to="2">d</span>'
+    '<p data-src-from-k="x" data-src-to-k="3">a</p><p data-src-from-k="5" data-src-to-k="2">b</p>' +
+    '<p data-src-from-k="1" data-src-to-k="2">c</p><span data-src-from-k="1" data-src-to-k="2">d</span>' +
+    '<p data-src-from="1" data-src-to="2">e</p>',
+    "k"
   );
-  assert.equal(html, '<p>a</p><p>b</p><p data-src-from="1" data-src-to="2">c</p>d');
+  assert.equal(html, '<p>a</p><p>b</p><p data-src-from="1" data-src-to="2">c</p>d<p>e</p>');
 });
 
 test("wrapped table tokens keep cell source attributes", () => {
@@ -342,4 +344,13 @@ test("wrapped table tokens keep cell source attributes", () => {
   const td = rendered(doc).querySelector("td");
   assert.ok(td.querySelector(".table-token"));
   assert.equal(sliceOf(doc, td), "2026-09-30");
+});
+
+test("source positions written in the document never survive", () => {
+  const doc = '<p data-src-from="1" data-src-to="9999">x</p>\n\nhi <span data-src-from="1" data-src-to="2">s</span>\n';
+  assert.doesNotMatch(renderMarkdown(doc, "", marked), /data-src-/);
+  const html = renderMarkdown(doc, "", marked, { positions: true });
+  assert.doesNotMatch(html, /9999/);
+  assert.doesNotMatch(html, /data-src-from="1" data-src-to="2"/);
+  assert.doesNotMatch(html, /data-src-from-/);
 });
