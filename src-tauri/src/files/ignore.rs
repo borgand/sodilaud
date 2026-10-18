@@ -56,8 +56,8 @@ impl IgnoreSet {
             chain.push(current.clone());
         }
         for directory in chain {
-            if let Ok(contents) = fs::read_to_string(directory.join(".gitignore")) {
-                set.add(&directory, &contents);
+            if let Ok(bytes) = fs::read(directory.join(".gitignore")) {
+                set.add(&directory, &String::from_utf8_lossy(&bytes));
             }
         }
         set
@@ -218,46 +218,80 @@ fn parse_class(chars: &[char], open: usize) -> Option<(Token, usize)> {
 }
 
 fn match_segments(segments: &[Segment], names: &[String]) -> bool {
-    match segments.split_first() {
-        None => names.is_empty(),
-        Some((Segment::DoubleStar, [])) => !names.is_empty(),
-        Some((Segment::DoubleStar, rest)) => {
-            (0..=names.len()).any(|skip| match_segments(rest, &names[skip..]))
-        }
-        Some((Segment::Glob(tokens), rest)) => match names.split_first() {
-            Some((name, remaining)) => {
-                let chars: Vec<char> = name.chars().collect();
-                match_tokens(tokens, &chars) && match_segments(rest, remaining)
+    // A trailing `**` must cover at least one name.
+    let (core, open_end) = match segments.split_last() {
+        Some((Segment::DoubleStar, core)) => (core, true),
+        _ => (segments, false),
+    };
+    let names: Vec<Vec<char>> = names.iter().map(|name| name.chars().collect()).collect();
+    let (mut segment, mut name) = (0, 0);
+    let mut star: Option<(usize, usize)> = None;
+    loop {
+        if segment == core.len() {
+            if (open_end && name < names.len()) || (!open_end && name == names.len()) {
+                return true;
             }
-            None => false,
-        },
+        } else {
+            match &core[segment] {
+                Segment::DoubleStar => {
+                    star = Some((segment, name));
+                    segment += 1;
+                    continue;
+                }
+                Segment::Glob(tokens)
+                    if name < names.len() && match_tokens(tokens, &names[name]) =>
+                {
+                    segment += 1;
+                    name += 1;
+                    continue;
+                }
+                Segment::Glob(_) => {}
+            }
+        }
+        match star {
+            Some((star_segment, star_name)) if star_name < names.len() => {
+                star = Some((star_segment, star_name + 1));
+                segment = star_segment + 1;
+                name = star_name + 1;
+            }
+            _ => return false,
+        }
+    }
+}
+
+fn token_fits(token: &Token, character: char) -> bool {
+    match token {
+        Token::Literal(expected) => *expected == character,
+        Token::AnyOne => true,
+        Token::Class { negated, ranges } => {
+            ranges
+                .iter()
+                .any(|(low, high)| (*low..=*high).contains(&character))
+                != *negated
+        }
+        Token::AnyRun => false,
     }
 }
 
 fn match_tokens(tokens: &[Token], chars: &[char]) -> bool {
-    match tokens.split_first() {
-        None => chars.is_empty(),
-        Some((Token::AnyRun, rest)) => {
-            (0..=chars.len()).any(|skip| match_tokens(rest, &chars[skip..]))
+    let (mut token, mut at) = (0, 0);
+    let mut star: Option<(usize, usize)> = None;
+    while at < chars.len() {
+        if token < tokens.len() && tokens[token] == Token::AnyRun {
+            star = Some((token, at));
+            token += 1;
+        } else if token < tokens.len() && token_fits(&tokens[token], chars[at]) {
+            token += 1;
+            at += 1;
+        } else if let Some((star_token, star_at)) = star {
+            star = Some((star_token, star_at + 1));
+            token = star_token + 1;
+            at = star_at + 1;
+        } else {
+            return false;
         }
-        Some((token, rest)) => match chars.split_first() {
-            Some((&character, remaining)) => {
-                let fits = match token {
-                    Token::Literal(expected) => *expected == character,
-                    Token::AnyOne => true,
-                    Token::Class { negated, ranges } => {
-                        ranges
-                            .iter()
-                            .any(|(low, high)| (*low..=*high).contains(&character))
-                            != *negated
-                    }
-                    Token::AnyRun => unreachable!(),
-                };
-                fits && match_tokens(rest, remaining)
-            }
-            None => false,
-        },
     }
+    tokens[token..].iter().all(|token| *token == Token::AnyRun)
 }
 
 #[cfg(test)]
@@ -384,5 +418,27 @@ mod tests {
         let set = IgnoreSet::for_folder(&root, &sub);
         assert!(!set.is_ignored(&sub.join("a.md"), false));
         assert!(set.is_ignored(&sub.join("a.txt"), false));
+    }
+
+    #[test]
+    fn pathological_patterns_finish_quickly() {
+        let started = std::time::Instant::now();
+        let name = "a".repeat(5000);
+        let set = set("*a*a*a*a*a*a*b\n**/**/**/x\n");
+        assert!(!file(&set, &format!("/r/{name}")));
+        let deep = format!("/r/{}", "d/".repeat(300));
+        assert!(!file(&set, &format!("{deep}y")));
+        assert!(file(&set, &format!("{deep}x")));
+        assert!(started.elapsed() < std::time::Duration::from_secs(1));
+    }
+
+    #[test]
+    fn a_bad_byte_does_not_drop_the_whole_gitignore() {
+        let root = scratch("bytes");
+        let mut contents = b"bad\xff.md\n".to_vec();
+        contents.extend_from_slice(b"ignored.md\n");
+        fs::write(root.join(".gitignore"), contents).unwrap();
+        let set = IgnoreSet::for_folder(&root, &root);
+        assert!(set.is_ignored(&root.join("ignored.md"), false));
     }
 }

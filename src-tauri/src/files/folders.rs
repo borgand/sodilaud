@@ -268,4 +268,42 @@ mod tests {
         let error = list(&root, &root.join("gone")).unwrap_err();
         assert_eq!(error.code, FileErrorCode::NotFound);
     }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_link_to_a_folder_inside_the_root_is_kept() {
+        use std::os::unix::fs::symlink;
+        let root = scratch("innerlink");
+        fs::create_dir(root.join("real")).unwrap();
+        symlink(root.join("real"), root.join("alias")).unwrap();
+        let listing = list(&root, &root).unwrap();
+        assert_eq!(names(&listing), ["alias", "real"]);
+        assert_eq!(listing.entries[0].kind, EntryKind::Folder);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_link_loop_is_listed_once_without_recursion() {
+        use std::os::unix::fs::symlink;
+        let base = scratch("loop");
+        let root = base.join("r");
+        fs::create_dir_all(&root).unwrap();
+        symlink(&root, root.join("loop")).unwrap();
+        let listing = list(&root, &root).unwrap();
+        assert_eq!(names(&listing), ["loop"]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_file_name_that_is_not_utf8_is_skipped() {
+        use std::ffi::OsStr;
+        use std::os::unix::ffi::OsStrExt;
+        let root = scratch("nonutf8");
+        if fs::write(root.join(OsStr::from_bytes(b"bad\xff.md")), "").is_err() {
+            return; // the file system (APFS) refuses such names
+        }
+        fs::write(root.join("ok.md"), "").unwrap();
+        let listing = list(&root, &root).unwrap();
+        assert_eq!(names(&listing), ["ok.md"]);
+    }
 }
