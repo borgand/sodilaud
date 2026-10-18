@@ -551,3 +551,14 @@ test("a setext heading inside a quote keeps quote and heading classes", async ()
   const line = t.lines().find(l => l.textContent.includes("heading") && !l.textContent.includes("==="));
   for (const name of ["cm-lp-quote", "cm-lp-h1", "cm-lp-heading-rule", "cm-lp-heading-cont"]) assert.ok(line.classList.contains(name), name);
 });
+
+test("blank lines between blocks are gaps, blank lines in code are not", async () => {
+  const t = await setup("para\n\npara\n\n```\na\n\nb\n```", { focused: false });
+  try {
+    const gaps = t.lines().map(line => line.classList.contains("cm-lp-gap"));
+    assert.deepEqual(gaps, [false, true, false, true, false, false, false, false, false]);
+  } finally {
+    t.done();
+  }
+}
+);

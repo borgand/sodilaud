@@ -10,6 +10,11 @@ export const MIN_EDITOR_LINE_SPACING = 1.2;
 export const MAX_EDITOR_LINE_SPACING = 2.4;
 export const EDITOR_LINE_SPACING_STEP = 0.1;
 
+export const DEFAULT_PARAGRAPH_SPACING = 1;
+export const MIN_PARAGRAPH_SPACING = 0.5;
+export const MAX_PARAGRAPH_SPACING = 2;
+export const PARAGRAPH_SPACING_STEP = 0.1;
+
 export const DEFAULT_NOTE_PREVIEW_LINES = 2;
 export const MIN_NOTE_PREVIEW_LINES = 1;
 export const MAX_NOTE_PREVIEW_LINES = 10;
@@ -36,6 +41,15 @@ export function normalizeEditorLineSpacing(value) {
   );
 }
 
+export function normalizeParagraphSpacing(value) {
+  return normalizeSteppedValue(
+    value,
+    DEFAULT_PARAGRAPH_SPACING,
+    MIN_PARAGRAPH_SPACING,
+    MAX_PARAGRAPH_SPACING
+  );
+}
+
 export function stepEditorZoom(value, direction) {
   return normalizeEditorZoom(normalizeEditorZoom(value) + direction * EDITOR_ZOOM_STEP);
 }
@@ -43,6 +57,12 @@ export function stepEditorZoom(value, direction) {
 export function stepEditorLineSpacing(value, direction) {
   return normalizeEditorLineSpacing(
     normalizeEditorLineSpacing(value) + direction * EDITOR_LINE_SPACING_STEP
+  );
+}
+
+export function stepParagraphSpacing(value, direction) {
+  return normalizeParagraphSpacing(
+    normalizeParagraphSpacing(value) + direction * PARAGRAPH_SPACING_STEP
   );
 }
 

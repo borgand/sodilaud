@@ -3489,6 +3489,10 @@ kbd {
 .cm-editor.cm-mode-live .cm-content { font-family: var(--font-sans); }
 .cm-editor.cm-mode-source .cm-content { font-family: var(--font-mono); }
 
+.cm-mode-live .cm-lp-gap {
+  line-height: var(--doc-gap);
+}
+
 .cm-mode-live .cm-lp-h1,
 .cm-mode-live .cm-lp-h2,
 .cm-mode-live .cm-lp-h3,

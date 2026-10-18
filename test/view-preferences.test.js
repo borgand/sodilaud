@@ -11,9 +11,11 @@ import {
   normalizeEditorZoom,
   normalizeLayoutMode,
   normalizeNotePreviewLines,
+  normalizeParagraphSpacing,
   normalizeSyntaxHighlighting,
   stepEditorLineSpacing,
   stepEditorZoom,
+  stepParagraphSpacing,
   stepNotePreviewLines
 } from "../src/view-preferences.js";
 
@@ -30,6 +32,13 @@ test("editor line spacing is rounded and bounded", () => {
   assert.equal(normalizeEditorLineSpacing(1), 1.2);
   assert.equal(normalizeEditorLineSpacing(3), 2.4);
   assert.equal(stepEditorLineSpacing(1.6, -1), 1.5);
+});
+
+test("paragraph spacing normalizes to 0.5-2.0 in 0.1 steps", () => {
+  assert.equal(normalizeParagraphSpacing("abc"), 1);
+  assert.equal(normalizeParagraphSpacing(0.1), 0.5);
+  assert.equal(normalizeParagraphSpacing(9), 2);
+  assert.equal(stepParagraphSpacing(1, 1), 1.1);
 });
 
 test("note preview context is limited to one through ten lines", () => {

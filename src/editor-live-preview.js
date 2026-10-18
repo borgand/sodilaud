@@ -417,7 +417,7 @@ const hidden = Decoration.replace({});
 const codeMark = Decoration.mark({ class: "cm-lp-code" });
 const blockedImageMark = Decoration.mark({ class: "cm-lp-image-blocked" });
 const lineClasses = {};
-for (const name of ["h1", "h2", "h3", "h4", "h5", "h6", "quote", "codeblock", "hr"]) {
+for (const name of ["h1", "h2", "h3", "h4", "h5", "h6", "quote", "codeblock", "hr", "gap"]) {
   lineClasses[name] = Decoration.line({ class: `cm-lp-${name}` });
 }
 const headingLines = new Map();
@@ -697,6 +697,19 @@ function buildInline(view, focused) {
         return true;
       }
     });
+  }
+
+  const verbatim = new Set(["FencedCode", "CodeBlock", "HTMLBlock", "Table"]);
+  for (const { from: rangeFrom, to: rangeTo } of view.visibleRanges) {
+    for (let n = doc.lineAt(rangeFrom).number; n <= doc.lineAt(rangeTo).number; n++) {
+      const line = doc.line(n);
+      if (lineDecorations.has(line.from) || line.text.trim() !== "") continue;
+      let inside = false;
+      for (let node = syntaxTree(state).resolveInner(line.from, 1); node; node = node.parent) {
+        if (verbatim.has(node.name)) { inside = true; break; }
+      }
+      if (!inside) lineDecorations.set(line.from, lineClasses.gap);
+    }
   }
 
   for (const [pos, decoration] of lineDecorations) ranges.push(decoration.range(pos));
