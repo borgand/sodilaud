@@ -387,7 +387,7 @@ pub fn present_pending(app: &AppHandle, files: &Files, granted: Vec<String>) {
     if granted.is_empty() {
         return;
     }
-    let groups = files.update(|lists| lists.windows.route(&granted));
+    let groups = files.read(|lists| lists.windows.route(&granted));
     for (label, paths) in groups {
         let entries = paths
             .into_iter()
