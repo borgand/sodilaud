@@ -5,6 +5,7 @@
 // Markdown file and `draft.json`. The app picks every path; an agent only
 // names the title, which is reduced to a plain file name.
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -18,22 +19,49 @@ pub const META: &str = "draft.json";
 pub const TITLE_LIMIT: usize = 200;
 pub const CONTENT_LIMIT: usize = 100_000;
 const NAME_LIMIT: usize = 100;
+/// Bytes, so a name in any script stays under the common 255-byte limit.
+const NAME_BYTES: usize = 240;
 const RESERVED_NAMES: &[&str] = &[
     "con", "prn", "aux", "nul", "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8",
     "com9", "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9",
 ];
 
-/// Two pushes with one requestId must not both create a draft.
-static CREATING: Mutex<()> = Mutex::new(());
+/// The fingerprint each (drafts dir, requestId) was used with in this run.
+/// Held while creating, so two pushes with one requestId cannot both create a
+/// draft, and a late retry cannot bring back a draft saved or discarded since.
+static USED: Mutex<BTreeMap<(PathBuf, String), String>> = Mutex::new(BTreeMap::new());
+
+/// Characters that are invisible or reorder text, so a name could read as
+/// something else (`invoice\u{202E}gpj.md` shows as `invoicedm.jpg`).
+fn is_hidden_char(c: char) -> bool {
+    c.is_control()
+        || matches!(c,
+            '\u{200B}'..='\u{200F}'
+            | '\u{2028}'..='\u{2029}'
+            | '\u{202A}'..='\u{202E}'
+            | '\u{2060}'..='\u{206F}'
+            | '\u{FEFF}')
+}
+
+fn cut_to_bytes(text: &str, limit: usize) -> &str {
+    let mut end = text.len().min(limit);
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    &text[..end]
+}
 
 /// `title` as a file name that stays in its draft folder on every platform:
-/// no separators or other characters a file system refuses, no leading or
-/// trailing dots or spaces, no reserved device name.
+/// no separators or other characters a file system refuses, no invisible or
+/// direction-changing characters, no leading or trailing dots or spaces, no
+/// reserved device name, and at most 100 characters and 240 bytes.
 pub fn file_name(title: &str) -> String {
     let replaced: String = title
         .chars()
         .map(|c| {
-            if c.is_control() || matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') {
+            if is_hidden_char(c)
+                || matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|')
+            {
                 '-'
             } else {
                 c
@@ -45,7 +73,7 @@ pub fn file_name(title: &str) -> String {
             .to_string()
     };
     let capped: String = trim(&replaced).chars().take(NAME_LIMIT).collect();
-    let mut stem = trim(&capped);
+    let mut stem = trim(cut_to_bytes(&capped, NAME_BYTES));
     if stem.is_empty() {
         stem = "Draft".to_string();
     }
@@ -161,13 +189,14 @@ pub fn create(dir: &Path, request_id: &str, title: &str, content: &str) -> Resul
             "title must contain 1-200 characters and content at most 100000 UTF-8 bytes".into(),
         );
     }
-    let _creating = CREATING.lock().unwrap_or_else(|e| e.into_inner());
+    let mut used = USED.lock().unwrap_or_else(|e| e.into_inner());
     fs::create_dir_all(dir).map_err(|e| format!("Could not create the drafts folder: {e}"))?;
     restrict_folder(dir)?;
     let dir = dir
         .canonicalize()
         .map_err(|e| format!("Could not open the drafts folder: {e}"))?;
     let wanted = fingerprint(title, content);
+    let key = (dir.clone(), request_id.to_string());
     for folder in folders(&dir) {
         let Some(meta) = read_meta(&folder) else {
             continue;
@@ -182,13 +211,23 @@ pub fn create(dir: &Path, request_id: &str, title: &str, content: &str) -> Resul
             return Ok(Created::Existing(draft));
         }
     }
+    match used.get(&key) {
+        Some(used) if *used == wanted => {
+            return Err(
+                "This draft was already saved or discarded. Use a new requestId for a new draft."
+                    .into(),
+            )
+        }
+        Some(_) => return Err("requestId was already used with different arguments.".into()),
+        None => {}
+    }
     let folder = dir.join(uuid::Uuid::new_v4().to_string());
     fs::create_dir(&folder).map_err(|e| format!("Could not create the draft: {e}"))?;
     let file = folder.join(file_name(title));
     let created_at = now_ms();
     let meta = Meta {
         request_id: request_id.to_string(),
-        fingerprint: wanted,
+        fingerprint: wanted.clone(),
         created_at,
     };
     let written = restrict_folder(&folder)
@@ -201,6 +240,7 @@ pub fn create(dir: &Path, request_id: &str, title: &str, content: &str) -> Resul
         let _ = fs::remove_dir_all(&folder);
         return Err(error);
     }
+    used.insert(key, wanted);
     Ok(Created::New(Draft {
         name: super::io::file_name(&file),
         path: file.to_string_lossy().to_string(),
@@ -287,6 +327,8 @@ mod tests {
             ("Console", "Console.md"),
             ("com1", "com1-.md"),
             ("trailing. ", "trailing.md"),
+            ("invoice\u{202E}gpj", "invoice-gpj.md"),
+            ("a\u{200B}b\u{2028}c\u{2066}d\u{FEFF}", "a-b-c-d-.md"),
         ] {
             assert_eq!(file_name(title), expected, "{title:?}");
         }
@@ -303,6 +345,44 @@ mod tests {
             assert!(!name.starts_with('.'), "{name}");
             assert_eq!(Path::new(&name).components().count(), 1, "{name}");
         }
+    }
+
+    #[test]
+    fn a_name_in_any_script_fits_the_file_system_limit() {
+        for title in [
+            "界".repeat(100),
+            "😀".repeat(100),
+            "界".repeat(300),
+            "a😀".repeat(80),
+        ] {
+            let name = file_name(&title);
+            assert!(name.len() <= 255, "{} bytes", name.len());
+            assert!(name.ends_with(".md"));
+            assert!(name.chars().count() <= 103);
+        }
+        assert_eq!(
+            file_name(&"界".repeat(100)),
+            format!("{}.md", "界".repeat(80))
+        );
+    }
+
+    #[test]
+    fn a_late_retry_does_not_bring_back_a_saved_or_discarded_draft() {
+        let dir = scratch("late");
+        let made = draft(create(&dir, "r", "T", "body").unwrap());
+        remove(&dir, Path::new(&made.path)).unwrap();
+        assert!(create(&dir, "r", "T", "body")
+            .unwrap_err()
+            .contains("already saved or discarded"));
+        assert_eq!(
+            create(&dir, "r", "T", "other").unwrap_err(),
+            "requestId was already used with different arguments."
+        );
+        assert!(list(&dir).is_empty());
+        assert!(matches!(
+            create(&dir, "r2", "T", "body").unwrap(),
+            Created::New(_)
+        ));
     }
 
     #[test]
