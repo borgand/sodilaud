@@ -477,6 +477,16 @@
   display: none;
 }
 
+/* As in Quick Notes: compare keeps a narrow change rail while line numbers are off. */
+html:not(.editor-line-numbers-enabled) #file-editor.compare-mode .editor-host .cm-editor .cm-lineNumbers .cm-gutterElement {
+  min-width: 0;
+  padding: 0 0 0 4px;
+  font-size: 0;
+  color: transparent;
+  width: 20px;
+  height: 20px;
+}
+
 .secondary-editor-wrapper .editor-host {
   position: relative;
   flex: 1;

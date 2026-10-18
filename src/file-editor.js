@@ -36,6 +36,7 @@ import { createOpenFileMenu } from "./open-file-menu.js";
 import { createFolderSidebar } from "./folder-sidebar.js";
 import { createFindBar } from "./find-bar.js";
 import { createFileSplit } from "./file-split.js";
+import { createPaneCompare } from "./pane-compare.js";
 import { isMacLikePlatform } from "./platform-labels.js";
 import { EditorState, EditorView, Transaction } from "./vendor/codemirror.js";
 
@@ -172,6 +173,19 @@ export function createFileEditor({
 
   const activeEditor = () => (split.activePane() === "secondary" ? split.editor() : editor);
 
+  const compareButton = $("compare-files-btn");
+  const compareCount = $("compare-files-count");
+  const diffApi = () => document.defaultView?.Diff;
+  const fileCompare = createPaneCompare({
+    left: () => editor,
+    right: () => split.editor(),
+    diffApi,
+    onResult: renderCompare
+  });
+  // The two files compare showed last, so a render that changes neither pane
+  // does not redraw the marks.
+  let comparedPanes = null;
+
   // Comments need a file Rust holds: an untitled buffer has none yet.
   const docOf = (buffer) => (buffer?.path ? { path: buffer.path, docId: buffer.docId } : null);
   const shownDoc = () => docOf(showingStartPage ? null : model.get(shownId));
@@ -235,6 +249,57 @@ export function createFileEditor({
     editor.loadText(buffer.text, { extensions });
     applyKind(buffer);
     refreshFind();
+    fileCompare.refresh();
+  }
+
+  // ----------------------------------------------------
+  // Compare
+  // ----------------------------------------------------
+  const canCompare = () => {
+    const left = paneBufferId("primary");
+    const right = split.shownId();
+    const api = diffApi();
+    return Boolean(left && right && left !== right &&
+      typeof api?.diffLines === "function" && typeof api?.diffWordsWithSpace === "function");
+  };
+
+  function renderCompare({ changedLineCount, pending }) {
+    const on = fileCompare.isEnabled();
+    editorSection.classList.toggle("compare-mode", on);
+    compareButton.classList.toggle("active", on);
+    compareButton.setAttribute("aria-pressed", String(on));
+    compareCount.hidden = !on;
+    let summary = "";
+    if (on && pending) summary = "Updating comparison…";
+    else if (on) summary = changedLineCount === 0 ? "No differences" : `${changedLineCount} changed line${changedLineCount === 1 ? "" : "s"}`;
+    compareCount.textContent = summary;
+    compareButton.title = on ? `Stop comparing the files (${summary.toLowerCase()})` : "Compare the two files";
+  }
+
+  // Compare is offered for two different files side by side. Showing the same
+  // file on both sides turns it off; another file on either side compares again.
+  function syncCompare() {
+    const available = canCompare();
+    compareButton.hidden = !available;
+    if (!available && fileCompare.isEnabled()) fileCompare.setEnabled(false);
+    const panes = `${paneBufferId("primary")}|${split.shownId()}`;
+    if (panes === comparedPanes) return;
+    comparedPanes = panes;
+    // A file's editor state comes back with the marks it had: redraw them.
+    fileCompare.refresh();
+  }
+
+  function toggleCompare() {
+    if (canCompare()) fileCompare.setEnabled(!fileCompare.isEnabled());
+  }
+
+  // An edit in either pane, or one from outside reaching a shown file.
+  function compareEdited(id) {
+    if (!fileCompare.isEnabled()) return;
+    if (id !== undefined && id !== paneBufferId("primary") && id !== split.shownId()) return;
+    // A pending run reads both panes when it fires; an echo leaves the texts as compared.
+    if (id !== undefined && (fileCompare.isPending() || fileCompare.isCurrent())) return;
+    fileCompare.schedule();
   }
 
   // The editor's matches belong to the text it showed before.
@@ -254,13 +319,16 @@ export function createFileEditor({
 
   function rightPaneChanged(what) {
     if (what === "file") {
+      comparedPanes = null;
+      syncCompare();
       comments.shown();
       if (split.activePane() === "secondary") {
         refreshFind();
         syncFormatting();
       }
-    } else if (findBar.isOpen() && split.activePane() === "secondary") {
-      findBar.run({ preserveActive: true, selectActive: false });
+    } else {
+      compareEdited();
+      if (findBar.isOpen() && split.activePane() === "secondary") findBar.run({ preserveActive: true, selectActive: false });
     }
   }
 
@@ -551,6 +619,7 @@ export function createFileEditor({
     }
     if (showEditor) formatToolbar.layout();
     if (split.isOpen()) split.refreshChoices();
+    syncCompare();
     folders.setActivePath(showEditor ? buffer.path : null);
     comments.shown();
     renderTitle();
@@ -568,6 +637,7 @@ export function createFileEditor({
     const buffer = model.get(shownId);
     if (!buffer) return;
     model.edit(buffer.id, text);
+    compareEdited();
     // Replace reads the new matches straight after its edit.
     if (findBar.isOpen()) findBar.run({ preserveActive: true, selectActive: false });
     renderTitle();
@@ -1058,6 +1128,7 @@ export function createFileEditor({
     if (!event?.path) return;
     sync.receive(event);
     const buffer = model.docUpdated(event);
+    if (buffer) compareEdited(buffer.id);
     const inActivePane = buffer && buffer.id === (split.activePane() === "secondary" ? split.shownId() : shownId);
     if (inActivePane && findBar.isOpen()) findBar.run({ preserveActive: true, selectActive: false });
     if (buffer && buffer.id === shownId) {
@@ -1225,6 +1296,7 @@ export function createFileEditor({
     $("comment-btn").addEventListener("click", () => comments.start());
     $("comments-count-btn").addEventListener("click", () => comments.toggle());
     $("split-file-btn").addEventListener("click", toggleSplit);
+    compareButton.addEventListener("click", toggleCompare);
     $("draft-save-as-btn").addEventListener("click", () => saveAs(model.active()?.id));
     for (const [button, action] of [["draft-save-notes-btn", saveDraftToNotes], ["draft-discard-btn", discardDraft]]) {
       $(button).addEventListener("click", () => {

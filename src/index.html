@@ -11,6 +11,8 @@
   <script src="vendor/marked.umd.js"></script>
   <!-- Offline-ready fenced-code syntax highlighter -->
   <script src="vendor/highlight.min.js"></script>
+  <!-- Offline-ready file comparison engine -->
+  <script src="vendor/diff.min.js"></script>
   <script type="module" src="app.js" defer></script>
 </head>
 <body>
@@ -61,7 +63,7 @@
         </div>
         <div class="split-controls">
           <button class="layout-btn" id="split-file-btn" type="button" title="Split View (Cmd+\)" aria-label="Split view" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M12 3v18" /></svg></button>
-          <button class="layout-btn" id="compare-files-btn" type="button" title="Compare the two files" aria-pressed="false" hidden>Compare <span id="compare-files-count"></span></button>
+          <button class="layout-btn compare-notes-btn" id="compare-files-btn" type="button" title="Compare the two files" aria-pressed="false" hidden>Compare <span class="compare-notes-count" id="compare-files-count" hidden></span></button>
         </div>
         <div class="format-menu format-heading-menu" id="format-heading-menu" role="menu" aria-label="Heading level" hidden>
           <button class="dropdown-item format-heading-item" id="format-heading-1" data-format="heading-1" type="button" role="menuitem" tabindex="-1" title="Heading 1 (Cmd+Alt+1)"><span class="format-heading-sample format-heading-sample-1">Heading 1</span></button>

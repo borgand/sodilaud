@@ -18,7 +18,7 @@ import { createAppearance } from "./appearance.js";
 import { broadcastPreference, onPreferenceChange } from "./preferences.js";
 import { createAgentAccess } from "./agent-access.js";
 import { applyPlatformShortcutLabels, isMacLikePlatform } from "./platform-labels.js";
-import { compareNoteText, emptyNoteComparison } from "./note-compare.js";
+import { createPaneCompare } from "./pane-compare.js";
 import { findTextMatches } from "./find.js";
 import { createFindBar } from "./find-bar.js";
 import { createMarkdownEditor } from "./editor-view.js";
@@ -165,17 +165,22 @@ let activeNoteId = null;
 let secondaryNoteId = null;
 let activePane = "primary"; // "primary" or "secondary"
 let isSplitNoteMode = false;
-let isCompareMode = false;
-let noteComparison = emptyNoteComparison();
-let noteComparisonSource = null;
-let noteComparisonRefreshTimer = null;
-let isNoteComparisonPending = false;
+let compareState = { changedLineCount: 0, pending: false };
 // The collection Rust has open. Notes, folders and trash mirror its last event.
 let collectionId = null;
 let workspaceInfo = { name: "Local notes", path: "", isDefault: true };
 let currentLayoutMode = "live";
 let primaryEditor = null;
 let secondaryEditor = null;
+const noteCompare = createPaneCompare({
+  left: () => primaryEditor,
+  right: () => secondaryEditor,
+  diffApi: () => window.Diff,
+  onResult: (state) => {
+    compareState = state;
+    syncCompareControl();
+  }
+});
 let isFocusMode = false;
 let isFindResultsOpen = false;
 let isFindAllNotesMode = false;
@@ -525,12 +530,12 @@ function refreshOpenNoteViews(noteId) {
     // A pending refresh reads the editors when it fires, and the echo of this
     // page's own push leaves the texts as last compared: neither needs a new one.
     if (
-      isCompareMode &&
+      noteCompare.isEnabled() &&
       (activeNoteId === noteId || secondaryNoteId === noteId) &&
-      !isNoteComparisonPending &&
-      !noteComparisonMatches(primaryEditor.getText(), secondaryEditor.getText())
+      !noteCompare.isPending() &&
+      !noteCompare.isCurrent()
     ) {
-      scheduleNoteComparisonRefresh();
+      noteCompare.schedule();
     }
     if (isFindResultsOpen && isFindAllNotesMode) renderFindResults();
     if (findBar.isOpen() && activeNoteId === noteId) findBar.run({ preserveActive: true, selectActive: false });
@@ -824,15 +829,13 @@ function loadActiveNote() {
     // Only the reopened note depends on it.
   }
 
-  cancelScheduledNoteComparison();
-
   noteTitleInput.value = activeNote.title;
   showNoteInPane("primary", primaryEditor, activeNote);
 
   updateWordCharCountForText(primaryEditor);
   updateMarkdownPreview();
   markdownPreview.scrollTop = 0;
-  applyComparisonDecorations();
+  refreshComparison();
   if (findBar.isOpen()) {
     findBar.run({ selectActive: false });
   } else {
@@ -1466,7 +1469,7 @@ function handleEditorInput(text) {
 
   activeNote.content = text;
   activeNote.updatedAt = Date.now();
-  scheduleNoteComparisonRefresh();
+  noteCompare.schedule();
   if (findBar.isOpen()) {
     findBar.run({ preserveActive: true, selectActive: false });
   }
@@ -2732,19 +2735,19 @@ function canCompareVisibleNotes() {
 }
 
 function comparisonSummary() {
-  if (isNoteComparisonPending) return "Updating comparison…";
-  if (noteComparison.changedLineCount === 0) return "No differences";
-  return `${noteComparison.changedLineCount} changed line${noteComparison.changedLineCount === 1 ? "" : "s"}`;
+  if (compareState.pending) return "Updating comparison…";
+  if (compareState.changedLineCount === 0) return "No differences";
+  return `${compareState.changedLineCount} changed line${compareState.changedLineCount === 1 ? "" : "s"}`;
 }
 
 function syncCompareControl() {
   const available = canCompareVisibleNotes();
-  const compareWasActive = isCompareMode;
-
-  if (!available && isCompareMode) {
-    isCompareMode = false;
-    resetNoteComparison();
+  // Turning compare off reports back here with the new state.
+  if (!available && noteCompare.isEnabled()) {
+    noteCompare.setEnabled(false);
+    return;
   }
+  const isCompareMode = noteCompare.isEnabled();
 
   appContainer.classList.toggle("compare-mode", isCompareMode);
   compareNotesBtn.classList.toggle("active", isCompareMode);
@@ -2759,7 +2762,7 @@ function syncCompareControl() {
       : "Note comparison is unavailable";
     compareNotesBtn.title = reason;
     compareNotesBtn.setAttribute("aria-label", reason);
-    return compareWasActive && !isCompareMode;
+    return;
   }
 
   if (isCompareMode) {
@@ -2772,101 +2775,22 @@ function syncCompareControl() {
     compareNotesBtn.title = "Compare note contents";
     compareNotesBtn.setAttribute("aria-label", "Compare note contents");
   }
-
-  return compareWasActive && !isCompareMode;
 }
 
-const NOTE_COMPARISON_DEBOUNCE_MS = 150;
-
-function visibleNoteComparison() {
-  return isNoteComparisonPending ? emptyNoteComparison() : noteComparison;
-}
-
-function noteComparisonMatches(leftText, rightText) {
-  return noteComparisonSource?.leftText === leftText &&
-    noteComparisonSource?.rightText === rightText;
-}
-
-function cancelScheduledNoteComparison() {
-  if (noteComparisonRefreshTimer !== null) {
-    clearTimeout(noteComparisonRefreshTimer);
-    noteComparisonRefreshTimer = null;
-  }
-  isNoteComparisonPending = false;
-}
-
-function resetNoteComparison() {
-  cancelScheduledNoteComparison();
-  noteComparison = emptyNoteComparison();
-  noteComparisonSource = null;
-}
-
-function scheduleNoteComparisonRefresh() {
-  if (!isCompareMode) return;
-
-  const leftText = primaryEditor.getText();
-  const rightText = secondaryEditor.getText();
-  if (noteComparisonMatches(leftText, rightText)) {
-    cancelScheduledNoteComparison();
-    syncCompareControl();
-    renderComparisonDecorations();
-    return;
-  }
-
-  if (noteComparisonRefreshTimer !== null) {
-    clearTimeout(noteComparisonRefreshTimer);
-  }
-  const wasPending = isNoteComparisonPending;
-  isNoteComparisonPending = true;
+// A pane shows another note: compare again, or turn compare off when the
+// two panes no longer show two notes.
+function refreshComparison() {
   syncCompareControl();
-  if (!wasPending) renderComparisonDecorations();
-  noteComparisonRefreshTimer = setTimeout(() => {
-    noteComparisonRefreshTimer = null;
-    isNoteComparisonPending = false;
-    if (isCompareMode) applyComparisonDecorations({ forceComparison: true });
-  }, NOTE_COMPARISON_DEBOUNCE_MS);
+  noteCompare.refresh();
 }
 
-function renderComparisonDecorations() {
-  const comparison = visibleNoteComparison();
-  primaryEditor.setDiff(isCompareMode
-    ? { decorations: comparison.leftDecorations, changedLines: comparison.leftChangedLines }
-    : null);
-  secondaryEditor.setDiff(isCompareMode
-    ? { decorations: comparison.rightDecorations, changedLines: comparison.rightChangedLines }
-    : null);
-}
-
-function applyComparisonDecorations({ forceComparison = false } = {}) {
-  syncCompareControl();
-  if (isCompareMode) {
-    const leftText = primaryEditor.getText();
-    const rightText = secondaryEditor.getText();
-    if (noteComparisonMatches(leftText, rightText)) {
-      cancelScheduledNoteComparison();
-    } else if (forceComparison || !isNoteComparisonPending) {
-      cancelScheduledNoteComparison();
-      noteComparison = compareNoteText(leftText, rightText, window.Diff);
-      noteComparisonSource = { leftText, rightText };
-    }
-    syncCompareControl();
-  }
-
-  renderComparisonDecorations();
-}
-
-function setCompareMode(forceState, { render = true } = {}) {
-  const shouldEnable = typeof forceState === "boolean" ? forceState : !isCompareMode;
+function setCompareMode(forceState) {
+  const shouldEnable = typeof forceState === "boolean" ? forceState : !noteCompare.isEnabled();
   if (shouldEnable && !canCompareVisibleNotes()) {
     syncCompareControl();
     return;
   }
-
-  isCompareMode = shouldEnable;
-  if (!isCompareMode) resetNoteComparison();
-  syncCompareControl();
-
-  if (render) applyComparisonDecorations();
+  noteCompare.setEnabled(shouldEnable);
 }
 
 function setDualPaneHeaderLayout(enabled) {
@@ -2981,12 +2905,10 @@ function loadSecondaryNote() {
   const note = notes.find(n => n.id === secondaryNoteId);
   if (!note) return;
 
-  cancelScheduledNoteComparison();
-
   secondaryNoteTitle.value = note.title;
   showNoteInPane("secondary", secondaryEditor, note);
 
-  applyComparisonDecorations();
+  refreshComparison();
   updateSecondaryMarkdownPreview();
   if (secondaryNoteSelect.value !== note.id) {
     secondaryNoteSelect.value = note.id;
@@ -2999,7 +2921,7 @@ function handleSecondaryEditorInput(text) {
 
   note.content = text;
   note.updatedAt = Date.now();
-  scheduleNoteComparisonRefresh();
+  noteCompare.schedule();
 
   if (!note.isTitleLocked) {
     const title = autoTitle(text);
