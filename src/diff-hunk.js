@@ -318,10 +318,12 @@ export function buildHunkElement(document, {
 
 /**
  * Reading mode: swaps every rendered review hunk for its widget. The toggle
- * gets the hunk's id and its position among review hunks, so a hunk without
- * a valid id can still be found in the source.
+ * and the comment handlers get the hunk's id and its position among review
+ * hunks, so a hunk without a valid id can still be found in the source:
+ * `onLineComment(target, index)` and `codeComments(target)`, which returns
+ * the handlers for enableCodeSelection.
  */
-export function renderHunkWidgets(container, { hljs = null, onToggleReviewed = null } = {}) {
+export function renderHunkWidgets(container, { hljs = null, onToggleReviewed = null, onLineComment = null, codeComments = null } = {}) {
   const codes = [...container.querySelectorAll("pre > code.language-diff[data-path]")];
   codes.forEach((code, index) => {
     const pre = code.parentElement;
@@ -332,11 +334,14 @@ export function renderHunkWidgets(container, { hljs = null, onToggleReviewed = n
       reviewed: code.hasAttribute("data-reviewed"),
       elided: code.hasAttribute("data-elided")
     };
+    const target = { hunk: meta.hunk, index };
     const widget = buildHunkElement(container.ownerDocument, {
       meta,
       body: code.textContent ?? "",
       hljs,
-      onToggleReviewed: onToggleReviewed ? reviewed => onToggleReviewed({ hunk: meta.hunk, index }, reviewed) : null
+      onToggleReviewed: onToggleReviewed ? reviewed => onToggleReviewed(target, reviewed) : null,
+      onLineComment: onLineComment ? row => onLineComment(target, row) : null,
+      codeComments: codeComments ? codeComments(target) : null
     });
     pre.replaceWith(widget);
   });

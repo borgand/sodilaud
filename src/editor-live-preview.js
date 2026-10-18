@@ -332,7 +332,7 @@ function hunkReview(state, found) {
     if (mark && !dots.some(dot => dot.row === mark.start.row)) dots.push({ row: mark.start.row, id: range.id, author: range.author });
   }
   const composer = commentComposer(state);
-  const hosted = composer?.hosted ? hunkMarks(state, found, [{ ...composer, className: "cm-comment cm-comment-draft" }]) : [];
+  const hosted = composer?.hosted && !composer.outside ? hunkMarks(state, found, [{ ...composer, className: "cm-comment cm-comment-draft" }]) : [];
   return {
     marks: [...hunkMarks(state, found, ranges), ...hosted],
     dots,
@@ -358,7 +358,7 @@ function tableReview(state, from, to) {
       id: comment.id
     }));
   const composer = commentComposer(state);
-  if (!composer || !composerWithin(composer, from, to)) return { marks, composer: null };
+  if (!composer || composer.outside || !composerWithin(composer, from, to)) return { marks, composer: null };
   marks.push({ from: composer.from - from, to: composer.to - from, className: "cm-comment cm-comment-draft" });
   return { marks, composer: { key: composer.key } };
 }

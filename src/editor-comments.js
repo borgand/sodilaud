@@ -158,11 +158,12 @@ export function startComment(view) {
 /**
  * Opens the composer for `from..to` without touching the selection. A
  * `hosted` composer is drawn by the widget that covers the range, not below
- * its line, which a replacing widget would hide.
+ * its line, which a replacing widget would hide. An `outside` composer is
+ * drawn outside the editor (Reading mode), so no widget draws it either.
  */
-export function startCommentAt(view, from, to, { hosted = false } = {}) {
+export function startCommentAt(view, from, to, { hosted = false, outside = false } = {}) {
   if (to <= from || view.state.field(composerField, false) === undefined) return false;
-  view.dispatch({ effects: composerEffect.of({ from, to, hosted, key: Date.now() + Math.random() }) });
+  view.dispatch({ effects: composerEffect.of({ from, to, hosted: hosted || outside, outside, key: Date.now() + Math.random() }) });
   return true;
 }
 
