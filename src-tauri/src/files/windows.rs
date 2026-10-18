@@ -109,25 +109,21 @@ impl WindowSet {
         label
     }
 
-    pub fn remove(&mut self, label: &str) -> Vec<String> {
+    /// Removes a window and returns its open files, or `None` when the window
+    /// is unknown or is the last one, which always stays.
+    pub fn remove(&mut self, label: &str) -> Option<Vec<String>> {
         if self.windows.len() < 2 {
-            return Vec::new();
+            return None;
         }
-        let Some(index) = self.windows.iter().position(|w| w.label == label) else {
-            return Vec::new();
-        };
+        let index = self.windows.iter().position(|w| w.label == label)?;
         self.focus.retain(|l| l != label);
-        self.windows.remove(index).open
+        Some(self.windows.remove(index).open)
     }
 
     /// Removes a window and hands its open files to the focused window that
     /// remains. Returns that window, or `None` when nothing was removed.
     pub fn fold_into_target(&mut self, label: &str) -> Option<String> {
-        self.entry(label)?;
-        if self.windows.len() < 2 {
-            return None;
-        }
-        let open = self.remove(label);
+        let open = self.remove(label)?;
         let target = self.target();
         for path in open {
             self.claim(&target, &path);
@@ -294,7 +290,7 @@ mod tests {
     #[test]
     fn the_last_window_cannot_be_removed() {
         let mut set = WindowSet::from_saved(vec![saved(&["/a.md"])]);
-        assert!(set.remove("main").is_empty());
+        assert_eq!(set.remove("main"), None);
         assert_eq!(set.labels(), ["main"]);
     }
 

@@ -38,7 +38,7 @@ import { commentsExtension, startComment } from "./editor-comments.js";
 import { createComments } from "./comments-panel.js";
 import { createReadingComments, dropStrayComposer } from "./reading-comments.js";
 import { createOpenFileMenu } from "./open-file-menu.js";
-import { EditorView } from "./vendor/codemirror.js";
+import { EditorState, EditorView, Transaction } from "./vendor/codemirror.js";
 
 const LAYOUT_KEY = "sodilaud_layout_mode";
 // The outline reparses the whole file, so it waits for typing to pause.
@@ -91,6 +91,9 @@ export function createFileEditor({
   let showingStartPage = true;
   let sidebarHidden = false;
   let shownId = null;
+  // The document being handed to another window: typing into it now would be
+  // dropped when the editor lets go of it.
+  let movingDocId = null;
   let recent = [];
   let outlineTimer = null;
   let outlineShown = [];
@@ -116,6 +119,8 @@ export function createFileEditor({
       markdownEditingCommands(),
       livePreview({ onOpenLink: followLink, onFollowAnchor: jumpTo, mermaid }),
       sectionFolding(),
+      EditorState.changeFilter.of((tr) =>
+        movingDocId === null || movingDocId !== shownDoc()?.docId || tr.annotation(Transaction.userEvent) === undefined),
       commentsExtension({
         onSubmit: (view, comment) => comments.submit(view, comment),
         onSelect: id => comments.select(id)
@@ -277,7 +282,7 @@ export function createFileEditor({
       item.addEventListener("contextmenu", (event) => {
         event.preventDefault();
         // The ContextMenu key opens the menu on keydown and then fires this event too.
-        if (Date.now() - keyOpenedAt < 500 && !event.clientX && !event.clientY) return;
+        if (Date.now() - keyOpenedAt < 500 && fileMenu.isOpen()) return;
         fileMenu.open(buffer, { x: event.clientX, y: event.clientY }, open);
       });
       open.addEventListener("keydown", (event) => {
@@ -835,15 +840,18 @@ export function createFileEditor({
       notify(`Save ${buffer.name} first to move it.`);
       return false;
     }
-    if (!(await sync.flush((doc) => doc.docId === buffer.docId))) {
-      notify(`Could not move ${buffer.name}: unsaved changes could not be sent.`);
-      return false;
-    }
+    movingDocId = buffer.docId;
     try {
+      if (!(await sync.flush((doc) => doc.docId === buffer.docId))) {
+        notify(`Could not move ${buffer.name}: unsaved changes could not be sent.`);
+        return false;
+      }
       await invoke("main_window_move_file", { path: buffer.path, to, view: viewState(buffer) });
     } catch (error) {
       notify(errorMessage(error));
       return false;
+    } finally {
+      movingDocId = null;
     }
     model.close(id, { force: true });
     if (shownId === id) {

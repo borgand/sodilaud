@@ -216,3 +216,53 @@ test("the ContextMenu key opens the menu once even when contextmenu follows", as
   await app.settle();
   assert.ok(doc(app).activeElement === menuItem(app, "Close"), "the open menu was not rebuilt");
 });
+
+test("a contextmenu with coordinates right after the ContextMenu key keeps the open menu", async () => {
+  const app = await bootMainWindow({ instance: 11, platform: "Win32", disk: BOOK, handlers: handlers() });
+  const button = fileItem(app, "01.md").querySelector(".open-file-name");
+  button.focus();
+  button.dispatchEvent(new app.dom.window.KeyboardEvent("keydown", { key: "ContextMenu", bubbles: true, cancelable: true }));
+  await until(() => !menu(app).hidden);
+  menuItem(app, "Close").focus();
+  button.dispatchEvent(new app.dom.window.MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 24, clientY: 120 }));
+  await app.settle();
+  assert.ok(doc(app).activeElement === menuItem(app, "Close"), "the open menu was not rebuilt");
+});
+
+test("typing into a file while it moves is blocked, and allowed again after a failed move", async () => {
+  let release;
+  let fail = false;
+  const app = await bootMainWindow({
+    instance: 12,
+    platform: "MacIntel",
+    disk: BOOK,
+    handlers: handlers({
+      move: () => new Promise((resolve, reject) => {
+        release = () => (fail ? reject({ message: "That window is closed." }) : resolve("main-2"));
+      })
+    })
+  });
+  fileItem(app, "01.md").querySelector(".open-file-name").click();
+  await app.settle();
+  const type = (text) => app.editor().dispatch({ changes: { from: 0, insert: text }, userEvent: "input.type" });
+
+  fail = true;
+  await openMenu(app, "01.md");
+  menuItem(app, "Move to New Window").click();
+  await until(() => moveCalls(app).length === 1);
+  type("y");
+  assert.equal(app.editorText(), BOOK["/book/01.md"]);
+  release();
+  await until(() => doc(app).getElementById("app-notification").textContent !== "");
+  type("z");
+  assert.equal(app.editorText(), `z${BOOK["/book/01.md"]}`);
+
+  fail = false;
+  await openMenu(app, "01.md");
+  menuItem(app, "Move to New Window").click();
+  await until(() => moveCalls(app).length === 2);
+  type("y");
+  release();
+  await until(() => listed(app).length === 1);
+  assert.equal(app.fileDocs.text("/book/01.md"), `z${BOOK["/book/01.md"]}`);
+});
