@@ -17,7 +17,7 @@ import { highlightPreviewCode } from "./syntax-highlighting.js";
 import { renderHunkWidgets } from "./diff-hunk.js";
 import { createNavHistory } from "./nav-history.js";
 import { reviewHunkFences, setHunkReviewed } from "./editor-hunks.js";
-import { foldedSections, revealAnchor, sectionFolding, setSectionFolded } from "./editor-folds.js";
+import { foldedSections, revealAnchor, sectionFolding, setFoldedSections, setSectionFolded } from "./editor-folds.js";
 import {
   applyReadingFolds,
   nextUnreviewed,
@@ -32,6 +32,8 @@ import { createDocSync } from "./doc-sync.js";
 import { createFilesModel, isDirty, needsPrompt } from "./files.js";
 import { commentsExtension } from "./editor-comments.js";
 import { createComments } from "./comments-panel.js";
+import { createOpenFileMenu } from "./open-file-menu.js";
+import { EditorView } from "./vendor/codemirror.js";
 
 const LAYOUT_KEY = "sodilaud_layout_mode";
 // The outline reparses the whole file, so it waits for typing to pause.
@@ -149,6 +151,14 @@ export function createFileEditor({
     notify
   });
 
+  const fileMenu = createOpenFileMenu({
+    document,
+    root: $("open-file-menu"),
+    invoke,
+    onMove: (id, to) => moveFile(id, to),
+    onClose: (id) => closeFile(id)
+  });
+
   const unsent = (buffer) => buffer.path !== null && sync.pending((doc) => doc.docId === buffer.docId);
   const dirty = (buffer) => isDirty(buffer, unsent(buffer));
   const errorMessage = (error) => error?.message ?? String(error);
@@ -211,6 +221,16 @@ export function createFileEditor({
       close.title = "Close";
       close.textContent = "×";
       close.addEventListener("click", () => closeFile(buffer.id));
+      item.addEventListener("contextmenu", (event) => {
+        event.preventDefault();
+        fileMenu.open(buffer, { x: event.clientX, y: event.clientY }, open);
+      });
+      open.addEventListener("keydown", (event) => {
+        if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return;
+        event.preventDefault();
+        const rect = open.getBoundingClientRect();
+        fileMenu.open(buffer, { x: rect.left, y: rect.bottom }, open);
+      });
       item.append(open, close);
       return item;
     }));
@@ -684,6 +704,75 @@ export function createFileEditor({
     return true;
   }
 
+  // ----------------------------------------------------
+  // Moving to another window
+  // ----------------------------------------------------
+  // Where the file is read from, carried to the window it moves to.
+  function viewState(buffer) {
+    if (buffer.id === shownId) {
+      const { view } = editor;
+      const { start, end } = editor.getSelection();
+      const scrolled = !showingStartPage && layoutMode !== "reading";
+      return {
+        selection: { start, end },
+        top: scrolled ? view.lineBlockAtHeight(view.scrollDOM.getBoundingClientRect().top - view.documentTop).from : null,
+        previewTop: showingStartPage ? buffer.previewTop ?? 0 : preview.scrollTop,
+        folds: [...foldedSections(view.state)]
+      };
+    }
+    const state = buffer.editorState;
+    const main = state?.selection.main;
+    return {
+      selection: { start: main?.from ?? 0, end: main?.to ?? 0 },
+      top: null,
+      previewTop: buffer.previewTop ?? 0,
+      folds: state ? [...foldedSections(state)] : []
+    };
+  }
+
+  // Applies a viewState() from another window to the shown file.
+  function applyViewState(state) {
+    if (!state || typeof state !== "object") return;
+    const { view } = editor;
+    const length = view.state.doc.length;
+    const at = (value) => Math.max(0, Math.min(Number.isFinite(value) ? value : 0, length));
+    if (Array.isArray(state.folds)) setFoldedSections(view, state.folds.filter((id) => typeof id === "string"));
+    if (state.selection) editor.setSelection(at(state.selection.start), at(state.selection.end), { scroll: false });
+    if (Number.isFinite(state.top)) view.dispatch({ effects: EditorView.scrollIntoView(at(state.top), { y: "start" }) });
+    preview.scrollTop = Number.isFinite(state.previewTop) ? state.previewTop : 0;
+  }
+
+  // The registry document stays open, so its text, save state and comments go
+  // along; only this window lets go of it.
+  async function moveFile(id, to = null) {
+    const buffer = model.get(id);
+    if (!buffer) return false;
+    if (buffer.path === null) {
+      notify(`Save ${buffer.name} first to move it.`);
+      return false;
+    }
+    if (!(await sync.flush())) {
+      notify(`Could not move ${buffer.name}: unsaved changes could not be sent.`);
+      return false;
+    }
+    try {
+      await invoke("main_window_move_file", { path: buffer.path, to, view: viewState(buffer) });
+    } catch (error) {
+      notify(errorMessage(error));
+      return false;
+    }
+    model.close(id, { force: true });
+    if (shownId === id) {
+      shownId = null;
+      // Detaches the editor from the document, which now belongs to the other window.
+      editor.loadText("");
+    }
+    if (!model.active()) showingStartPage = true;
+    await syncOpenList();
+    render();
+    return true;
+  }
+
   function showStartPage() {
     showingStartPage = true;
     refreshRecent();
@@ -805,7 +894,10 @@ export function createFileEditor({
     }
     let last = null;
     for (const entry of Array.isArray(entries) ? entries : []) {
-      last = (await openPath(entry.path)) ?? last;
+      const buffer = await openPath(entry.path);
+      if (!buffer) continue;
+      applyViewState(entry.view);
+      last = buffer;
     }
     return last;
   }
@@ -912,6 +1004,7 @@ export function createFileEditor({
     save,
     saveAs,
     closeFile,
+    moveFile,
     showStartPage,
     closeFormatMenus: () => formatToolbar.closeMenus(),
     setLineNumbers: (enabled) => editor.setLineNumbers(enabled),
