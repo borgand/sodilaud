@@ -40,7 +40,7 @@ fail() {
 
 usage() {
   echo "Usage: sodilaud FILE..."
-  echo "Opens Markdown and text files (.md, .markdown, .txt) in Sodilaud and returns at once."
+  echo "Opens Markdown and text files (.md, .markdown, .txt, .csv, .tsv) in Sodilaud and returns at once."
   echo "A file that does not exist is created empty."
 }
 
@@ -64,8 +64,8 @@ for arg do
     *) path=$PWD/$arg ;;
   esac
   case $path in
-    *.[Mm][Dd]|*.[Mm][Aa][Rr][Kk][Dd][Oo][Ww][Nn]|*.[Tt][Xx][Tt]) ;;
-    *) fail "$arg is not a Markdown or text file. Sodilaud opens .md, .markdown and .txt files." ;;
+    *.[Mm][Dd]|*.[Mm][Aa][Rr][Kk][Dd][Oo][Ww][Nn]|*.[Tt][Xx][Tt]|*.[Cc][Ss][Vv]|*.[Tt][Ss][Vv]) ;;
+    *) fail "$arg is not a Markdown or text file. Sodilaud opens .md, .markdown, .txt, .csv and .tsv files." ;;
   esac
   if [ -d "$path" ]; then
     fail "$arg is a folder. Sodilaud opens files."
@@ -715,6 +715,8 @@ mod tests {
             &[
                 "docs/existing.md",
                 "new.markdown",
+                "a.csv",
+                "B.TSV",
                 absolute.to_str().unwrap(),
                 "--",
                 "-dash.md",
@@ -728,6 +730,8 @@ mod tests {
             [
                 format!("{work}/docs/existing.md"),
                 format!("{work}/new.markdown"),
+                format!("{work}/a.csv"),
+                format!("{work}/B.TSV"),
                 absolute.to_str().unwrap().to_string(),
                 format!("{work}/-dash.md"),
             ]
@@ -748,6 +752,15 @@ mod tests {
     fn the_script_refuses_before_creating_or_launching_anything() {
         let directory = scratch("refuse");
         let work = directory.join("work");
+
+        let json = run(&directory, &["c.json"]);
+        assert_eq!(json.status, 1);
+        assert!(
+            json.stderr
+                .contains("c.json is not a Markdown or text file"),
+            "{}",
+            json.stderr
+        );
 
         let wrong = run(&directory, &["fresh.md", "image.png"]);
         assert_eq!(wrong.status, 1);

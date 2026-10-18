@@ -8,13 +8,12 @@ use tauri::{AppHandle, Manager, State, Window};
 use super::folders::FolderListing;
 use super::io::{self, LineEnding};
 use super::windows::{is_main_label, Claim};
-use super::{FileError, Files, FolderRoot, OpenedDocument, PendingOpen};
+use super::{FileError, Files, FolderRoot, OpenedDocument, PendingOpen, TEXT_EXTENSIONS};
 use crate::docs::commands::SharedRegistry;
 use crate::docs::files::{FileOpened, FileSaved, Resolve};
 use crate::docs::registry::{Pulled, Pushed, Update};
 
 pub const OPEN_REQUEST_EVENT: &str = "file-open-request";
-const TEXT_EXTENSIONS: &[&str] = &["md", "markdown", "txt"];
 
 pub(crate) fn require_main(label: &str) -> Result<(), FileError> {
     if is_main_label(label) {
@@ -90,6 +89,31 @@ pub fn file_open_dialog(
     Ok(Some(path.to_string_lossy().to_string()))
 }
 
+/// The Save As type filters, the suggested name's own type first.
+pub(crate) fn save_filters(suggested_name: &str) -> Vec<(&'static str, &'static [&'static str])> {
+    let mut filters: Vec<(&'static str, &'static [&'static str])> = vec![
+        ("Markdown", &["md"]),
+        ("Text", &["txt"]),
+        ("CSV", &["csv"]),
+        ("TSV", &["tsv"]),
+    ];
+    let extension = Path::new(suggested_name)
+        .extension()
+        .map(|ext| ext.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+    let own = match extension.as_str() {
+        "txt" => "Text",
+        "csv" => "CSV",
+        "tsv" => "TSV",
+        _ => "Markdown",
+    };
+    if let Some(index) = filters.iter().position(|(name, _)| *name == own) {
+        let entry = filters.remove(index);
+        filters.insert(0, entry);
+    }
+    filters
+}
+
 /// Save As, and the first save of a new file. The page then opens the new
 /// file with `file_doc_open`.
 #[tauri::command]
@@ -103,13 +127,13 @@ pub fn file_save_as_dialog(
     bom: bool,
 ) -> Result<Option<Saved>, FileError> {
     require_main(window.label())?;
-    let Some(chosen) = rfd::FileDialog::new()
+    let mut dialog = rfd::FileDialog::new()
         .set_title("Save As")
-        .set_file_name(&suggested_name)
-        .add_filter("Markdown", &["md"])
-        .add_filter("Text", &["txt"])
-        .save_file()
-    else {
+        .set_file_name(&suggested_name);
+    for (name, extensions) in save_filters(&suggested_name) {
+        dialog = dialog.add_filter(name, extensions);
+    }
+    let Some(chosen) = dialog.save_file() else {
         return Ok(None);
     };
     let path: PathBuf = files.grant(&chosen)?;
@@ -494,4 +518,19 @@ pub fn file_confirm_discard(window: Window, name: String) -> Result<DiscardChoic
         rfd::MessageDialogResult::No => DiscardChoice::Discard,
         _ => DiscardChoice::Cancel,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::save_filters;
+
+    #[test]
+    fn save_as_offers_the_files_own_type_first() {
+        assert_eq!(save_filters("data.csv")[0].0, "CSV");
+        assert_eq!(save_filters("t.TSV")[0].0, "TSV");
+        assert_eq!(save_filters("notes.markdown")[0].0, "Markdown");
+        assert_eq!(save_filters("x")[0].0, "Markdown");
+        assert_eq!(save_filters("x.txt")[0].0, "Text");
+        assert_eq!(save_filters("x.txt").len(), 4);
+    }
 }

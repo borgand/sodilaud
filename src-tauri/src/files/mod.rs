@@ -121,7 +121,7 @@ impl FileError {
         Self::new(
             FileErrorCode::Unsupported,
             format!(
-                "{} is not a Markdown or text file. Sodilaud opens .md, .markdown and .txt files.",
+                "{} is not a Markdown or text file. Sodilaud opens .md, .markdown, .txt, .csv and .tsv files.",
                 io::file_name(path)
             ),
         )
@@ -753,6 +753,19 @@ mod tests {
         let text = directory.join("todo.txt");
         fs::write(&text, "").unwrap();
         assert!(agent_document(text.to_str().unwrap()).is_ok());
+    }
+
+    #[test]
+    fn csv_and_tsv_files_are_text_files() {
+        let directory = scratch("data");
+        let csv = directory.join("data.CSV");
+        let tsv = directory.join("t.tsv");
+        fs::write(&csv, "a,b\n").unwrap();
+        fs::write(&tsv, "a\tb\n").unwrap();
+        assert!(agent_document(csv.to_str().unwrap()).is_ok());
+        assert!(agent_document(tsv.to_str().unwrap()).is_ok());
+        let args = ["sodilaud", "/a.csv", "/b.json"].map(String::from);
+        assert_eq!(paths_from_args(args), [PathBuf::from("/a.csv")]);
     }
 
     #[test]
