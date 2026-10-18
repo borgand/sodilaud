@@ -178,9 +178,28 @@ export function createFileEditor({
     document,
     root: $("open-file-menu"),
     invoke,
-    onMove: (id, to) => moveFile(id, to),
-    onClose: (id) => closeFile(id)
+    onMove: (id, to) => keepFocus(id, () => moveFile(id, to)),
+    onClose: (id) => keepFocus(id, () => closeFile(id))
   });
+
+  // The file's button disappears with the file, which would drop keyboard
+  // focus onto the page; it goes to the neighbouring file or the start page.
+  async function keepFocus(id, action) {
+    const ids = model.list().map((buffer) => buffer.id);
+    const at = ids.indexOf(id);
+    const neighbours = [id, ...ids.slice(at + 1), ...ids.slice(0, at).reverse()];
+    await action();
+    const active = document.activeElement;
+    if (active && active !== document.body) return;
+    const names = neighbours.map((fileId) => openList.querySelector(`[data-file-id="${fileId}"] .open-file-name`));
+    const target = names.find(Boolean);
+    if (target) {
+      target.focus({ preventScroll: true });
+    } else {
+      startPage.tabIndex = -1;
+      startPage.focus({ preventScroll: true });
+    }
+  }
 
   const unsent = (buffer) => buffer.path !== null && sync.pending((doc) => doc.docId === buffer.docId);
   const dirty = (buffer) => isDirty(buffer, unsent(buffer));
@@ -254,13 +273,17 @@ export function createFileEditor({
       close.title = "Close";
       close.textContent = "×";
       close.addEventListener("click", () => closeFile(buffer.id));
+      let keyOpenedAt = 0;
       item.addEventListener("contextmenu", (event) => {
         event.preventDefault();
+        // The ContextMenu key opens the menu on keydown and then fires this event too.
+        if (Date.now() - keyOpenedAt < 500 && !event.clientX && !event.clientY) return;
         fileMenu.open(buffer, { x: event.clientX, y: event.clientY }, open);
       });
       open.addEventListener("keydown", (event) => {
         if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return;
         event.preventDefault();
+        keyOpenedAt = Date.now();
         const rect = open.getBoundingClientRect();
         fileMenu.open(buffer, { x: rect.left, y: rect.bottom }, open);
       });
@@ -812,7 +835,7 @@ export function createFileEditor({
       notify(`Save ${buffer.name} first to move it.`);
       return false;
     }
-    if (!(await sync.flush())) {
+    if (!(await sync.flush((doc) => doc.docId === buffer.docId))) {
       notify(`Could not move ${buffer.name}: unsaved changes could not be sent.`);
       return false;
     }

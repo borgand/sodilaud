@@ -201,10 +201,11 @@ export function createDocSync({ push: send, pull: fetchUpdates, same, isGone, re
     }
   }
 
-  /** Sends everything unsent now. Resolves false when a change could not be saved. */
-  async function flush() {
+  /** Sends everything unsent now, or only the documents `filter` picks. Resolves false when a change could not be saved. */
+  async function flush(filter = () => true) {
+    const mine = () => [...clients].filter(client => filter(client.doc));
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      const waiting = [...clients].filter(client => client.inFlight || unsent(client));
+      const waiting = mine().filter(client => client.inFlight || unsent(client));
       if (waiting.length === 0) return true;
       await Promise.all(waiting.map(async client => {
         clearTimeout(client.timer);
@@ -214,7 +215,7 @@ export function createDocSync({ push: send, pull: fetchUpdates, same, isGone, re
       }));
       if (waiting.some(client => client.failed)) return false;
     }
-    return ![...clients].some(unsent);
+    return !mine().some(unsent);
   }
 
   /** Whether any client, or any of the documents `filter` picks, has changes not yet confirmed. */
