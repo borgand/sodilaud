@@ -335,3 +335,12 @@ entry into a folded section unfolds it. The outline and the status bar count are
 Quick Notes has neither yet.
 
 Depends on: 12.
+
+## 15. Multiple main windows
+
+Status: done (spec
+[`docs/superpowers/specs/2026-10-18-multi-window-design.md`](docs/superpowers/specs/2026-10-18-multi-window-design.md))
+
+Several peer main windows, each with its own open files. Move to New Window and Move to Window
+on an open file's context menu; New Window in the File menu (Cmd+Alt+N). Windows, their files
+and their positions are restored on restart. The Folders section of item 4 will be per window.
