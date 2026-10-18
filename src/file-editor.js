@@ -409,6 +409,7 @@ export function createFileEditor({
       if (buffer.editorState) editor.restoreState(buffer.editorState);
       else loadBuffer(buffer);
       shownId = buffer.id;
+      currentOutlineId = null;
       renderPreview();
       editor.restoreScroll(buffer.scroll);
       preview.scrollTop = buffer.previewTop ?? 0;

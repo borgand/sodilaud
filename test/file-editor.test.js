@@ -395,6 +395,31 @@ test("the outline mark follows Live scrolling and survives a re-render", async (
   assert.equal(scrolls, before, "a re-render does not scroll the sidebar");
 });
 
+test("switching files forgets the marked section", async () => {
+  const fake = lists({ open: ["/docs/a.md", "/docs/b.md"] });
+  let scrolls = 0;
+  const app = await bootMainWindow({
+    instance: 17,
+    disk: { "/docs/a.md": BOOK_TEXT, "/docs/b.md": BOOK_TEXT },
+    beforeBoot: (dom) => {
+      dom.window.marked = marked;
+      dom.window.HTMLElement.prototype.scrollIntoView = () => { scrolls += 1; };
+    },
+    handlers: fake.handlers
+  });
+  const page = doc(app);
+  app.editor().lineBlockAtHeight = () => ({ from: BOOK_TEXT.indexOf("## Notes") });
+  app.editor().scrollDOM.dispatchEvent(new app.dom.window.Event("scroll"));
+  assert.equal(page.querySelector(".outline-item.current").dataset.outlineId, "notes");
+  const before = scrolls;
+  const other = [...page.querySelectorAll(".open-file-name")]
+    .find((item) => !item.closest(".open-file-item").classList.contains("active"));
+  other.click();
+  await app.settle();
+  assert.equal(page.querySelector(".outline-item.current").dataset.outlineId, "notes");
+  assert.ok(scrolls > before, "the sidebar follows the new file's current row");
+});
+
 test("Save As onto the file's own path right after typing keeps every change", async () => {
   const fake = lists({ open: ["/docs/s.md"] });
   let disk;
