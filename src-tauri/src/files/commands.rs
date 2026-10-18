@@ -6,7 +6,7 @@ use serde::Serialize;
 use tauri::{State, Window};
 
 use super::io::{self, LineEnding};
-use super::store::FileLists;
+use super::store::{FileLists, SavedWindow};
 use super::{FileError, Files, OpenedDocument};
 use crate::docs::commands::SharedRegistry;
 use crate::docs::files::{FileOpened, FileSaved, Resolve};
@@ -47,9 +47,23 @@ pub struct Lists {
     recent: Vec<RecentFile>,
 }
 
+// Temporary single-window bookkeeping until the window set replaces it.
+fn push_open(lists: &mut FileLists, path: &str) {
+    if lists.windows.is_empty() {
+        lists.windows.push(SavedWindow::default());
+    }
+    if !lists.windows[0].open.iter().any(|open| open == path) {
+        lists.windows[0].open.push(path.to_string());
+    }
+}
+
 fn lists_view(lists: FileLists) -> Lists {
     Lists {
-        open: lists.open,
+        open: lists
+            .windows
+            .iter()
+            .flat_map(|window| window.open.clone())
+            .collect(),
         recent: lists
             .recent
             .into_iter()
@@ -109,7 +123,10 @@ pub fn file_save_as_dialog(
     registry.file_discard(&path);
     let hash = files.write(&path, &text, line_ending, bom)?;
     let path_text = path.to_string_lossy().to_string();
-    files.update_lists(|lists| lists.opened(&path_text));
+    files.update_lists(|lists| {
+        lists.opened_recent(&path_text);
+        push_open(lists, &path_text);
+    });
     Ok(Some(Saved {
         name: io::file_name(&path),
         path: path_text,
@@ -129,7 +146,10 @@ pub fn file_doc_open(
     require_main(&window)?;
     let path = files.require(&path)?;
     let opened = registry.file_open(&path, &*files)?;
-    files.update_lists(|lists| lists.opened(&opened.path));
+    files.update_lists(|lists| {
+        lists.opened_recent(&opened.path);
+        push_open(lists, &opened.path);
+    });
     Ok(opened)
 }
 
@@ -241,7 +261,12 @@ pub fn file_set_open(
         .iter()
         .map(|path| path.to_string_lossy().to_string())
         .collect();
-    files.update_lists(|lists| lists.open = open);
+    files.update_lists(|lists| {
+        if lists.windows.is_empty() {
+            lists.windows.push(SavedWindow::default());
+        }
+        lists.windows[0].open = open;
+    });
     files.watch(granted);
     Ok(())
 }
