@@ -29,4 +29,10 @@ test("Ctrl+Alt+N opens a window on Linux and Windows, Cmd+Alt+N does not", async
   assert.equal(doc.getElementById("menu-new-window-btn").title, "New Window (Ctrl+Alt+N)");
   const shortcuts = doc.getElementById("pane-shortcuts").textContent.replace(/\s+/g, " ");
   assert.match(shortcuts, /New Window Ctrl\+Alt\+N/);
+
+  const altGr = new app.dom.window.KeyboardEvent("keydown", { bubbles: true, cancelable: true, code: "KeyN", key: "ń", ctrlKey: true, altKey: true, modifierAltGraph: true });
+  doc.dispatchEvent(altGr);
+  await app.settle();
+  assert.equal(opened(), 1, "AltGr+N types a character instead");
+  assert.ok(!altGr.defaultPrevented);
 });
