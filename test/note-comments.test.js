@@ -2,6 +2,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
+import { marked } from "marked";
 
 import { bootApp } from "./helpers/app-harness.js";
 
@@ -47,4 +48,32 @@ test("notes take comments, from the shortcut or the context menu, and agent comm
   document.getElementById("ctx-comment").click();
   await app.settle();
   assert.ok(document.querySelector(".cm-comment-composer"));
+});
+
+test("a note takes a comment in Reading mode", async () => {
+  const app = await bootApp({
+    platform: "MacIntel",
+    instance: 2,
+    registry: { seed: { notes: NOTES, imported: true } },
+    beforeBoot: dom => { dom.window.marked = marked; }
+  });
+  const { document } = app.dom.window;
+  await app.settle();
+  app.click("mode-reading");
+  await app.settle();
+  const preview = document.getElementById("markdown-preview");
+  const walker = document.createTreeWalker(preview, 4);
+  let node = walker.nextNode();
+  while (node && !node.nodeValue.includes("Friday")) node = walker.nextNode();
+  assert.ok(node, "the preview shows the note");
+  const from = node.nodeValue.indexOf("Friday");
+  app.dom.window.getSelection().setBaseAndExtent(node, from, node, from + 6);
+  app.click("comment-btn");
+  await app.settle();
+  const input = document.querySelector("#markdown-preview .reading-composer textarea");
+  assert.ok(input, "the Reading composer opened");
+  input.value = "Which Friday?";
+  document.querySelector(".cm-comment-add").click();
+  await app.settle(300);
+  assert.deepEqual(app.registry.comments("a").map(c => [c.anchoredText, c.body]).at(-1), ["Friday", "Which Friday?"]);
 });

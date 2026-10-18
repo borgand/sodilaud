@@ -169,6 +169,31 @@ test("a hunk line number comments on that line", async () => {
   }
 });
 
+test("a remote edit while composing in a hunk keeps the text and focus", async () => {
+  const t = await setup(HUNK);
+  try {
+    t.preview.querySelector(".diff-hunk .diff-ln-button").click();
+    const before = t.comments.commentComposer(t.view().state);
+    const input = t.preview.querySelector(".diff-hunk tr.diff-composer-row textarea");
+    assert.ok(input);
+    input.value = "half";
+    input.focus();
+    input.setSelectionRange(1, 3);
+    t.view().dispatch({ changes: { from: 0, insert: "New line.\n\n" } });
+    t.render();
+    const after = t.preview.querySelector(".diff-hunk tr.diff-composer-row textarea");
+    assert.ok(after === input);
+    assert.equal(input.value, "half");
+    assert.ok(t.env.document.activeElement === input);
+    assert.deepEqual([input.selectionStart, input.selectionEnd], [1, 3]);
+    const moved = t.comments.commentComposer(t.view().state);
+    assert.deepEqual([moved.from, moved.to], [before.from + 11, before.to + 11]);
+    assert.equal(t.preview.querySelector(".diff-hunk .cm-comment-draft").textContent, "const a = 1;");
+  } finally {
+    t.done();
+  }
+});
+
 test("nothing selected: start returns false", async () => {
   const t = await setup(PROSE);
   try {

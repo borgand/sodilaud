@@ -16,11 +16,14 @@ const handlers = () => ({
   file_take_pending: () => []
 });
 
-const boot = instance => bootMainWindow({
+const HUNK_PATH = "/docs/hunk.md";
+const HUNK_TEXT = "Intro.\n\n```diff path=a.js hunk=h1a2b3\n@@ -1,2 +1,2 @@\n-const a = 1;\n+const a = 2;\n same();\n```\n\nAfter.\n";
+
+const boot = (instance, { path = PATH, text = TEXT } = {}) => bootMainWindow({
   platform: "MacIntel",
   instance,
-  disk: { [PATH]: TEXT },
-  handlers: handlers(),
+  disk: { [path]: text },
+  handlers: { ...handlers(), file_lists: () => ({ open: [path], recent: [] }) },
   beforeBoot: dom => { dom.window.marked = marked; }
 });
 
@@ -80,7 +83,7 @@ test("Live: the Comment button on a first row opens the composer under the rende
   assert.ok(doc.activeElement === input, "focus is in the composer");
 });
 
-test("Reading: a selection in a table cell and in prose takes a comment", { todo: "item 9: fixed in Task 7" }, async () => {
+test("Reading: a selection in a table cell and in prose takes a comment", async () => {
   const app = await boot(3);
   const doc = app.dom.window.document;
   await app.settle();
@@ -110,4 +113,102 @@ test("Reading: a selection in a table cell and in prose takes a comment", { todo
 
   const prose = await comment("p", "vague", "Prose note", 2);
   assert.equal(prose.anchoredText, "vague");
+});
+
+// Selects `needle` in the first text node under `root` that holds it.
+function selectIn(app, root, needle) {
+  const node = textNode(app, root, needle);
+  assert.ok(node, `found "${needle}"`);
+  const from = node.nodeValue.indexOf(needle);
+  app.dom.window.getSelection().setBaseAndExtent(node, from, node, from + needle.length);
+}
+
+test("Reading: a review hunk line number comments on that line", async () => {
+  const app = await boot(4, { path: HUNK_PATH, text: HUNK_TEXT });
+  const doc = app.dom.window.document;
+  await app.settle();
+  app.click("mode-reading");
+  await app.settle();
+  const preview = doc.getElementById("markdown-preview");
+  const row = [...preview.querySelectorAll(".diff-hunk tr")].find(tr => tr.textContent.includes("const a = 2;"));
+  assert.ok(row, "the added line is shown");
+  row.querySelector(".diff-ln-button").click();
+  await app.settle();
+  const input = preview.querySelector(".diff-hunk tr.diff-composer-row textarea");
+  assert.ok(input, "the composer opened under the line");
+  input.value = "Why 2?";
+  preview.querySelector(".cm-comment-add").click();
+  await app.until(() => app.fileDocs.comments(HUNK_PATH).length === 1);
+  assert.equal(app.fileDocs.comments(HUNK_PATH)[0].anchoredText, "const a = 2;");
+});
+
+test("changing mode closes an open composer", async () => {
+  const app = await boot(5);
+  const doc = app.dom.window.document;
+  const { commentComposer } = await import("../src/editor-comments.js");
+  await app.settle();
+  app.click("mode-reading");
+  await app.settle();
+  selectIn(app, doc.querySelector("#markdown-preview p"), "vague");
+  app.click("comment-btn");
+  await app.settle();
+  assert.ok(doc.querySelector("#markdown-preview .reading-composer"), "the Reading composer opened");
+
+  app.click("mode-live");
+  await app.settle(100);
+  assert.ok(!doc.querySelector(".cm-comment-composer"), "no composer is left after leaving Reading");
+  assert.equal(commentComposer(app.editor().state), null);
+
+  const view = app.editor();
+  view.focus();
+  select(view, "vague");
+  view.contentDOM.blur();
+  await app.settle();
+  app.click("comment-btn");
+  await app.settle(100);
+  assert.ok(doc.querySelector(".cm-comment-composer"), "the Live composer opened");
+  app.click("mode-reading");
+  await app.settle(100);
+  assert.ok(!doc.querySelector(".cm-comment-composer"), "no composer is left after entering Reading");
+  assert.equal(commentComposer(app.editor().state), null);
+});
+
+test("Reading: the comments count and drawer show", async () => {
+  const app = await boot(6);
+  const doc = app.dom.window.document;
+  await app.settle();
+  app.click("mode-reading");
+  await app.settle();
+  assert.equal(doc.getElementById("comments-count-btn").hidden, false);
+});
+
+test("Reading: an agent edit while composing keeps the text and focus and moves the tint", async () => {
+  const app = await boot(7);
+  const doc = app.dom.window.document;
+  await app.settle();
+  app.click("mode-reading");
+  await app.settle();
+  const preview = doc.getElementById("markdown-preview");
+  selectIn(app, preview.querySelector("table"), "beta");
+  app.click("comment-btn");
+  await app.settle(100);
+  const input = preview.querySelector(".reading-composer textarea");
+  assert.ok(input, "the Reading composer opened");
+  input.value = "half typed";
+  input.focus();
+  input.setSelectionRange(4, 4);
+
+  app.fileDocs.agentEdit(PATH, [5, [0, "An agent paragraph.", "", ""], TEXT.length - 5]);
+  await app.until(() => app.editorText().includes("An agent paragraph."));
+  await app.settle();
+  assert.ok(preview.textContent.includes("An agent paragraph."), "the preview shows the edit");
+  assert.ok(preview.querySelector(".reading-composer textarea") === input, "the composer survived");
+  assert.equal(input.value, "half typed");
+  assert.ok(doc.activeElement === input, "focus stayed in the composer");
+  assert.deepEqual([input.selectionStart, input.selectionEnd], [4, 4]);
+  assert.equal(preview.querySelector(".cm-comment-draft")?.textContent, "beta");
+
+  preview.querySelector(".cm-comment-add").click();
+  await app.until(() => app.fileDocs.comments(PATH).length === 1);
+  assert.equal(app.fileDocs.comments(PATH)[0].anchoredText, "beta");
 });
