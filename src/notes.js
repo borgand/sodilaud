@@ -1521,9 +1521,14 @@ function handleEditorInput(text) {
 
   // Live markdown compilation
   clearTimeout(previewDebounceTimer);
-  previewDebounceTimer = setTimeout(() => {
+  if (currentLayoutMode === "reading") {
+    // A comment started right after an edit must see current data-src offsets.
     updateMarkdownPreview();
-  }, 150);
+  } else {
+    previewDebounceTimer = setTimeout(() => {
+      updateMarkdownPreview();
+    }, 150);
+  }
 }
 
 function handleTitleInput() {

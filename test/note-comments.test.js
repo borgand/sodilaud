@@ -77,3 +77,24 @@ test("a note takes a comment in Reading mode", async () => {
   await app.settle(300);
   assert.deepEqual(app.registry.comments("a").map(c => [c.anchoredText, c.body]).at(-1), ["Friday", "Which Friday?"]);
 });
+
+test("split-note Reading takes no comments, and leaving split re-renders the single preview", async () => {
+  const app = await bootApp({
+    platform: "MacIntel",
+    instance: 3,
+    registry: { seed: { notes: NOTES, imported: true } },
+    beforeBoot: dom => { dom.window.marked = marked; }
+  });
+  const { document } = app.dom.window;
+  await app.settle();
+  app.click("mode-reading");
+  await app.settle();
+  document.getElementById("split-note-btn").click();
+  await app.settle();
+  assert.ok(document.getElementById("comment-btn").disabled, "the Comment button is disabled in split Reading");
+  assert.ok(!document.querySelector(".reading-composer"), "no Reading composer");
+  document.getElementById("split-note-btn").click();
+  await app.settle();
+  assert.ok(!document.getElementById("comment-btn").disabled, "the Comment button is back");
+  assert.ok(document.getElementById("markdown-preview").textContent.includes("Ship on Friday."), "the single preview is rendered again");
+});
