@@ -136,6 +136,8 @@ export function createDocumentFonts({ document, storage, broadcast = () => {}, t
       field.setAttribute("aria-invalid", "true");
       return;
     }
+    field.removeAttribute("aria-invalid");
+    if (value === (storage.getItem(FONT_KEYS[slot]) || "")) return;
     choose(slot, value);
   }
 

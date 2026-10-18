@@ -159,7 +159,15 @@ test("wide tables scroll inside the column in Reading and Live", () => {
   const live = declarations(".cm-mode-live .cm-lp-table.markdown-preview");
   assert.match(live, /min-width:\s*0/);
   assert.match(live, /max-width:\s*100%/);
-  assert.doesNotMatch(live, /overflow-x:\s*(visible|hidden)/);
+  assert.match(declarations(".cm-mode-live .cm-lp-table.markdown-preview .table-scroll"), /margin-bottom:\s*0/);
+  assert.doesNotMatch(declarations(".cm-mode-live .cm-lp-table.markdown-preview table"), /margin/);
+});
+
+test("fold chevrons are sized independently of the heading so they stay inside the padding", () => {
+  const fold = declarations(".cm-heading-fold");
+  assert.match(fold, /font-size:\s*1rem/);
+  assert.match(fold, /margin-left:\s*-1\.25em/);
+  assert.ok(declarations(".markdown-preview .heading-fold").length > 0);
 });
 
 test("Live quote keeps its 12px left padding over the line reset", () => {

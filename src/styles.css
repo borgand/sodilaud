@@ -3884,7 +3884,7 @@ kbd {
   overflow-wrap: normal;
 }
 
-.cm-mode-live .cm-lp-table.markdown-preview table {
+.cm-mode-live .cm-lp-table.markdown-preview .table-scroll {
   margin-bottom: 0;
 }
 
@@ -4017,6 +4017,7 @@ kbd {
 .cm-heading-fold,
 .markdown-preview .heading-fold {
   display: inline-block;
+  font-size: 1rem;
   width: 1em;
   height: 1em;
   margin-left: -1.25em;

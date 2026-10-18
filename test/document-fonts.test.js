@@ -79,6 +79,23 @@ test("an invalid system font name is not stored", async () => {
   assert.match(root.style.getPropertyValue("--doc-font-body"), /^"Iosevka", 'Inter'/);
 });
 
+test("committing an unchanged system font name does not store or broadcast again", async () => {
+  const app = await bootMainWindow({ instance: 14 });
+  const select = document.getElementById("font-body-select");
+  const field = document.getElementById("font-body-system");
+  select.value = "system";
+  select.dispatchEvent(new app.dom.window.Event("change", { bubbles: true }));
+  field.value = "Iosevka";
+  field.dispatchEvent(new app.dom.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+  await app.settle();
+  const count = () => app.emitted.filter(e => e.name === "prefs-changed" && e.payload.key === "sodilaud_font_body").length;
+  assert.equal(count(), 1);
+  field.dispatchEvent(new app.dom.window.Event("blur"));
+  await app.settle();
+  assert.equal(count(), 1);
+  assert.equal(app.storage.getItem("sodilaud_font_body"), "system:Iosevka");
+});
+
 test("a theme's font suggestion applies until the user picks a font", async () => {
   let importFile;
   const app = await bootMainWindow({ instance: 13, handlers: { import_file_native: () => importFile } });
