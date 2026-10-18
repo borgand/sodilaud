@@ -175,7 +175,7 @@ export function createThemes({ document, storage, invoke, onApplied = () => {}, 
     root.style.setProperty("--preview-text", theme.foreground);
     root.style.setProperty("--bg-sidebar", theme.sidebar || theme.background);
     root.style.setProperty("--sidebar-bg", theme.sidebar || theme.background);
-    root.style.setProperty("--statusbar-bg", theme.sidebar || theme.background);
+    root.style.setProperty("--statusbar-bg", theme.uiStyle ? theme.sidebar || theme.background : theme.background);
     root.style.setProperty("--topbar-bg", theme.sidebar || theme.background);
     root.style.setProperty("--dropdown-bg", theme.sidebar || theme.background);
     root.style.setProperty("--border-color", theme.border || "rgba(128,128,128,0.2)");

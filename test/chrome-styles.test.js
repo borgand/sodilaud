@@ -50,3 +50,19 @@ test("a settled status fades and returns on hover", () => {
   assert.match(reduced[1], /\.file-status-text/);
   assert.match(reduced[1], /transition:\s*none/);
 });
+
+test("default palettes give the status bar the page tone", () => {
+  const blocks = [...styles.matchAll(/\{([^{}]*)\}/g)].map(m => m[1]).filter(body => /--bg-app:/.test(body));
+  assert.equal(blocks.length, 4);
+  for (const body of blocks) {
+    const value = name => body.match(new RegExp(`${name}:\\s*([^;]+);`))[1].trim();
+    assert.equal(value("--statusbar-bg"), value("--bg-app"));
+  }
+});
+
+test("the line-number gutter has no band of its own", () => {
+  const gutters = declarations(styles, ".editor-host .cm-editor .cm-gutters");
+  assert.match(gutters, /background-color:\s*var\(--editor-bg\)/);
+  assert.match(gutters, /border-right:\s*none/);
+  assert.doesNotMatch(gutters, /--preview-code-bg/);
+});
