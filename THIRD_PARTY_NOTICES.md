@@ -208,7 +208,7 @@ ISC License:
 The BSD 3-Clause License text is reproduced in the Highlight.js section above. The Apache
 License 2.0 is available at <https://www.apache.org/licenses/LICENSE-2.0>.
 
-## Inter and JetBrains Mono
+## Inter, JetBrains Mono and IBM Plex
 
 Sodilaud includes the [Inter](https://github.com/rsms/inter) and
 [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono) typefaces, as Latin and
@@ -216,9 +216,16 @@ Latin Extended WOFF2 subsets taken from the `@fontsource/inter` and
 `@fontsource/jetbrains-mono` 5.3.0 packages. Both are distributed under the SIL Open Font
 License 1.1. The license files are kept next to the fonts in `src/vendor/fonts/`.
 
+Sodilaud also includes [IBM Plex Mono](https://github.com/IBM/plex) 2.5.0 (Latin1, Latin2 and
+Pi subsets) and IBM Plex Serif 2.0.0 (Latin1 and Latin2 subsets) as WOFF2 files taken
+unmodified from the official `IBM/plex` GitHub releases. Both are distributed under the SIL
+Open Font License 1.1, with the license files kept next to the fonts.
+
 Copyright 2016 The Inter Project Authors (https://github.com/rsms/inter)
 
 Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono)
+
+Copyright © 2017 IBM Corp. with Reserved Font Name "Plex"
 
 SIL Open Font License 1.1:
 
