@@ -87,8 +87,8 @@ export function createFileEditor({
   let showingStartPage = true;
   let sidebarHidden = false;
   let shownId = null;
-  // The document being handed to another window: typing into it now would be
-  // dropped when the editor lets go of it.
+  // The document being handed to another window or to Quick Notes: typing
+  // into it now would be dropped when the editor lets go of it.
   let movingDocId = null;
   let recent = [];
   let drafts = [];
@@ -316,6 +316,7 @@ export function createFileEditor({
       button.type = "button";
       button.className = "start-link";
       button.textContent = draft.name;
+      button.title = draft.path;
       button.addEventListener("click", () => openPath(draft.path));
       item.append(button);
       return item;
@@ -577,15 +578,18 @@ export function createFileEditor({
   async function saveDraftToNotes(id = model.active()?.id) {
     const buffer = model.get(id);
     if (!buffer?.draft) return false;
-    if (!(await sync.flush((doc) => doc.docId === buffer.docId))) {
-      notify(`Could not save ${buffer.name}: unsaved changes could not be sent.`);
-      return false;
-    }
+    movingDocId = buffer.docId;
     try {
+      if (!(await sync.flush((doc) => doc.docId === buffer.docId))) {
+        notify(`Could not save ${buffer.name}: unsaved changes could not be sent.`);
+        return false;
+      }
       await invoke("draft_save_to_notes", { path: buffer.path });
     } catch (error) {
       notify(errorMessage(error));
       return false;
+    } finally {
+      movingDocId = null;
     }
     // Rust discarded the draft's document, so there is nothing to close.
     await forget(id, { detach: true });

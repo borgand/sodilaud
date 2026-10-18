@@ -38,7 +38,7 @@ async function bootWithDraft({ instance, handlers = {} }) {
     app.emit("file-open-request", {});
     await app.settle();
   };
-  return { app, openDraft, drafts: () => drafts };
+  return { app, openDraft, forgetDraft, drafts: () => drafts };
 }
 
 const doc = (app) => app.dom.window.document;
@@ -117,10 +117,17 @@ test("Save to Quick Notes sends the last keystrokes first and closes the draft",
 
 test("Discard asks and keeps the draft when cancelled", async () => {
   let answer = false;
-  const { app } = await bootWithDraft({
+  let booted = null;
+  booted = await bootWithDraft({
     instance: 5,
-    handlers: { draft_discard: () => answer }
+    handlers: {
+      draft_discard: ({ path }) => {
+        if (answer) booted.forgetDraft(path);
+        return answer;
+      }
+    }
   });
+  const { app } = booted;
   // Opened from the start page's Drafts list.
   doc(app).querySelector("#drafts-list .start-link").click();
   await app.settle();
@@ -138,6 +145,7 @@ test("Discard asks and keeps the draft when cancelled", async () => {
   assert.equal(doc(app).querySelectorAll(".open-file-item").length, 0);
   assert.equal(called(app, "file_doc_close").length, 0);
   assert.equal(byId(app, "start-page").hidden, false);
+  assert.equal(byId(app, "drafts-section").hidden, true, "a discarded draft leaves the start page");
   assert.ok(doc(app).activeElement !== doc(app).body, "focus does not fall to the page");
 });
 
@@ -159,4 +167,25 @@ test("closing a draft keeps it on the start page", async () => {
   await app.settle();
   assert.equal(app.editorText(), "# Plan\n");
   assert.equal(byId(app, "draft-bar").hidden, false);
+});
+
+test("typing waits while a draft is saved to Quick Notes", async () => {
+  let finish = null;
+  const { app, openDraft } = await bootWithDraft({
+    instance: 7,
+    handlers: {
+      draft_save_to_notes: () => new Promise((resolve, reject) => { finish = { resolve, reject }; })
+    }
+  });
+  await openDraft();
+  app.click("draft-save-notes-btn");
+  await app.until(() => finish !== null);
+  typeAt(app, 7, "lost?\n");
+  assert.equal(app.editorText(), "# Plan\n", "typing is held during the round trip");
+  finish.reject({ message: "Quick Notes is not available." });
+  await app.settle();
+  assert.equal(byId(app, "draft-bar").hidden, false, "a failed save keeps the draft open");
+  assert.equal(byId(app, "app-notification").hidden, false);
+  typeAt(app, 7, "kept\n");
+  assert.equal(app.editorText(), "# Plan\nkept\n", "typing works again after a failure");
 });
