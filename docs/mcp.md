@@ -105,7 +105,7 @@ Open Configuration to choose individual functions in the **Read** and **Write**
 sections. Each section has a **Select all** checkbox; a partially selected
 section shows a mixed state.
 
-On a new installation, all eight read functions are enabled and all thirteen write
+On a new installation, all eight read functions are enabled and all fifteen write
 functions are disabled. Select specific write functions or **Select all write
 functions** to allow them. Read functions can also be disabled individually.
 Changes apply immediately to connected clients without reconnecting. Disabled
@@ -364,16 +364,43 @@ permission is also selected.
 }
 ```
 
+## Pushing a draft
+
+Select **MCP Configuration → Write → Push draft**. `push_draft` puts Markdown in front of you
+for review, as a file that has no place on disk yet.
+
+| Argument | Rule |
+| --- | --- |
+| `requestId` | Required, 1-128 characters. Reuse the same ID and arguments when retrying |
+| `title` | Required, 1-200 characters after trimming |
+| `content` | Optional Markdown, at most 100,000 UTF-8 bytes. Empty by default |
+
+The draft opens in the main window used last, co-edited like any open file, with a **Draft**
+tag. It is kept in the app's data folder until you save it (**Save As…** or **Save to Quick
+Notes**) or discard it, and closing the window does not remove it. The result is
+`{ path, name, bytes }`.
+
+```json
+{
+  "name": "push_draft",
+  "arguments": {
+    "requestId": "review-001",
+    "title": "Release plan",
+    "content": "# Release plan\n\n1. Cut the branch"
+  }
+}
+```
+
 ## Opening a file in the main window
 
 Select **MCP Configuration → Write → Open document**. `open_document` takes one
-argument, `path`: the absolute path to an existing `.md`, `.markdown` or `.txt`
-file. Sodilaud opens it in the main window, as Finder's **Open With** does, and
+argument, `path`: the absolute path to an existing `.md`, `.markdown`, `.txt`,
+`.csv` or `.tsv` file. Sodilaud opens it in the main window, as Finder's **Open With** does, and
 brings the window forward. Opening a file that is already open switches to it.
 
 The file editor's rules apply: the file must be UTF-8 text of at most 10 MB.
 Relative paths, folders, missing files and other file types are rejected,
-including a symbolic link whose target has another extension. The result is
+including a symbolic link whose target has another extension. No function lists folders. The result is
 `{ path, name, bytes }`: the resolved path, the file name and its size. It does
 not contain the file's text. The resolved path follows symbolic links (on macOS,
 `/tmp/x.md` comes back as `/private/tmp/x.md`); use it in later calls.

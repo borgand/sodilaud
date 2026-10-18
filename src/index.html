@@ -407,6 +407,10 @@
               <span class="shortcut-desc">Find and Replace</span>
               <div class="shortcut-keys"><kbd data-shortcut-off-mac="Ctrl+H">Cmd+Alt+F</kbd></div>
             </div>
+            <div class="shortcut-row">
+              <span class="shortcut-desc">Split View (two files)</span>
+              <div class="shortcut-keys"><kbd>Cmd</kbd><span class="key-plus">+</span><kbd>\</kbd></div>
+            </div>
           </div>
 
           <div class="shortcuts-section">
@@ -745,8 +749,13 @@ function hello() {
                 <p class="mcp-function-parameters"><strong>Required:</strong> <code>requestId</code>, <code>title</code><br><strong>Optional:</strong> <code>content</code>, <code>show</code> (default true)</p>
               </div>
               <div class="cheatsheet-card">
+                <div class="cheatsheet-card-title"><code>push_draft</code></div>
+                <p class="mcp-function-description">Opens Markdown in the main window as a draft that stays in Sodilaud until you save it as a file or to Quick Notes, or discard it. Returns the path, name and size.</p>
+                <p class="mcp-function-parameters"><strong>Required:</strong> <code>requestId</code>, <code>title</code><br><strong>Optional:</strong> <code>content</code></p>
+              </div>
+              <div class="cheatsheet-card">
                 <div class="cheatsheet-card-title"><code>open_document</code></div>
-                <p class="mcp-function-description">Opens an existing <code>.md</code>, <code>.markdown</code> or <code>.txt</code> file in this window, or switches to it. Returns the path, name and size, never the content.</p>
+                <p class="mcp-function-description">Opens an existing <code>.md</code>, <code>.markdown</code>, <code>.txt</code>, <code>.csv</code> or <code>.tsv</code> file in this window, or switches to it. Returns the path, name and size, never the content.</p>
                 <p class="mcp-function-parameters"><strong>Required:</strong> <code>path</code> (absolute)</p>
               </div>
             </div>
