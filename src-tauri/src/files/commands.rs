@@ -15,8 +15,8 @@ use crate::docs::registry::{Pulled, Pushed, Update};
 pub const OPEN_REQUEST_EVENT: &str = "file-open-request";
 const TEXT_EXTENSIONS: &[&str] = &["md", "markdown", "txt"];
 
-fn require_main(window: &Window) -> Result<(), FileError> {
-    if is_main_label(window.label()) {
+pub(crate) fn require_main(label: &str) -> Result<(), FileError> {
+    if is_main_label(label) {
         Ok(())
     } else {
         Err(FileError::wrong_window())
@@ -67,7 +67,7 @@ pub fn file_open_dialog(
     window: Window,
     files: State<'_, Files>,
 ) -> Result<Option<String>, FileError> {
-    require_main(&window)?;
+    require_main(window.label())?;
     let Some(chosen) = rfd::FileDialog::new()
         .set_title("Open File")
         .add_filter("Markdown and text", TEXT_EXTENSIONS)
@@ -92,7 +92,7 @@ pub fn file_save_as_dialog(
     line_ending: LineEnding,
     bom: bool,
 ) -> Result<Option<Saved>, FileError> {
-    require_main(&window)?;
+    require_main(window.label())?;
     let Some(chosen) = rfd::FileDialog::new()
         .set_title("Save As")
         .set_file_name(&suggested_name)
@@ -135,7 +135,7 @@ pub fn file_doc_open(
     registry: State<'_, SharedRegistry>,
     path: String,
 ) -> Result<FileOpened, FileError> {
-    require_main(&window)?;
+    require_main(window.label())?;
     let path = files.require(&path)?;
     let path_text = path.to_string_lossy().to_string();
     let label = window.label();
@@ -198,7 +198,7 @@ pub fn file_doc_open_sibling(
     from_path: String,
     relative: String,
 ) -> Result<OpenedDocument, FileError> {
-    require_main(&window)?;
+    require_main(window.label())?;
     let from = files.require(&from_path)?;
     let (resolved, bytes) = super::sibling_document(&from, &relative)?;
     let granted = files.grant(&resolved)?;
@@ -219,7 +219,7 @@ pub fn file_doc_push(
     version: u64,
     updates: Vec<Update>,
 ) -> Result<Pushed, FileError> {
-    require_main(&window)?;
+    require_main(window.label())?;
     registry.file_push(&files.require(&path)?, &doc_id, version, updates)
 }
 
@@ -232,7 +232,7 @@ pub fn file_doc_pull(
     doc_id: String,
     since: u64,
 ) -> Result<Pulled, FileError> {
-    require_main(&window)?;
+    require_main(window.label())?;
     registry.file_pull(&files.require(&path)?, &doc_id, since)
 }
 
@@ -244,7 +244,7 @@ pub fn file_doc_close(
     registry: State<'_, SharedRegistry>,
     path: String,
 ) -> Result<(), FileError> {
-    require_main(&window)?;
+    require_main(window.label())?;
     registry.file_close(&files.require(&path)?, &*files)
 }
 
@@ -256,7 +256,7 @@ pub fn file_doc_save(
     registry: State<'_, SharedRegistry>,
     path: String,
 ) -> Result<FileSaved, FileError> {
-    require_main(&window)?;
+    require_main(window.label())?;
     registry.file_save(&files.require(&path)?, &*files)
 }
 
@@ -269,14 +269,14 @@ pub fn file_doc_resolve(
     path: String,
     keep: Resolve,
 ) -> Result<(), FileError> {
-    require_main(&window)?;
+    require_main(window.label())?;
     registry.file_resolve(&files.require(&path)?, keep, &*files)
 }
 
 /// This window's open files, and the recent files.
 #[tauri::command]
 pub fn file_lists(window: Window, files: State<'_, Files>) -> Result<ListsView, FileError> {
-    require_main(&window)?;
+    require_main(window.label())?;
     let (open, recent) = files.read(|lists| {
         let open = lists
             .windows
@@ -298,7 +298,7 @@ pub fn file_set_open(
     paths: Vec<String>,
     active: Option<String>,
 ) -> Result<(), FileError> {
-    require_main(&window)?;
+    require_main(window.label())?;
     let granted = |path: &String| {
         files
             .require(path)
@@ -318,7 +318,7 @@ pub fn file_take_pending(
     window: Window,
     files: State<'_, Files>,
 ) -> Result<Vec<PendingOpen>, FileError> {
-    require_main(&window)?;
+    require_main(window.label())?;
     Ok(files.take_pending(window.label()))
 }
 
@@ -328,7 +328,7 @@ pub fn file_forget_recent(
     files: State<'_, Files>,
     path: String,
 ) -> Result<(), FileError> {
-    require_main(&window)?;
+    require_main(window.label())?;
     files.update(|lists| lists.forget_recent(&path));
     Ok(())
 }
@@ -344,7 +344,7 @@ pub enum DiscardChoice {
 /// Asks what to do with an unsaved new file that is being closed.
 #[tauri::command]
 pub fn file_confirm_discard(window: Window, name: String) -> Result<DiscardChoice, FileError> {
-    require_main(&window)?;
+    require_main(window.label())?;
     const SAVE: &str = "Save…";
     const DISCARD: &str = "Don't Save";
     const CANCEL: &str = "Cancel";

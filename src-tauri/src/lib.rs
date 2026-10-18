@@ -486,7 +486,10 @@ pub fn run(context: tauri::Context<tauri::Wry>) {
             files::commands::file_doc_pull,
             files::commands::file_doc_close,
             files::commands::file_doc_save,
-            files::commands::file_doc_resolve
+            files::commands::file_doc_resolve,
+            main_window::main_window_new,
+            main_window::main_window_move_file,
+            main_window::main_window_list
         ])
         .setup(|app| {
             #[cfg(target_os = "macos")]
