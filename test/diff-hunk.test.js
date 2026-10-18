@@ -202,7 +202,7 @@ test("an elided hunk says so instead of showing an empty diff", () => {
 test("links still reach a hunk once the widget replaced it", () => {
   const container = preview(HUNK);
   renderHunkWidgets(container);
-  assert.equal(findReadingAnchor(container, "h3f2a1"), container.querySelector(".diff-hunk"));
+  assert.ok(findReadingAnchor(container, "h3f2a1") === container.querySelector(".diff-hunk"), "the anchor is the hunk widget");
 });
 
 test("line numbers become comment buttons when a handler is given", () => {
