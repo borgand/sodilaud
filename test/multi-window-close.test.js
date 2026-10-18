@@ -71,3 +71,24 @@ test("a failed save keeps the window open and says why", async () => {
   assert.deepEqual(closeDone(app).map((call) => call.args), [{ ok: false }]);
   assert.equal(doc(app).getElementById("app-notification").textContent, "Could not save every file; the window stays open.");
 });
+
+test("a second close request waits until the first answer is delivered", async () => {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const app = await bootMainWindow({
+    instance: 4,
+    label: "main-2",
+    platform: "MacIntel",
+    handlers: { ...lists(), main_window_close_done: () => gate }
+  });
+  const first = app.emit("main-window-close-requested");
+  await until(() => closeDone(app).length === 1);
+  await app.emit("main-window-close-requested");
+  await app.settle();
+  assert.equal(closeDone(app).length, 1, "ignored while the answer is in flight");
+  release();
+  await first;
+  await app.emit("main-window-close-requested");
+  await until(() => closeDone(app).length === 2);
+  assert.equal(closeDone(app).length, 2);
+});

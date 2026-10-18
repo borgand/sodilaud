@@ -506,12 +506,14 @@ async function registerCloseHandler(listen) {
       ok = await fileEditor.flushForClose();
     } catch (error) {
       console.error("Failed to save files before closing the window", error);
+    }
+    try {
+      await invoke("main_window_close_done", { ok });
+    } catch (error) {
+      console.error("Failed to close the window", error);
     } finally {
       closing = false;
     }
-    invoke("main_window_close_done", { ok }).catch((error) => {
-      console.error("Failed to close the window", error);
-    });
   });
 }
 
