@@ -47,7 +47,7 @@ test("moving sends the last keystrokes first and never closes the document", asy
   app.editor().dispatch({ changes: { from: 0, insert: "x" }, selection: { anchor: 1 }, userEvent: "input.type" });
   const event = await openMenu(app, "01.md");
   assert.equal(event.defaultPrevented, true);
-  assert.equal(menuItem(app, "Move to Window"), undefined, "no other window, no submenu");
+  assert.ok(!menuItem(app, "Move to Window"), "no other window, no submenu");
   menuItem(app, "Move to New Window").click();
   await until(() => moveCalls(app).length > 0);
   await until(() => listed(app).length === 1);
@@ -184,4 +184,35 @@ test("a window whose last file moves away stays open on its start page", async (
   assert.deepEqual(lastSetOpen(app), { paths: [], active: null });
   assert.equal(app.fileDocs.isOpen("/book/01.md"), true);
   assert.ok(!app.invocations.some((call) => call.command === "main_window_close_done"));
+});
+
+test("focus stays in the open files list after a keyboard Close or Move", async () => {
+  const app = await bootMainWindow({ instance: 9, platform: "MacIntel", disk: BOOK, handlers: handlers() });
+  const keyboardMenu = async (name, choice) => {
+    const button = fileItem(app, name).querySelector(".open-file-name");
+    button.focus();
+    button.dispatchEvent(new app.dom.window.KeyboardEvent("keydown", { key: "ContextMenu", bubbles: true, cancelable: true }));
+    await until(() => !menu(app).hidden);
+    menuItem(app, choice).click();
+  };
+  await keyboardMenu("01.md", "Close");
+  await until(() => listed(app).length === 1);
+  await app.settle();
+  assert.ok(doc(app).activeElement === fileItem(app, "02.md").querySelector(".open-file-name"), "next file name has focus");
+  await keyboardMenu("02.md", "Move to New Window");
+  await until(() => listed(app).length === 0);
+  await app.settle();
+  assert.ok(doc(app).activeElement === doc(app).getElementById("start-page"), "start page has focus");
+});
+
+test("the ContextMenu key opens the menu once even when contextmenu follows", async () => {
+  const app = await bootMainWindow({ instance: 10, platform: "MacIntel", disk: BOOK, handlers: handlers() });
+  const button = fileItem(app, "01.md").querySelector(".open-file-name");
+  button.focus();
+  button.dispatchEvent(new app.dom.window.KeyboardEvent("keydown", { key: "ContextMenu", bubbles: true, cancelable: true }));
+  await until(() => !menu(app).hidden);
+  menuItem(app, "Close").focus();
+  button.dispatchEvent(new app.dom.window.MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+  await app.settle();
+  assert.ok(doc(app).activeElement === menuItem(app, "Close"), "the open menu was not rebuilt");
 });
