@@ -24,7 +24,8 @@ from the agent are shown in a different color.
 
 ## The comments panel
 
-The count in the status bar ("3 comments") opens the comments panel. It lists each thread
+The count in the status bar ("3 comments") appears once a file has comments or while an agent
+is listening. It opens the comments panel. It lists each thread
 with the text it is on, then its replies indented below, each with who wrote it, its state
 and the agent's note. Click a comment to jump to its text. A new comment or reply from an
 agent shows a **New** marker, and the count reads "3 comments, 1 new", until you open its
