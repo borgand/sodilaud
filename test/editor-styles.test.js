@@ -144,3 +144,10 @@ test("Reading nested lists and quote endings add no extra gap, and Live avoids :
   }
   assert.doesNotMatch(styles, /\.cm-lp-h[12]:has\(/);
 });
+
+test("Live lines have no inline padding so blocks share the text column", () => {
+  assert.match(declarations(".cm-editor.cm-mode-live .cm-line"), /padding-inline:\s*0/);
+  assert.match(declarations(".cm-editor.cm-mode-live .cm-lp-codeblock"), /padding-inline:\s*14px/);
+  assert.match(declarations("html.readable-width .editor-host .cm-editor .cm-content"), /max-width:\s*calc\(var\(--content-width\) \+ 48px\)/);
+  assert.match(declarations("html.readable-width .markdown-preview"), /padding-inline:\s*max\(24px/);
+});

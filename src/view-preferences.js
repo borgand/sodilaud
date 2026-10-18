@@ -15,6 +15,12 @@ export const MIN_PARAGRAPH_SPACING = 0.5;
 export const MAX_PARAGRAPH_SPACING = 2;
 export const PARAGRAPH_SPACING_STEP = 0.1;
 
+export const DEFAULT_READABLE_WIDTH = true;
+export const DEFAULT_CONTENT_WIDTH = 80;
+export const MIN_CONTENT_WIDTH = 60;
+export const MAX_CONTENT_WIDTH = 120;
+export const CONTENT_WIDTH_STEP = 5;
+
 export const DEFAULT_NOTE_PREVIEW_LINES = 2;
 export const MIN_NOTE_PREVIEW_LINES = 1;
 export const MAX_NOTE_PREVIEW_LINES = 10;
@@ -48,6 +54,17 @@ export function normalizeParagraphSpacing(value) {
     MIN_PARAGRAPH_SPACING,
     MAX_PARAGRAPH_SPACING
   );
+}
+
+export function normalizeContentWidth(value) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return DEFAULT_CONTENT_WIDTH;
+  const stepped = Math.round(numericValue / CONTENT_WIDTH_STEP) * CONTENT_WIDTH_STEP;
+  return Math.min(MAX_CONTENT_WIDTH, Math.max(MIN_CONTENT_WIDTH, stepped));
+}
+
+export function stepContentWidth(value, direction) {
+  return normalizeContentWidth(normalizeContentWidth(value) + direction * CONTENT_WIDTH_STEP);
 }
 
 export function stepEditorZoom(value, direction) {
@@ -89,6 +106,12 @@ export function normalizeEditorLineNumbers(value) {
   if (value === true || value === "true" || value === "1") return true;
   if (value === false || value === "false" || value === "0") return false;
   return DEFAULT_EDITOR_LINE_NUMBERS;
+}
+
+export function normalizeReadableWidth(value) {
+  if (value === true || value === "true" || value === "1") return true;
+  if (value === false || value === "false" || value === "0") return false;
+  return DEFAULT_READABLE_WIDTH;
 }
 
 export const LAYOUT_MODES = ["live", "source", "reading"];

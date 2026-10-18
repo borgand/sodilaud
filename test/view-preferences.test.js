@@ -11,10 +11,13 @@ import {
   normalizeEditorZoom,
   normalizeLayoutMode,
   normalizeNotePreviewLines,
+  normalizeContentWidth,
   normalizeParagraphSpacing,
+  normalizeReadableWidth,
   normalizeSyntaxHighlighting,
   stepEditorLineSpacing,
   stepEditorZoom,
+  stepContentWidth,
   stepParagraphSpacing,
   stepNotePreviewLines
 } from "../src/view-preferences.js";
@@ -39,6 +42,15 @@ test("paragraph spacing normalizes to 0.5-2.0 in 0.1 steps", () => {
   assert.equal(normalizeParagraphSpacing(0.1), 0.5);
   assert.equal(normalizeParagraphSpacing(9), 2);
   assert.equal(stepParagraphSpacing(1, 1), 1.1);
+});
+
+test("content width normalizes to 60-120 in steps of 5", () => {
+  assert.equal(normalizeContentWidth("x"), 80);
+  assert.equal(normalizeContentWidth(83), 85);
+  assert.equal(normalizeContentWidth(200), 120);
+  assert.equal(stepContentWidth(80, -1), 75);
+  assert.equal(normalizeReadableWidth(undefined), true);
+  assert.equal(normalizeReadableWidth("false"), false);
 });
 
 test("note preview context is limited to one through ten lines", () => {

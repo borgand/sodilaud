@@ -1569,6 +1569,11 @@ button.view-setting-value:hover {
   caret-color: var(--editor-text);
 }
 
+html.readable-width .editor-host .cm-editor .cm-content {
+  max-width: calc(var(--content-width) + 48px);
+  margin-inline: auto;
+}
+
 .editor-host .cm-editor .cm-gutters {
   font-family: var(--font-mono);
   font-size: var(--editor-font-size);
@@ -1686,6 +1691,10 @@ html:not(.editor-line-numbers-enabled) .app-container.compare-mode .editor-host 
   line-height: var(--editor-line-height);
 }
 
+html.readable-width .markdown-preview {
+  padding-inline: max(24px, calc((100% - var(--content-width)) / 2));
+}
+
 /* ----------------------------------------------------
    Markdown Styles (rendered contents)
    ---------------------------------------------------- */
@@ -1775,7 +1784,7 @@ html:not(.editor-line-numbers-enabled) .app-container.compare-mode .editor-host 
   background-color: var(--preview-code-bg);
   border: 1px solid var(--preview-code-border);
   border-radius: 8px;
-  padding: 16px;
+  padding: 12px 14px;
   overflow-x: auto;
   font-family: var(--font-mono);
   font-size: 0.9rem;
@@ -3531,7 +3540,12 @@ kbd {
 
 /* The background is a layer under the selection (see codeBlockLayer); one on
    the lines would hide a selection made in the code. */
-.cm-mode-live .cm-lp-codeblock {
+.cm-editor.cm-mode-live .cm-line {
+  padding-inline: 0;
+}
+
+.cm-editor.cm-mode-live .cm-lp-codeblock {
+  padding-inline: 14px;
   font-family: var(--font-mono);
   font-size: 0.9em;
 }
@@ -3602,7 +3616,7 @@ kbd {
   height: 12px;
 }
 
-.cm-mode-live .cm-lp-quote {
+.cm-editor.cm-mode-live .cm-lp-quote {
   border-left: 4px solid var(--preview-quote-border);
   background-color: var(--preview-quote-bg);
   padding-left: 12px;
@@ -3644,6 +3658,7 @@ kbd {
 .cm-mode-live .cm-lp-table.markdown-preview {
   flex: none;
   overflow: visible;
+  margin-inline: 0;
   padding: 4px 0;
   font-family: var(--font-sans);
   font-size: inherit;
@@ -3658,6 +3673,7 @@ kbd {
 }
 
 .cm-mode-live .cm-lp-mermaid {
+  margin-inline: 0;
   padding: 4px 0;
   margin-bottom: 0;
   cursor: text;
