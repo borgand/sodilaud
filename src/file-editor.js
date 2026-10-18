@@ -64,6 +64,7 @@ export function createFileEditor({
   const openList = $("open-files-list");
   const title = $("main-title");
   const status = $("file-status");
+  const statusPath = $("file-status-path");
   const preview = $("markdown-preview");
   const outlineSection = $("outline-section");
   const outlineToggle = $("outline-toggle-btn");
@@ -196,6 +197,7 @@ export function createFileEditor({
     const text = buffer ? statusText(buffer) : "";
     status.textContent = text;
     status.title = buffer?.path ?? "";
+    statusPath.textContent = buffer?.path ?? "";
     const key = buffer ? `${buffer.id}:${text}` : null;
     if (key !== statusKey) {
       statusKey = key;

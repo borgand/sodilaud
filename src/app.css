@@ -398,7 +398,8 @@
   opacity: 0;
 }
 
-.file-status:hover .file-status-text.settled {
+.file-status:hover .file-status-text.settled,
+.file-status:focus-within .file-status-text.settled {
   opacity: 1;
 }
 
@@ -406,6 +407,15 @@
   .file-status-text {
     transition: none;
   }
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .review-progress {

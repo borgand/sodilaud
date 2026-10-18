@@ -53,6 +53,7 @@ test("Open File shows the file, lists it and Rust autosaves edits", async () => 
   const status = doc(app).getElementById("file-status");
   assert.equal(status.textContent, "Saved");
   assert.equal(status.title, "/docs/plan.md");
+  assert.equal(doc(app).getElementById("file-status-path").textContent, "/docs/plan.md");
 });
 
 test("Saved fades after a moment and an edit brings the status back", async () => {
@@ -86,6 +87,24 @@ test("switching files restarts the fade", async () => {
   await app.settle();
   assert.equal(status.textContent, "Saved");
   assert.ok(!status.classList.contains("settled"));
+});
+
+test("the hidden path text follows the active file", async () => {
+  const fake = lists({ open: ["/docs/a.md", "/docs/b.md"] });
+  const app = await bootMainWindow({
+    instance: 40,
+    disk: { "/docs/a.md": "one\n", "/docs/b.md": "two\n" },
+    handlers: fake.handlers
+  });
+  const path = doc(app).getElementById("file-status-path");
+  const active = () => doc(app).getElementById("main-title").textContent;
+  const first = active();
+  assert.equal(path.textContent, `/docs/${first}`);
+  const other = [...doc(app).querySelectorAll(".open-file-name")].find((item) => !item.closest(".open-file-item").classList.contains("active"));
+  other.click();
+  await app.settle();
+  assert.notEqual(active(), first);
+  assert.equal(path.textContent, `/docs/${active()}`);
 });
 
 test("outside edits apply to a clean file, merge with typing, and ask on a conflict", async () => {
