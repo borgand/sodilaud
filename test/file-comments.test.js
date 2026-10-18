@@ -145,3 +145,16 @@ test("the count shows No comments while an agent listens", async () => {
   await app.settle();
   assert.equal($("comments-count-btn").hidden, true);
 });
+
+test("focus moves to the editor when the focused count hides", async () => {
+  const app = await bootMainWindow({ platform: "MacIntel", instance: 3, disk: { [PATH]: TEXT }, handlers: handlers([PATH]) });
+  const { $ } = helpers(app);
+  await app.settle();
+  app.emit("coedit-state", { holdForReview: false, listening: true });
+  await app.settle();
+  $("comments-count-btn").focus();
+  assert.ok(app.dom.window.document.activeElement === $("comments-count-btn"));
+  app.emit("coedit-state", { holdForReview: false, listening: false });
+  await app.settle();
+  assert.ok(app.dom.window.document.activeElement.classList.contains("cm-content"));
+});

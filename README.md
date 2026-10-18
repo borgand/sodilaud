@@ -70,7 +70,7 @@ Clipboard history is off by default. Turn it on in **Sodilaud menu → Clipboard
 - Multiple notes with automatic saving, titles derived from the first line, and quick creation by double-clicking empty sidebar space
 - Live, Source, and Reading editing modes, with inline Markdown rendering and per-line raw source in Live mode
 - Optional Markdown editor coloring and language-aware fenced-code highlighting in Live and Reading modes
-- Review books: diff hunks with line numbers and highlighting, a Reviewed toggle, folding by heading, an outline that wraps long headings, marks the section you are reading, and shows review progress, and links between files with Back and Forward
+- Review books: diff hunks with line numbers and highlighting, a Reviewed toggle, folding by heading, an outline that wraps long headings, marks the section you are reading and shows review progress; links between files with Back and Forward
 - Mermaid diagrams from ` ```mermaid ` blocks in Live and Reading modes and in copied HTML, in the active theme's colors, rendered offline
 - Optional, theme-aware source line numbers in either editor pane
 - Markdown-aware continuation for lists, task lists, blockquotes, code fences, and tables

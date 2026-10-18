@@ -302,8 +302,8 @@ export function createFileEditor({
     });
   }
 
-  // A hunk this close below the top of the view counts as the one being read,
-  // so a hunk a jump just scrolled to is not picked again.
+  // A heading or hunk this close below the top of the view counts as the one
+  // being read, so one a jump just scrolled to is not skipped for the next.
   const TOP_SLACK_PX = 8;
 
   function updateCurrentOutline() {
