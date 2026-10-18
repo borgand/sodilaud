@@ -42,7 +42,7 @@ test("Open File shows the file, lists it and Rust autosaves edits", async () => 
   assert.equal(app.editorText(), "# Plan\n");
   assert.equal(doc(app).getElementById("main-title").textContent, "plan.md");
   assert.deepEqual([...doc(app).querySelectorAll(".open-file-name")].map((item) => item.textContent), ["plan.md"]);
-  assert.deepEqual(app.invocations.findLast((call) => call.command === "file_set_open").args, { paths: ["/docs/plan.md"] });
+  assert.deepEqual(app.invocations.findLast((call) => call.command === "file_set_open").args, { paths: ["/docs/plan.md"], active: "/docs/plan.md" });
 
   typeAt(app, 7, "- ship it\n");
   assert.equal(doc(app).getElementById("main-title").textContent, "plan.md •", "unsaved at once");
@@ -105,6 +105,50 @@ test("the hidden path text follows the active file", async () => {
   await app.settle();
   assert.notEqual(active(), first);
   assert.equal(path.textContent, `/docs/${active()}`);
+});
+
+test("a file open in another window is not reported as an error here", async () => {
+  const fake = lists();
+  const app = await bootMainWindow({
+    instance: 13,
+    platform: "MacIntel",
+    handlers: {
+      ...fake.handlers,
+      file_open_dialog: () => "/docs/b.md",
+      file_doc_open: () => { throw { code: "OpenElsewhere", message: "b.md is open in another window." }; }
+    }
+  });
+  app.click("start-open-file-btn");
+  await app.settle();
+  assert.equal(doc(app).getElementById("app-notification").hidden, true);
+  assert.equal(doc(app).getElementById("start-page").hidden, false);
+});
+
+test("the open list carries the active file", async () => {
+  const fake = lists({ open: ["/docs/a.md"] });
+  const app = await bootMainWindow({
+    instance: 14,
+    platform: "MacIntel",
+    disk: { "/docs/a.md": "a", "/docs/plan.md": "# Plan\n" },
+    handlers: { ...fake.handlers, file_open_dialog: () => "/docs/plan.md" }
+  });
+  app.click("start-open-file-btn");
+  await app.settle();
+  assert.deepEqual(
+    app.invocations.findLast((call) => call.command === "file_set_open").args,
+    { paths: ["/docs/a.md", "/docs/plan.md"], active: "/docs/plan.md" }
+  );
+});
+
+test("a file handed over before the page started is shown", async () => {
+  const fake = lists();
+  const app = await bootMainWindow({
+    instance: 15,
+    disk: { "/docs/plan.md": "# Plan\n" },
+    handlers: { ...fake.handlers, file_take_pending: () => [{ path: "/docs/plan.md", view: null }] }
+  });
+  assert.equal(doc(app).getElementById("start-page").hidden, true);
+  assert.equal(app.editorText(), "# Plan\n");
 });
 
 test("outside edits apply to a clean file, merge with typing, and ask on a conflict", async () => {
@@ -180,7 +224,7 @@ test("Cmd+W closes files and the last one brings back the start page", async () 
   await app.settle();
   assert.equal(doc(app).getElementById("start-page").hidden, false);
   assert.equal(doc(app).getElementById("files-sidebar").hidden, true);
-  assert.deepEqual(app.invocations.findLast((call) => call.command === "file_set_open").args, { paths: [] });
+  assert.deepEqual(app.invocations.findLast((call) => call.command === "file_set_open").args, { paths: [], active: null });
 });
 
 test("a new file is saved with Save As, then autosaved; closing an unsaved one asks first", async () => {
@@ -277,7 +321,7 @@ test("Reading mode renders the file and follows outside edits; a file opened fro
   assert.ok(app.emitted.some((event) => event.name === "prefs-changed" && event.payload.key === "sodilaud_layout_mode"));
   app.click("mode-live");
 
-  pending = ["/docs/finder.md"];
+  pending = [{ path: "/docs/finder.md", view: null }];
   await app.emit("file-open-request");
   await app.settle();
   assert.equal(app.editorText(), "from finder");

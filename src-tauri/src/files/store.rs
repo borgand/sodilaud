@@ -38,19 +38,6 @@ pub struct FileLists {
     pub open: Vec<String>,
 }
 
-impl FileLists {
-    /// Moves `path` to the front of the recent list.
-    pub fn opened_recent(&mut self, path: &str) {
-        self.recent.retain(|recent| recent != path);
-        self.recent.insert(0, path.to_string());
-        self.recent.truncate(RECENT_LIMIT);
-    }
-
-    pub fn forget_recent(&mut self, path: &str) {
-        self.recent.retain(|recent| recent != path);
-    }
-}
-
 pub fn load(path: &Path) -> FileLists {
     let mut lists: FileLists = fs::read(path)
         .ok()
@@ -87,19 +74,6 @@ pub fn save(path: &Path, lists: &FileLists) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn recent_files_are_newest_first_without_duplicates_and_capped() {
-        let mut lists = FileLists::default();
-        for index in 0..12 {
-            lists.opened_recent(&format!("/f/{index}.md"));
-        }
-        lists.opened_recent("/f/5.md");
-        assert_eq!(lists.recent.len(), RECENT_LIMIT);
-        assert_eq!(lists.recent[0], "/f/5.md");
-        assert_eq!(lists.recent[1], "/f/11.md");
-        assert_eq!(lists.recent.iter().filter(|p| *p == "/f/5.md").count(), 1);
-    }
 
     #[test]
     fn a_damaged_file_gives_empty_lists() {

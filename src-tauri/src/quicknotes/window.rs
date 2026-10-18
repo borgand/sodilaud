@@ -19,7 +19,7 @@ use super::config::{clamp_frame, Frame, Screen, DEFAULT_HEIGHT, DEFAULT_WIDTH};
 use super::QuickNotes;
 
 pub const LABEL: &str = "quicknotes";
-pub const MAIN_LABEL: &str = "main";
+pub use crate::files::windows::MAIN_LABEL;
 pub const FOCUS_NOTE_EVENT: &str = "quicknotes-focus-note";
 pub const OPEN_SECTION_EVENT: &str = "sodilaud-open-section";
 const GEOMETRY_SAVE_DELAY: Duration = Duration::from_millis(300);
