@@ -42,7 +42,6 @@ pub struct WindowSet {
     /// Labels, most recently focused first.
     focus: Vec<String>,
     /// The number the next added window gets; never reused in a session.
-    #[allow(dead_code)]
     next: u32,
 }
 
@@ -90,7 +89,6 @@ impl WindowSet {
         self.windows.iter_mut().find(|w| w.label == label)
     }
 
-    #[allow(dead_code)]
     pub fn number(&self, label: &str) -> Option<usize> {
         self.windows
             .iter()
@@ -98,7 +96,6 @@ impl WindowSet {
             .map(|index| index + 1)
     }
 
-    #[allow(dead_code)]
     pub fn add(&mut self) -> String {
         let label = label_for(self.next);
         self.next += 1;
@@ -112,7 +109,6 @@ impl WindowSet {
         label
     }
 
-    #[allow(dead_code)]
     pub fn remove(&mut self, label: &str) -> Vec<String> {
         if self.windows.len() < 2 {
             return Vec::new();
@@ -176,7 +172,6 @@ impl WindowSet {
         }
     }
 
-    #[allow(dead_code)]
     pub fn move_to(&mut self, path: &str, to: &str) -> Result<(), String> {
         if self.entry(to).is_none() {
             return Err("That window is closed.".to_string());
@@ -217,7 +212,6 @@ impl WindowSet {
         self.windows.iter().flat_map(|w| w.open.clone()).collect()
     }
 
-    #[allow(dead_code)]
     pub fn set_frame(&mut self, label: &str, frame: Frame) {
         if let Some(entry) = self.entry_mut(label) {
             entry.frame = Some(frame);

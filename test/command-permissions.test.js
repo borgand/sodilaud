@@ -116,6 +116,14 @@ test("only the main window can reach user files", async () => {
   }
 });
 
+test("only main windows can open, move between and list main windows", async () => {
+  const caps = await capabilities();
+  const holders = (command) => caps.filter(cap => cap.permissions.includes(grant(command))).map(cap => cap.identifier);
+  for (const command of ["main_window_new", "main_window_move_file", "main_window_list"]) {
+    assert.deepEqual(holders(command), ["default"], command);
+  }
+});
+
 test("only the main window can install the sodilaud command", async () => {
   const caps = await capabilities();
   const holders = caps.filter(cap => cap.permissions.includes(grant("cli_tool_offer"))).map(cap => cap.identifier);

@@ -108,6 +108,7 @@ pub fn request(app: &AppHandle) {
 /// Writes any autosave still pending and remembers which windows were
 /// showing, so the next launch restores them.
 fn exit(app: &AppHandle) {
+    crate::main_window::record_frames(app);
     if let (Some(registry), Some(files)) = (
         app.try_state::<crate::docs::commands::SharedRegistry>(),
         app.try_state::<crate::files::Files>(),
