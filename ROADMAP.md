@@ -357,3 +357,12 @@ Not done, needs a decision:
 - Line-number numbering in Live mode: each option changes what the setting means.
 - Soft line breaks reported as inconsistent: not reproduced, needs a sample.
 - Smaller "MCP listening" indicator: already shown only while agent access is on, and the security audit relies on it.
+
+## 17. Multiple main windows
+
+Status: done (spec
+[`docs/superpowers/specs/2026-10-18-multi-window-design.md`](docs/superpowers/specs/2026-10-18-multi-window-design.md))
+
+Several peer main windows, each with its own open files. Move to New Window and Move to Window
+on an open file's context menu; New Window in the File menu (Cmd+Alt+N). Windows, their files
+and their positions are restored on restart. The Folders section of item 4 will be per window.
