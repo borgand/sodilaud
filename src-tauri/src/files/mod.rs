@@ -150,7 +150,7 @@ impl FileError {
     pub fn wrong_window() -> Self {
         Self::new(
             FileErrorCode::WrongWindow,
-            "Files open only in the main window.".to_string(),
+            "Files open only in a main window.".to_string(),
         )
     }
 

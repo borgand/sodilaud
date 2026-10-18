@@ -19,7 +19,6 @@ use super::config::{clamp_frame, Frame, Screen, DEFAULT_HEIGHT, DEFAULT_WIDTH};
 use super::QuickNotes;
 
 pub const LABEL: &str = "quicknotes";
-pub use crate::files::windows::MAIN_LABEL;
 pub const FOCUS_NOTE_EVENT: &str = "quicknotes-focus-note";
 pub const OPEN_SECTION_EVENT: &str = "sodilaud-open-section";
 const GEOMETRY_SAVE_DELAY: Duration = Duration::from_millis(300);
@@ -254,16 +253,11 @@ pub fn on_window_event(window: &tauri::Window, event: &WindowEvent) {
 
 /// Shows the main window, and opens `section` of it ("help" or "settings").
 pub fn show_main(app: &AppHandle, section: Option<String>) {
-    #[cfg(target_os = "macos")]
-    crate::clipboard::tray::show_main(app);
-    #[cfg(not(target_os = "macos"))]
-    if let Some(window) = app.get_webview_window(MAIN_LABEL) {
-        let _ = window.unminimize();
-        let _ = window.show();
-        let _ = window.set_focus();
-    }
+    let Some(label) = crate::main_window::show_target(app) else {
+        return;
+    };
     if let Some(section) = section {
-        let _ = app.emit_to(MAIN_LABEL, OPEN_SECTION_EVENT, section);
+        let _ = app.emit_to(label.as_str(), OPEN_SECTION_EVENT, section);
     }
 }
 

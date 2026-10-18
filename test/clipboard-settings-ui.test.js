@@ -231,3 +231,37 @@ test("clearing a number field restores it instead of applying a minimum", async 
     [10, 15]
   );
 });
+
+test("a settings change is shared with the other windows", async () => {
+  const app = await bootMainWindow({
+    instance: 15,
+    platform: "MacIntel",
+    storage: { "clipboardHistory.settings": { enabled: true, capacity: 10, ttlMinutes: 15, hotkey: "super+shift+KeyV", autoPaste: false } },
+    handlers: { clip_set_config: ({ config }) => ok(config) }
+  });
+  const shared = () => app.emitted.filter(e => e.name === "prefs-changed" && e.payload.key === "clipboardHistory.settings");
+  const before = shared().length;
+  app.click("clipboard-settings-btn");
+  const input = app.dom.window.document.getElementById("clipboard-capacity-input");
+  input.value = "20";
+  input.dispatchEvent(new app.dom.window.Event("change"));
+  await settle();
+  assert.equal(shared().length, before + 1);
+  assert.deepEqual(shared().at(-1).payload, { key: "clipboardHistory.settings", source: "main" });
+});
+
+test("a change made in another window is shown without applying it again", async () => {
+  const app = await bootMainWindow({
+    instance: 16,
+    platform: "MacIntel",
+    storage: { "clipboardHistory.settings": { enabled: true, capacity: 10, ttlMinutes: 15, hotkey: "super+shift+KeyV", autoPaste: false } },
+    handlers: { clip_set_config: ({ config }) => ok(config) }
+  });
+  const applied = () => app.invocations.filter(i => i.command === "clip_set_config").length;
+  const before = applied();
+  app.storage.setItem("clipboardHistory.settings", JSON.stringify({ enabled: true, capacity: 30, ttlMinutes: 15, hotkey: "super+shift+KeyV", autoPaste: false }));
+  app.emit("prefs-changed", { key: "clipboardHistory.settings", source: "main-2" });
+  await settle();
+  assert.equal(app.dom.window.document.getElementById("clipboard-capacity-input").value, "30");
+  assert.equal(applied(), before);
+});

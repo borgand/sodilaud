@@ -1,9 +1,10 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window: the start page, settings (including importing a theme file), and the file editor, which reaches only files the user chose. It cannot read or write notes; the Quick Notes window owns them. It can turn agent access on and off and set its permissions, as Quick Notes can. It can install and remove the sodilaud command-line tool.",
+  "description": "Capability for the main windows: the start page, settings (including importing a theme file), and the file editor, which reaches only files the user chose. It cannot read or write notes; the Quick Notes window owns them. It can turn agent access on and off and set its permissions, as Quick Notes can. It can install and remove the sodilaud command-line tool.",
   "windows": [
-    "main"
+    "main",
+    "main-*"
   ],
   "permissions": [
     "core:default",

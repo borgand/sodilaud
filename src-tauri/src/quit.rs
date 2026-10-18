@@ -123,7 +123,9 @@ fn exit(app: &AppHandle) {
             .unwrap_or(false)
     };
     let windows = quicknotes::config::WindowsAtQuit {
-        main: visible(quicknotes::window::MAIN_LABEL),
+        main: crate::main_window::labels(app)
+            .iter()
+            .any(|label| visible(label)),
         quicknotes: visible(quicknotes::window::LABEL),
     };
     if let Some(quick_notes) = app.try_state::<QuickNotes>() {

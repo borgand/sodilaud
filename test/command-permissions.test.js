@@ -37,7 +37,7 @@ test("popup commands are granted only to the clipboard window", async () => {
   const caps = await capabilities();
   const main = caps.find(cap => cap.identifier === "default");
   const popup = caps.find(cap => cap.identifier === "clipboard");
-  assert.deepEqual(main.windows, ["main"]);
+  assert.deepEqual(main.windows, ["main", "main-*"]);
   assert.deepEqual(popup.windows, ["clipboard"]);
   for (const command of POPUP_COMMANDS) {
     assert.ok(!main.permissions.includes(`allow-${command.replaceAll("_", "-")}`), `main must not grant ${command}`);
@@ -79,7 +79,8 @@ test("both windows show and change agent access, and both hear when it changes",
   }
   const mcp = await readFile("src-tauri/src/mcp.rs", "utf8");
   assert.doesNotMatch(mcp, /\.emit\(/, "a broadcast would reach every webview");
-  assert.match(mcp, /crate::quicknotes::window::LABEL,\s*crate::quicknotes::window::MAIN_LABEL,?\s*\][\s\S]*emit_to\(window, STATE_EVENT/);
+  assert.match(mcp, /emit_to\(crate::quicknotes::window::LABEL, STATE_EVENT/);
+  assert.match(mcp, /main_window::emit_all\(&self\.0, STATE_EVENT/);
 });
 
 test("note contents are sent to the Quick Notes window only", async () => {
@@ -124,7 +125,32 @@ test("only the main window can install the sodilaud command", async () => {
 test("file contents are sent to the main window only", async () => {
   const commands = await readFile("src-tauri/src/docs/commands.rs", "utf8");
   for (const event of ["FILE_DOC_EVENT", "FILE_SAVED_EVENT", "FILE_EXTERNAL_EVENT"]) {
-    assert.match(commands, new RegExp(`emit_to\\(\\s*quicknotes::window::MAIN_LABEL,\\s*${event}`), event);
+    assert.match(commands, new RegExp(`main_window::emit_all\\(&self\\.0,\\s*${event}`), event);
+  }
+});
+
+async function rustSources(dir) {
+  const entries = await readdir(dir, { withFileTypes: true, recursive: true });
+  return Promise.all(entries
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".rs"))
+    .map(async (entry) => {
+      const path = `${entry.parentPath ?? entry.path}/${entry.name}`;
+      return { path, text: await readFile(path, "utf8") };
+    }));
+}
+
+test("no code singles out the first main window", async () => {
+  for (const file of ["src-tauri/src/lib.rs", "src-tauri/src/files/commands.rs", "src-tauri/src/docs/commands.rs"]) {
+    const text = await readFile(file, "utf8");
+    assert.doesNotMatch(text, /==\s*(quicknotes::window::)?MAIN_LABEL/, file);
+  }
+  const allowed = new Set(["src-tauri/src/files/windows.rs", "src-tauri/src/main_window.rs"]);
+  for (const { path, text } of await rustSources("src-tauri/src")) {
+    if (allowed.has(path)) continue;
+    assert.doesNotMatch(text, /MAIN_LABEL/, path);
+  }
+  for (const { path, text } of await rustSources("src-tauri/src/clipboard")) {
+    assert.doesNotMatch(text, /"main"/, path);
   }
 });
 
@@ -137,5 +163,5 @@ test("both windows comment, each only on its own documents", async () => {
   const commands = await readFile("src-tauri/src/docs/commands.rs", "utf8");
   const pageDoc = commands.slice(commands.indexOf("fn page_doc"), commands.indexOf("fn comments_get"));
   assert.match(pageDoc, /note_id: Some[\s\S]*window\.label\(\) == quicknotes::window::LABEL/);
-  assert.match(pageDoc, /doc_id: Some[\s\S]*window\.label\(\) == quicknotes::window::MAIN_LABEL[\s\S]*files\.require/);
+  assert.match(pageDoc, /doc_id: Some[\s\S]*is_main_label\(window\.label\(\)\)[\s\S]*files\.require/);
 });
