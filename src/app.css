@@ -448,6 +448,59 @@
   border-left: none;
 }
 
+.split-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.split-controls .layout-btn[hidden],
+.secondary-editor-wrapper[hidden] {
+  display: none;
+}
+
+#split-file-btn[aria-pressed="true"] {
+  background-color: var(--accent-color);
+  color: #ffffff;
+}
+
+#file-editor.split-mode .editor-wrapper {
+  flex: 1 1 50%;
+  min-width: 0;
+}
+
+#file-editor.split-mode .secondary-editor-wrapper {
+  border-left: 1px solid var(--border-color);
+}
+
+#file-editor.split-mode .preview-wrapper {
+  display: none;
+}
+
+.secondary-editor-wrapper .editor-host {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.secondary-pane-header .icon-btn {
+  margin-left: auto;
+  width: 28px;
+  height: 28px;
+}
+
+#secondary-file-select {
+  min-width: 0;
+  max-width: 60%;
+  padding: 4px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background-color: var(--editor-bg);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.8rem;
+}
+
 .file-banner,
 .draft-bar {
   display: flex;

@@ -59,6 +59,10 @@
         <div class="comment-controls">
           <button class="layout-btn" id="comment-btn" type="button" title="Comment on the selection (Cmd+Alt+M)" aria-label="Comment on the selection"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /><path d="M12 7v6M9 10h6" /></svg></button>
         </div>
+        <div class="split-controls">
+          <button class="layout-btn" id="split-file-btn" type="button" title="Split View (Cmd+\)" aria-label="Split view" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M12 3v18" /></svg></button>
+          <button class="layout-btn" id="compare-files-btn" type="button" title="Compare the two files" aria-pressed="false" hidden>Compare <span id="compare-files-count"></span></button>
+        </div>
         <div class="format-menu format-heading-menu" id="format-heading-menu" role="menu" aria-label="Heading level" hidden>
           <button class="dropdown-item format-heading-item" id="format-heading-1" data-format="heading-1" type="button" role="menuitem" tabindex="-1" title="Heading 1 (Cmd+Alt+1)"><span class="format-heading-sample format-heading-sample-1">Heading 1</span></button>
           <button class="dropdown-item format-heading-item" id="format-heading-2" data-format="heading-2" type="button" role="menuitem" tabindex="-1" title="Heading 2 (Cmd+Alt+2)"><span class="format-heading-sample format-heading-sample-2">Heading 2</span></button>
@@ -279,6 +283,7 @@
         <div class="editor-wrapper" id="editor-wrapper">
           <div class="editor-host" id="editor-host"></div>
         </div>
+        <div class="editor-wrapper secondary-editor-wrapper" id="secondary-editor-wrapper" hidden><div class="secondary-pane-header"><select id="secondary-file-select" aria-label="File in the right pane"></select><button class="icon-btn" id="close-secondary-btn" type="button" aria-label="Close the right pane" title="Close split view">×</button></div><div class="editor-host" id="secondary-editor-host"></div></div>
         <div class="preview-wrapper" id="preview-wrapper">
           <div class="markdown-preview" id="markdown-preview"></div>
         </div>

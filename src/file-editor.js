@@ -35,6 +35,7 @@ import { createComments } from "./comments-panel.js";
 import { createOpenFileMenu } from "./open-file-menu.js";
 import { createFolderSidebar } from "./folder-sidebar.js";
 import { createFindBar } from "./find-bar.js";
+import { createFileSplit } from "./file-split.js";
 import { isMacLikePlatform } from "./platform-labels.js";
 import { EditorState, EditorView, Transaction } from "./vendor/codemirror.js";
 
@@ -96,31 +97,38 @@ export function createFileEditor({
   let outlineTimer = null;
   const navHistory = createNavHistory();
 
-  const editor = createMarkdownEditor({
-    parent: $("editor-host"),
-    ariaLabel: "File content",
+  // Both panes edit with the same extensions; `pane` names the one they serve.
+  const editorOptions = (pane) => ({
     placeholder: "Type something here... Supports Markdown formatting.",
     mode: editorModeFor(layoutMode),
     syntaxHighlighting: appearance.syntaxHighlighting,
     lineNumbers: appearance.lineNumbers,
     extensions: [
       markdownEditingCommands(),
-      livePreview({ onOpenLink: followLink, onFollowAnchor: jumpTo, mermaid }),
+      pane === "primary"
+        ? livePreview({ onOpenLink: followLink, onFollowAnchor: jumpTo, mermaid })
+        : livePreview({ onOpenLink: (href) => followLink(href, "secondary"), onFollowAnchor: scrollRightPane, mermaid }),
       sectionFolding(),
       EditorState.changeFilter.of((tr) =>
-        movingDocId === null || movingDocId !== shownDoc()?.docId || tr.annotation(Transaction.userEvent) === undefined),
+        movingDocId === null || movingDocId !== paneDoc(pane)?.docId || tr.annotation(Transaction.userEvent) === undefined),
       commentsExtension({
         onSubmit: (view, comment) => comments.submit(view, comment),
         onSelect: id => comments.select(id)
       })
-    ],
+    ]
+  });
+
+  const editor = createMarkdownEditor({
+    ...editorOptions("primary"),
+    parent: $("editor-host"),
+    ariaLabel: "File content",
     onChange: handleEditorChange
   });
   mermaid?.onChange(renderPreview);
 
   const findBar = createFindBar({
     document,
-    editor: () => editor,
+    editor: () => activeEditor(),
     preview: () => preview,
     isReading: () => layoutMode === "reading",
     notify
@@ -141,29 +149,46 @@ export function createFileEditor({
       if (!buffer || buffer.docId !== docId) return;
       model.reload(buffer.id, text, version);
       if (shownId === buffer.id) loadBuffer(buffer);
+      split.reload(buffer.id);
       render();
     },
     onRemote: remote => comments.remote(remote),
     label: "main"
   });
 
+  const split = createFileSplit({
+    document,
+    createEditor: (host, { onChange }) => createMarkdownEditor({
+      ...editorOptions("secondary"),
+      parent: host,
+      ariaLabel: "File content in the right pane",
+      onChange
+    }),
+    sync,
+    model,
+    onFocusPane: paneFocused,
+    onChange: rightPaneChanged
+  });
+
+  const activeEditor = () => (split.activePane() === "secondary" ? split.editor() : editor);
+
   // Comments need a file Rust holds: an untitled buffer has none yet.
-  const shownDoc = () => {
-    const buffer = showingStartPage ? null : model.get(shownId);
-    return buffer?.path ? { path: buffer.path, docId: buffer.docId } : null;
-  };
+  const docOf = (buffer) => (buffer?.path ? { path: buffer.path, docId: buffer.docId } : null);
+  const shownDoc = () => docOf(showingStartPage ? null : model.get(shownId));
+  const paneDoc = (pane) => (pane === "primary" ? shownDoc() : docOf(model.get(split.shownId())));
   const comments = createComments({
     document,
     invoke,
     root: $("comments-panel"),
     countButton: $("comments-count-btn"),
-    editors: () => {
-      const doc = shownDoc();
-      return doc ? [{ view: editor.view, doc }] : [];
-    },
+    editors: () => [
+      { view: editor.view, doc: shownDoc() },
+      { view: split.editor().view, doc: paneDoc("secondary") }
+    ].filter(({ doc }) => doc),
     active: () => {
-      const doc = shownDoc();
-      return doc && layoutMode !== "reading" ? { view: editor.view, doc } : null;
+      const pane = split.activePane();
+      const doc = paneDoc(pane);
+      return doc && layoutMode !== "reading" ? { view: activeEditor().view, doc } : null;
     },
     flush: () => sync.flush(),
     notify
@@ -215,19 +240,48 @@ export function createFileEditor({
     else findBar.refreshHighlights();
   }
 
+  // Find, formatting and comments follow the pane focused last.
+  function paneFocused(pane) {
+    (pane === "primary" ? split.editor() : editor).setFindMatches([], -1);
+    if (findBar.isOpen()) findBar.run({ selectActive: false });
+    else findBar.refreshHighlights();
+    syncFormatting();
+    comments.render();
+  }
+
+  function rightPaneChanged(what) {
+    if (what === "file") {
+      comments.shown();
+      if (split.activePane() === "secondary") {
+        refreshFind();
+        syncFormatting();
+      }
+    } else if (findBar.isOpen() && split.activePane() === "secondary") {
+      findBar.run({ preserveActive: true, selectActive: false });
+    }
+  }
+
+  // An anchor link in the right pane scrolls that pane.
+  function scrollRightPane(fragment) {
+    const { view } = split.editor();
+    revealAnchor(view, fragment);
+    scrollToAnchor(view, fragment);
+  }
+
   function applyKind(buffer) {
     editor.setPlainText(buffer.kind === "plain");
     syncFormatting();
   }
 
-  const syncFormatting = () => formatToolbar.setEnabled(layoutMode !== "reading" && !editor.isPlainText());
+  const syncFormatting = () => formatToolbar.setEnabled(layoutMode !== "reading" && !activeEditor().isPlainText());
 
   const formatToolbar = createFormatToolbar({
     document,
     applyFormat: (actionId) => {
       if (layoutMode === "reading" || !model.active()) return;
-      runFormatAction(editor.view, actionId);
-      editor.focus();
+      const target = activeEditor();
+      runFormatAction(target.view, actionId);
+      target.focus();
     },
     onMenuOpen: closeMenus,
     observe: [".main-topbar", ".layout-controls"]
@@ -493,6 +547,7 @@ export function createFileEditor({
       preview.scrollTop = buffer.previewTop ?? 0;
     }
     if (showEditor) formatToolbar.layout();
+    if (split.isOpen()) split.refreshChoices();
     folders.setActivePath(showEditor ? buffer.path : null);
     comments.shown();
     renderTitle();
@@ -559,7 +614,10 @@ export function createFileEditor({
     if (!saved) return false;
     // Rust dropped any document open at the chosen path before writing it.
     const existing = model.byPath(saved.path);
-    if (existing && existing.id !== id) model.close(existing.id, { force: true });
+    if (existing && existing.id !== id) {
+      model.close(existing.id, { force: true });
+      split.bufferClosed(existing.id);
+    }
     const previousPath = buffer.path;
     const wasDraft = buffer.draft;
     if (previousPath !== null && previousPath !== saved.path) {
@@ -579,6 +637,7 @@ export function createFileEditor({
       loadBuffer(buffer);
       editor.setSelection(selection.start, selection.end, { scroll: false });
     }
+    split.reload(id);
     if (wasDraft && previousPath !== saved.path) {
       await invoke("draft_discard", { path: previousPath, ask: false })
         .catch((error) => console.error("Could not discard the saved draft", error));
@@ -720,17 +779,19 @@ export function createFileEditor({
 
   // A link to `chapter.md#heading` opens a file next to the shown one; Rust
   // refuses anything outside its folder, and then the click does nothing.
-  async function followLink(href) {
+  // A sibling link in the right pane opens on the left.
+  async function followLink(href, pane = "primary") {
     const action = resolveLinkAction(href);
     if (action.kind === "external") {
       openExternal(href);
       return;
     }
     if (action.kind === "anchor") {
-      await jumpTo(action.fragment);
+      if (pane === "secondary") scrollRightPane(action.fragment);
+      else await jumpTo(action.fragment);
       return;
     }
-    const fromPath = showingStartPage ? null : model.active()?.path;
+    const fromPath = pane === "secondary" ? paneDoc("secondary")?.path : showingStartPage ? null : model.active()?.path;
     if (action.kind !== "sibling" || !fromPath) return;
     let target;
     try {
@@ -851,6 +912,7 @@ export function createFileEditor({
   // document that is gone or belongs to another window now.
   async function forget(id, { detach = false } = {}) {
     model.close(id, { force: true });
+    split.bufferClosed(id);
     if (shownId === id) {
       shownId = null;
       if (detach) editor.loadText("");
@@ -966,8 +1028,9 @@ export function createFileEditor({
     if (!event?.path) return;
     sync.receive(event);
     const buffer = model.docUpdated(event);
+    const inActivePane = buffer && buffer.id === (split.activePane() === "secondary" ? split.shownId() : shownId);
+    if (inActivePane && findBar.isOpen()) findBar.run({ preserveActive: true, selectActive: false });
     if (buffer && buffer.id === shownId) {
-      if (findBar.isOpen()) findBar.run({ preserveActive: true, selectActive: false });
       renderPreview();
       scheduleOutline();
     }
@@ -999,6 +1062,9 @@ export function createFileEditor({
       button.setAttribute("aria-pressed", String(mode === layoutMode));
     }
     editor.setMode(editorModeFor(layoutMode));
+    split.editor().setMode(editorModeFor(layoutMode));
+    if (layoutMode === "reading") split.close();
+    renderSplitButton();
     syncFormatting();
     $("comment-btn").disabled = layoutMode === "reading";
     comments.render();
@@ -1009,6 +1075,18 @@ export function createFileEditor({
       storage.setItem(LAYOUT_KEY, layoutMode);
       broadcast(LAYOUT_KEY);
     }
+  }
+
+  const splitAvailable = () => layoutMode !== "reading";
+
+  function renderSplitButton() {
+    const button = $("split-file-btn");
+    button.disabled = !splitAvailable();
+    button.title = splitAvailable() ? `Split View (${isMac() ? "Cmd" : "Ctrl"}+\\)` : "Split view works in Live and Source";
+  }
+
+  function toggleSplit() {
+    if (splitAvailable()) split.toggle();
   }
 
   function toggleSidebar() {
@@ -1116,6 +1194,7 @@ export function createFileEditor({
     $("menu-start-page-btn").addEventListener("click", () => { closeMenus(); showStartPage(); });
     $("comment-btn").addEventListener("click", () => comments.start());
     $("comments-count-btn").addEventListener("click", () => comments.toggle());
+    $("split-file-btn").addEventListener("click", toggleSplit);
     $("draft-save-as-btn").addEventListener("click", () => saveAs());
     for (const [button, action] of [["draft-save-notes-btn", saveDraftToNotes], ["draft-discard-btn", discardDraft]]) {
       $(button).addEventListener("click", () => {
@@ -1187,6 +1266,8 @@ export function createFileEditor({
     // Cmd+[ and Cmd+] go Back and Forward, as in a browser.
     else if (event.key === "[" && !event.shiftKey && model.list().length) action = goBack;
     else if (event.key === "]" && !event.shiftKey && model.list().length) action = goForward;
+    // Cmd+\ (Ctrl+\ off macOS); Shift turns the key into | on some layouts.
+    else if ((event.key === "\\" || event.key === "|") && isCommandChord(event) && splitAvailable() && model.active() && !showingStartPage) action = toggleSplit;
     if (!action) return false;
     event.preventDefault();
     action();
@@ -1223,9 +1304,13 @@ export function createFileEditor({
     discardDraft,
     showStartPage,
     closeFormatMenus: () => formatToolbar.closeMenus(),
-    setLineNumbers: (enabled) => editor.setLineNumbers(enabled),
+    setLineNumbers: (enabled) => {
+      editor.setLineNumbers(enabled);
+      split.editor().setLineNumbers(enabled);
+    },
     setSyntaxHighlighting: (enabled) => {
       editor.setSyntaxHighlighting(enabled);
+      split.editor().setSyntaxHighlighting(enabled);
       renderPreview();
     },
     model,
