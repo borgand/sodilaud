@@ -83,7 +83,7 @@ test("Reading: a selection in a table cell and in prose takes a comment", { todo
 
   const preview = doc.getElementById("markdown-preview");
   const comment = async (selector, needle, note, count) => {
-    const node = textNode(app, preview.querySelector(selector), needle);
+    const node = [...preview.querySelectorAll(selector)].map(el => textNode(app, el, needle)).find(Boolean);
     assert.ok(node, `found "${needle}" in the preview`);
     const from = node.nodeValue.indexOf(needle);
     app.dom.window.getSelection().setBaseAndExtent(node, from, node, from + needle.length);
