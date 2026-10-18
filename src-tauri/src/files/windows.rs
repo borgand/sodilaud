@@ -198,17 +198,13 @@ impl WindowSet {
         Ok(())
     }
 
-    pub fn route(&mut self, paths: &[String]) -> Vec<(String, Vec<String>)> {
+    /// Groups `paths` by the window that should show them: the owner, or the
+    /// focused window. Nothing is claimed; the window claims a file when its
+    /// page opens it, so a file that fails to open is never left owned.
+    pub fn route(&self, paths: &[String]) -> Vec<(String, Vec<String>)> {
         let mut groups: Vec<(String, Vec<String>)> = Vec::new();
         for path in paths {
-            let label = match self.owner(path) {
-                Some(owner) => owner,
-                None => {
-                    let target = self.target();
-                    self.claim(&target, path);
-                    target
-                }
-            };
+            let label = self.owner(path).unwrap_or_else(|| self.target());
             match groups.iter_mut().find(|(group, _)| *group == label) {
                 Some((_, group)) => group.push(path.clone()),
                 None => groups.push((label, vec![path.clone()])),
@@ -346,7 +342,7 @@ mod tests {
                 ("main-2".to_string(), vec!["/new.md".to_string()])
             ]
         );
-        assert_eq!(set.owner("/new.md").as_deref(), Some("main-2"));
+        assert_eq!(set.owner("/new.md"), None, "claimed only once it opens");
     }
 
     #[test]
