@@ -335,3 +335,9 @@ entry into a folded section unfolds it. The outline and the status bar count are
 Quick Notes has neither yet.
 
 Depends on: 12.
+
+## 15. Document styling
+
+Status: done, to ship in the next release (#54, #55, #56, #57, #58) (spec [docs/superpowers/specs/2026-10-18-document-styling-design.md](docs/superpowers/specs/2026-10-18-document-styling-design.md))
+
+The document takes code, table, rule, quote, heading and link colors from the active theme, themes can set those colors and body, heading and code fonts, and Executive is retuned to use them. Headings get a scale with rules under H1 and H2, and Appearance gains paragraph spacing, a readable column width and font settings, with IBM Plex Serif and IBM Plex Mono bundled.
