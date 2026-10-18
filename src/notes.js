@@ -20,6 +20,7 @@ import { createAgentAccess } from "./agent-access.js";
 import { applyPlatformShortcutLabels, isMacLikePlatform } from "./platform-labels.js";
 import { compareNoteText, emptyNoteComparison } from "./note-compare.js";
 import { findTextMatches } from "./find.js";
+import { createFindBar } from "./find-bar.js";
 import { createMarkdownEditor } from "./editor-view.js";
 import { commentsExtension, startComment } from "./editor-comments.js";
 import { createComments } from "./comments-panel.js";
@@ -111,26 +112,13 @@ const closeSecondaryBtn = document.getElementById("close-secondary-btn");
 const secondaryEditorHost = document.getElementById("secondary-editor-host");
 const secondaryMarkdownPreview = document.getElementById("secondary-markdown-preview");
 
-const findBar = document.getElementById("find-bar");
 const findInput = document.getElementById("find-input");
-const findCount = document.getElementById("find-count");
-const findPrevBtn = document.getElementById("find-prev");
-const findNextBtn = document.getElementById("find-next");
-const findCloseBtn = document.getElementById("find-close");
-const findToggleReplaceBtn = document.getElementById("find-toggle-replace");
-const findCaseToggleBtn = document.getElementById("find-case-toggle");
-const findExactToggleBtn = document.getElementById("find-exact-toggle");
-const findRegexToggleBtn = document.getElementById("find-regex-toggle");
 const findResultsToggleBtn = document.getElementById("find-results-toggle");
 const findResultsPane = document.getElementById("find-results-pane");
 const findResultsCloseBtn = document.getElementById("find-results-close");
 const findAllNotesToggleBtn = document.getElementById("find-all-notes-toggle");
 const findResultsSummary = document.getElementById("find-results-summary");
 const findResultsList = document.getElementById("find-results-list");
-const replaceRow = document.getElementById("replace-row");
-const replaceInput = document.getElementById("replace-input");
-const replaceOneBtn = document.getElementById("replace-one-btn");
-const replaceAllBtn = document.getElementById("replace-all-btn");
 
 const customContextMenu = document.getElementById("custom-context-menu");
 const ctxCutBtn = document.getElementById("ctx-cut");
@@ -189,12 +177,8 @@ let currentLayoutMode = "live";
 let primaryEditor = null;
 let secondaryEditor = null;
 let isFocusMode = false;
-let findMatches = [];
-let activeMatchIndex = -1;
-let isFindBarOpen = false;
 let isFindResultsOpen = false;
 let isFindAllNotesMode = false;
-let hasInvalidFindPattern = false;
 let contextMenuTarget = null;
 let contextMenuEditor = null;
 let contextMenuNoteId = null;
@@ -202,17 +186,21 @@ let contextMenuFolderId = null;
 let editingFolderId = null;
 let isCreatingFolder = false;
 const collapsedFolderIds = new Set();
-let isMatchCaseMode = false;
-let isExactMatchMode = false;
-let isRegexMode = false;
-let isReplaceOpen = false;
 let previewDebounceTimer = null;
 let noteListRenderTimer = null;
 let titleSyncTimer = null;
 let notificationSequence = 0;
 let activeNotification = null;
-let previewHighlightsRendered = false;
 let isWorkspaceSwitching = false;
+
+const findBar = createFindBar({
+  document,
+  editor: () => primaryEditor,
+  preview: () => markdownPreview,
+  isReading: () => currentLayoutMode === "reading" && !isSplitNoteMode,
+  notify: showNotification,
+  onUpdate: handleFindUpdate
+});
 
 const shareAppearance = (key) => broadcastPreference(window, key);
 const appearance = createAppearance({
@@ -545,7 +533,7 @@ function refreshOpenNoteViews(noteId) {
       scheduleNoteComparisonRefresh();
     }
     if (isFindResultsOpen && isFindAllNotesMode) renderFindResults();
-    if (isFindBarOpen && activeNoteId === noteId) runFind({ preserveActive: true, selectActive: false });
+    if (findBar.isOpen() && activeNoteId === noteId) findBar.run({ preserveActive: true, selectActive: false });
     populateSecondaryNoteSelect();
     scheduleNoteListRender();
   } catch (error) {
@@ -845,10 +833,10 @@ function loadActiveNote() {
   updateMarkdownPreview();
   markdownPreview.scrollTop = 0;
   applyComparisonDecorations();
-  if (isFindBarOpen) {
-    runFind({ selectActive: false });
+  if (findBar.isOpen()) {
+    findBar.run({ selectActive: false });
   } else {
-    updateFindHighlights();
+    findBar.refreshHighlights();
   }
 }
 
@@ -1479,8 +1467,8 @@ function handleEditorInput(text) {
   activeNote.content = text;
   activeNote.updatedAt = Date.now();
   scheduleNoteComparisonRefresh();
-  if (isFindBarOpen) {
-    runFind({ preserveActive: true, selectActive: false });
+  if (findBar.isOpen()) {
+    findBar.run({ preserveActive: true, selectActive: false });
   }
 
   // Rust derives the title too; showing it now keeps the header in step.
@@ -1577,7 +1565,7 @@ function updateMarkdownPreview() {
     </div>` + escapeHTML(rawText).replace(/\n/g, "<br>").replace(/  /g, "&nbsp;&nbsp;");
   }
 
-  updatePreviewHighlights();
+  findBar.refreshPreview();
 }
 
 // ----------------------------------------------------
@@ -2030,24 +2018,7 @@ function attachEventListeners() {
   });
 
   // Find & Replace Widget events
-  findInput.addEventListener("input", runFind);
-  findInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      if (e.shiftKey) {
-        findPrev();
-      } else {
-        findNext();
-      }
-    }
-    if (e.key === "Escape") {
-      e.preventDefault();
-      hideFindBar();
-    }
-  });
-  findPrevBtn.addEventListener("click", findPrev);
-  findNextBtn.addEventListener("click", findNext);
-  findCloseBtn.addEventListener("click", hideFindBar);
+  findBar.attach();
   findResultsToggleBtn.addEventListener("click", () => toggleFindResults());
   findResultsCloseBtn.addEventListener("click", () => {
     toggleFindResults(false);
@@ -2056,23 +2027,6 @@ function attachEventListeners() {
   findAllNotesToggleBtn.addEventListener("click", toggleFindAllNotesMode);
   findResultsList.addEventListener("click", handleFindResultClick);
   findResultsList.addEventListener("keydown", handleFindResultKeydown);
-  findToggleReplaceBtn.addEventListener("click", () => toggleReplace());
-  findCaseToggleBtn.addEventListener("click", toggleMatchCaseMode);
-  findExactToggleBtn.addEventListener("click", toggleExactMatchMode);
-  findRegexToggleBtn.addEventListener("click", toggleRegexMode);
-  
-  replaceInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      replaceOne();
-    }
-    if (e.key === "Escape") {
-      e.preventDefault();
-      hideFindBar();
-    }
-  });
-  replaceOneBtn.addEventListener("click", replaceOne);
-  replaceAllBtn.addEventListener("click", replaceAll);
 
   // Shortcuts
   document.addEventListener("keydown", (e) => {
@@ -2112,18 +2066,7 @@ function attachEventListeners() {
       e.preventDefault();
       toggleFindBar(true);
     }
-    if (e.altKey && !isMeta && e.key.toLowerCase() === "r" && isFindBarOpen) {
-      e.preventDefault();
-      toggleRegexMode();
-    }
-    if (e.altKey && !isMeta && e.key.toLowerCase() === "c" && isFindBarOpen) {
-      e.preventDefault();
-      toggleMatchCaseMode();
-    }
-    if (e.altKey && !isMeta && e.key.toLowerCase() === "w" && isFindBarOpen) {
-      e.preventDefault();
-      toggleExactMatchMode();
-    }
+    findBar.handleKeydown(e);
     if (isMeta && (e.key === "\\" || e.key === "|")) {
       e.preventDefault();
       toggleSplitNoteMode();
@@ -2154,9 +2097,9 @@ function attachEventListeners() {
         e.preventDefault();
       } else if (agentAccess.handleKeydown(e)) {
         e.preventDefault();
-      } else if (isFindBarOpen) {
+      } else if (findBar.isOpen()) {
         e.preventDefault();
-        hideFindBar();
+        findBar.close();
       } else if (isFocusMode) {
         toggleFocusMode();
       }
@@ -2295,261 +2238,36 @@ async function disconnectDatabaseImpl() {
 
 // Find & Replace Widget functions
 function toggleFindBar(openReplace = false) {
-  if (isFindBarOpen) {
-    if (openReplace && !isReplaceOpen) {
-      toggleReplace(true);
+  if (findBar.isOpen()) {
+    if (openReplace && !findBar.state().replaceOpen) {
+      findBar.toggleReplace(true);
     } else if (!openReplace) {
-      hideFindBar();
+      findBar.close();
     }
   } else {
-    isFindBarOpen = true;
-    findBar.style.display = "flex";
-    
-    if (openReplace) {
-      toggleReplace(true);
-    }
-    
-    const { start, end } = primaryEditor.getSelection();
-    const selection = primaryEditor.getText().slice(start, end);
-    if (selection) {
-      findInput.value = selection;
-    }
-    
-    if (openReplace && isReplaceOpen) {
-      replaceInput.focus();
-      replaceInput.select();
-    } else {
-      findInput.focus();
-      findInput.select();
-    }
-    runFind();
+    findBar.open({ replace: openReplace });
   }
 }
 
-function hideFindBar() {
-  isFindBarOpen = false;
-  toggleFindResults(false);
-  findBar.style.display = "none";
-  findMatches = [];
-  activeMatchIndex = -1;
-  hasInvalidFindPattern = false;
-  findInput.value = "";
-  replaceInput.value = "";
-  toggleReplace(false);
-  updateFindCount();
-  updateFindHighlights();
-  primaryEditor.focus();
-}
-
-function toggleReplace(forceState) {
-  isReplaceOpen = typeof forceState === "boolean" ? forceState : !isReplaceOpen;
-  replaceRow.style.display = isReplaceOpen ? "flex" : "none";
-  findToggleReplaceBtn.classList.toggle("expanded", isReplaceOpen);
-  findToggleReplaceBtn.setAttribute("aria-expanded", String(isReplaceOpen));
-  if (isReplaceOpen) {
-    replaceInput.focus();
-  }
-}
-
-function toggleRegexMode() {
-  isRegexMode = !isRegexMode;
-  findRegexToggleBtn.classList.toggle("active", isRegexMode);
-  findRegexToggleBtn.setAttribute("aria-pressed", String(isRegexMode));
-  runFind();
-}
-
-function toggleMatchCaseMode() {
-  isMatchCaseMode = !isMatchCaseMode;
-  findCaseToggleBtn.classList.toggle("active", isMatchCaseMode);
-  findCaseToggleBtn.setAttribute("aria-pressed", String(isMatchCaseMode));
-  runFind();
-}
-
-function toggleExactMatchMode() {
-  isExactMatchMode = !isExactMatchMode;
-  findExactToggleBtn.classList.toggle("active", isExactMatchMode);
-  findExactToggleBtn.setAttribute("aria-pressed", String(isExactMatchMode));
-  runFind();
-}
-
-function getFindOptions() {
-  return {
-    useRegex: isRegexMode,
-    matchCase: isMatchCaseMode,
-    exactMatch: isExactMatchMode
-  };
-}
-
-function runFind({ preserveActive = false, selectActive = true } = {}) {
-  const query = findInput.value;
-  const previousActiveIndex = activeMatchIndex;
-  findInput.classList.remove("invalid-regex");
-
-  const result = findTextMatches(primaryEditor.getText(), query, getFindOptions());
-  findMatches = result.matches;
-  hasInvalidFindPattern = result.invalidPattern;
-
-  if (hasInvalidFindPattern) {
-    activeMatchIndex = -1;
-    findInput.classList.add("invalid-regex");
-    updateFindCount("Invalid");
-    updateFindResultsToggle();
-    updateFindHighlights();
-    renderFindResults();
+function handleFindUpdate(find, { selected = false } = {}) {
+  if (!find.open) {
+    toggleFindResults(false);
     return;
   }
-
-  if (findMatches.length > 0) {
-    activeMatchIndex = preserveActive && previousActiveIndex >= 0
-      ? Math.min(previousActiveIndex, findMatches.length - 1)
-      : 0;
-
-    if (selectActive) {
-      selectMatch(activeMatchIndex, false); // Do not steal focus from search input
-    } else {
-      updateFindCount();
-      updateFindHighlights();
-      renderFindResults();
-    }
-  } else {
-    activeMatchIndex = -1;
-    updateFindCount();
-    updateFindHighlights();
-    renderFindResults();
-  }
-
+  if (selected) updateCursorPositionForText(primaryEditor);
+  renderFindResults();
   updateFindResultsToggle();
 }
 
-function selectMatch(index, focusEditor = false) {
-  if (index < 0 || index >= findMatches.length) return;
-  activeMatchIndex = index;
-  const match = findMatches[index];
-  
-  const editorIsVisible = currentLayoutMode !== "reading" || isSplitNoteMode;
-  if (focusEditor && editorIsVisible) {
-    primaryEditor.focus();
-  }
-  primaryEditor.setSelection(match.start, match.end, { scroll: false });
-  updateCursorPositionForText(primaryEditor);
-
-  updateFindCount();
-  updateFindHighlights();
-  scrollActiveMatchIntoView(match);
-  renderFindResults();
-}
-
-function scrollActiveMatchIntoView(match) {
-  primaryEditor.scrollToRange(match.start, match.end);
-
-  if (currentLayoutMode === "reading" && !isSplitNoteMode) {
-    const previewHighlight = markdownPreview.querySelector("mark.active-match");
-    previewHighlight?.scrollIntoView?.({ block: "center", inline: "nearest" });
-  }
-}
-
-function findNext() {
-  if (findMatches.length === 0) return;
-  const nextIndex = (activeMatchIndex + 1) % findMatches.length;
-  selectMatch(nextIndex);
-}
-
-function findPrev() {
-  if (findMatches.length === 0) return;
-  const prevIndex = (activeMatchIndex - 1 + findMatches.length) % findMatches.length;
-  selectMatch(prevIndex);
-}
-
-function applyFindReplacement(edit) {
-  primaryEditor.applyEdit(edit);
-}
-
-function replaceOne() {
-  if (findMatches.length === 0 || activeMatchIndex < 0) return;
-  const match = findMatches[activeMatchIndex];
-  const replaceText = replaceInput.value;
-  const text = primaryEditor.getText();
-  
-  let replacement = replaceText;
-  if (isRegexMode) {
-    try {
-      const regex = new RegExp(findInput.value, isMatchCaseMode ? "" : "i");
-      replacement = match.text.replace(regex, replaceText);
-    } catch (e) {}
-  }
-  
-  const newContent = text.substring(0, match.start) + replacement + text.substring(match.end);
-  const targetIndex = activeMatchIndex;
-  const selectionAfterReplacement = match.start + replacement.length;
-  applyFindReplacement({
-    value: newContent,
-    selectionStart: selectionAfterReplacement,
-    selectionEnd: selectionAfterReplacement
-  });
-
-  // The edit's input event refreshes findMatches through handleEditorInput.
-  // Keep advancing from the match the user just replaced.
-  if (findMatches.length > 0) {
-    selectMatch(Math.min(targetIndex, findMatches.length - 1), false);
-  }
-}
-
-function replaceAll() {
-  if (findMatches.length === 0) return;
-  const query = findInput.value;
-  const replaceText = replaceInput.value;
-  const text = primaryEditor.getText();
-  const totalMatches = findMatches.length;
-  
-  let newContent = text;
-  let replacementRegex = null;
-  if (isRegexMode) {
-    try {
-      replacementRegex = new RegExp(query, isMatchCaseMode ? "" : "i");
-    } catch (e) {
-      return;
-    }
-  }
-
-  for (let index = findMatches.length - 1; index >= 0; index -= 1) {
-    const match = findMatches[index];
-    const replacement = replacementRegex
-      ? match.text.replace(replacementRegex, replaceText)
-      : replaceText;
-    newContent = newContent.substring(0, match.start) +
-      replacement +
-      newContent.substring(match.end);
-  }
-
-  applyFindReplacement({
-    value: newContent,
-    selectionStart: newContent.length,
-    selectionEnd: newContent.length
-  });
-
-  showNotification(`Replaced ${totalMatches} occurrences`);
-  if (findMatches.length > 0) {
-    selectMatch(0, false);
-  }
-}
-
-function updateFindCount(customText) {
-  if (customText) {
-    findCount.textContent = customText;
-  } else if (findMatches.length === 0) {
-    findCount.textContent = "0 of 0";
-  } else {
-    findCount.textContent = `${activeMatchIndex + 1} of ${findMatches.length}`;
-  }
-}
-
 function updateFindResultsToggle() {
-  findResultsToggleBtn.disabled = !findInput.value || hasInvalidFindPattern;
+  const { query, invalidPattern } = findBar.state();
+  findResultsToggleBtn.disabled = !query || invalidPattern;
 }
 
 function toggleFindResults(forceState) {
   const shouldOpen = typeof forceState === "boolean" ? forceState : !isFindResultsOpen;
-  if (shouldOpen && (!findInput.value || hasInvalidFindPattern)) return;
+  const { query, invalidPattern } = findBar.state();
+  if (shouldOpen && (!query || invalidPattern)) return;
 
   if (shouldOpen && isSplitNoteMode) {
     const previousFocus = document.activeElement;
@@ -2578,14 +2296,15 @@ function toggleFindAllNotesMode() {
 }
 
 function getFindResultEntries() {
+  const { query, matches, options } = findBar.state();
   if (!isFindAllNotesMode) {
     const activeNote = notes.find((note) => note.id === activeNoteId);
     if (!activeNote) return [];
-    return findMatches.map((match, matchIndex) => ({ activeNote, match, matchIndex }));
+    return matches.map((match, matchIndex) => ({ activeNote, match, matchIndex }));
   }
 
   return notes.flatMap((note) => {
-    const result = findTextMatches(note.content || "", findInput.value, getFindOptions());
+    const result = findTextMatches(note.content || "", query, options);
     return result.matches.map((match, matchIndex) => ({
       activeNote: note,
       match,
@@ -2597,6 +2316,7 @@ function getFindResultEntries() {
 function renderFindResults() {
   if (!isFindResultsOpen) return;
 
+  const { query, invalidPattern, activeIndex } = findBar.state();
   const resultEntries = getFindResultEntries();
   const matchLabel = resultEntries.length === 1 ? "match" : "matches";
   if (isFindAllNotesMode && resultEntries.length > 0) {
@@ -2609,9 +2329,9 @@ function renderFindResults() {
   findResultsList.replaceChildren();
 
   let emptyMessage = "";
-  if (!findInput.value) {
+  if (!query) {
     emptyMessage = "Enter a search term to see every match.";
-  } else if (hasInvalidFindPattern) {
+  } else if (invalidPattern) {
     emptyMessage = "Fix the regular expression to show results.";
   } else if (resultEntries.length === 0) {
     emptyMessage = isFindAllNotesMode
@@ -2629,7 +2349,7 @@ function renderFindResults() {
 
   const fragment = document.createDocumentFragment();
   const hasActiveEntry = resultEntries.some(({ activeNote, matchIndex }) =>
-    activeNote.id === activeNoteId && matchIndex === activeMatchIndex
+    activeNote.id === activeNoteId && matchIndex === activeIndex
   );
 
   resultEntries.forEach(({ activeNote, match, matchIndex }, index) => {
@@ -2643,7 +2363,7 @@ function renderFindResults() {
     button.dataset.matchIndex = String(matchIndex);
     button.dataset.matchStart = String(match.start);
     button.dataset.matchEnd = String(match.end);
-    const isActive = activeNote.id === activeNoteId && matchIndex === activeMatchIndex;
+    const isActive = activeNote.id === activeNoteId && matchIndex === activeIndex;
     button.tabIndex = isActive || (!hasActiveEntry && index === 0) ? 0 : -1;
     const noteContext = isFindAllNotesMode ? `${activeNote.title}, ` : "";
     button.setAttribute(
@@ -2704,10 +2424,10 @@ function activateFindResult(button, focusEditor) {
     loadActiveNote();
   }
 
-  const matchIndex = findMatches.findIndex(
+  const matchIndex = findBar.state().matches.findIndex(
     (match) => match.start === matchStart && match.end === matchEnd
   );
-  if (matchIndex >= 0) selectMatch(matchIndex, focusEditor);
+  if (matchIndex >= 0) findBar.select(matchIndex, { focusEditor });
 }
 
 function handleFindResultKeydown(event) {
@@ -2738,71 +2458,6 @@ function handleFindResultKeydown(event) {
   [...findResultsList.querySelectorAll(".find-result-button")]
     .find((result) => result.dataset.noteId === noteId && result.dataset.matchStart === matchStart)
     ?.focus();
-}
-
-function clearPreviewHighlights() {
-  if (!previewHighlightsRendered) return;
-
-  markdownPreview.querySelectorAll("mark.find-preview-match").forEach((highlight) => {
-    highlight.replaceWith(document.createTextNode(highlight.textContent));
-  });
-  markdownPreview.normalize();
-  previewHighlightsRendered = false;
-}
-
-function updatePreviewHighlights() {
-  clearPreviewHighlights();
-
-  if (
-    currentLayoutMode !== "reading" ||
-    isSplitNoteMode ||
-    !isFindBarOpen ||
-    !findInput.value ||
-    hasInvalidFindPattern ||
-    findMatches.length === 0
-  ) {
-    return;
-  }
-
-  const textNodes = [];
-  const walker = document.createTreeWalker(
-    markdownPreview,
-    window.NodeFilter.SHOW_TEXT
-  );
-  let node;
-  while ((node = walker.nextNode())) textNodes.push(node);
-
-  let previewMatchIndex = 0;
-  textNodes.forEach((textNode) => {
-    const nodeMatches = findTextMatches(
-      textNode.nodeValue,
-      findInput.value,
-      getFindOptions()
-    ).matches
-      .map((match) => ({ ...match, previewIndex: previewMatchIndex++ }));
-
-    for (let index = nodeMatches.length - 1; index >= 0; index -= 1) {
-      const match = nodeMatches[index];
-      textNode.splitText(match.end);
-      const matchedText = textNode.splitText(match.start);
-      const highlight = document.createElement("mark");
-
-      highlight.className = "find-preview-match";
-      highlight.dataset.findIndex = String(match.previewIndex);
-      highlight.textContent = matchedText.nodeValue;
-      if (match.previewIndex === activeMatchIndex) {
-        highlight.classList.add("active-match");
-      }
-
-      matchedText.replaceWith(highlight);
-      previewHighlightsRendered = true;
-    }
-  });
-}
-
-function updateFindHighlights() {
-  updatePreviewHighlights();
-  primaryEditor.setFindMatches(isFindBarOpen && findInput.value ? findMatches : [], activeMatchIndex);
 }
 
 // ----------------------------------------------------
