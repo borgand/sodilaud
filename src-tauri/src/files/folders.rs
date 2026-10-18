@@ -90,7 +90,12 @@ fn list_within(
             continue;
         }
         let is_link = entry.file_type().is_ok_and(|kind| kind.is_symlink());
-        if is_link && !path.canonicalize().is_ok_and(|real| real.starts_with(root)) {
+        // A link to a folder the tree hides would be listed but refused on expand.
+        if is_link
+            && !path.canonicalize().is_ok_and(|real| {
+                real.starts_with(root) && (!is_dir || is_shown_folder(root, &real))
+            })
+        {
             continue;
         }
         if ignore.is_ignored(&path, is_dir) {
@@ -390,6 +395,22 @@ mod tests {
         let listing = list(&root, &root).unwrap();
         assert_eq!(names(&listing), ["alias", "real"]);
         assert_eq!(listing.entries[0].kind, EntryKind::Folder);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_link_to_a_folder_the_tree_hides_is_not_listed() {
+        use std::os::unix::fs::symlink;
+        let root = scratch("hiddenlink");
+        for folder in [".secret", "build", "shown"] {
+            fs::create_dir(root.join(folder)).unwrap();
+        }
+        fs::write(root.join(".gitignore"), "build/\n").unwrap();
+        symlink(root.join(".secret"), root.join("to-secret")).unwrap();
+        symlink(root.join("build"), root.join("to-build")).unwrap();
+        symlink(root.join("shown"), root.join("to-shown")).unwrap();
+        let listing = list(&root, &root).unwrap();
+        assert_eq!(names(&listing), ["shown", "to-shown"]);
     }
 
     #[cfg(unix)]
