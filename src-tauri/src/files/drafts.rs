@@ -257,11 +257,24 @@ pub fn create(dir: &Path, request_id: &str, title: &str, content: &str) -> Resul
 /// `draft.json`, so a retried save presents the same one.
 pub fn save_token(path: &Path) -> Result<String, String> {
     let folder = path.parent().ok_or("The draft has no folder.")?;
-    let mut meta = read_meta(folder).ok_or("The draft's details are missing.")?;
+    let mut meta = match read_meta(folder) {
+        Some(meta) => meta,
+        None => Meta {
+            request_id: String::new(),
+            fingerprint: String::new(),
+            created_at: draft_in(folder).map_or_else(now_ms, |draft| draft.created_at),
+            save_token: String::new(),
+        },
+    };
     if meta.save_token.is_empty() {
         meta.save_token = uuid::Uuid::new_v4().simple().to_string();
         let bytes = serde_json::to_vec_pretty(&meta).map_err(|e| e.to_string())?;
-        write_owner_only(&folder.join(META), &bytes)?;
+        let temp = folder.join(format!("{META}.tmp"));
+        write_owner_only(&temp, &bytes)?;
+        fs::rename(&temp, folder.join(META)).map_err(|e| {
+            let _ = fs::remove_file(&temp);
+            format!("Could not write the draft: {e}")
+        })?;
     }
     Ok(meta.save_token)
 }
@@ -414,6 +427,26 @@ mod tests {
         assert_eq!(token.len(), 32);
         assert_eq!(save_token(&first).unwrap(), token);
         assert_ne!(save_token(&second).unwrap(), token);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_draft_with_damaged_details_still_gets_a_stable_save_token() {
+        let dir = std::env::temp_dir().join(format!("sodilaud-token-{}", uuid::Uuid::new_v4()));
+        for damage in [None, Some("{not json")] {
+            let path = match create(&dir, &format!("d{damage:?}"), "Plan", "x").unwrap() {
+                Created::New(draft) | Created::Existing(draft) => PathBuf::from(draft.path),
+            };
+            let meta = path.parent().unwrap().join(META);
+            match damage {
+                Some(text) => fs::write(&meta, text).unwrap(),
+                None => fs::remove_file(&meta).unwrap(),
+            }
+            let token = save_token(&path).unwrap();
+            assert_eq!(token.len(), 32);
+            assert_eq!(save_token(&path).unwrap(), token);
+            assert!(!path.parent().unwrap().join("draft.json.tmp").exists());
+        }
         let _ = fs::remove_dir_all(&dir);
     }
 
