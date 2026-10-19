@@ -208,3 +208,21 @@ test("Save to Quick Notes waits while Save As asks where to save the draft", asy
   answer(null);
   await app.settle();
 });
+
+test("Discard waits while a draft is saved to Quick Notes", async () => {
+  let finish = null;
+  const { app, openDraft } = await bootWithDraft({
+    instance: 41,
+    handlers: {
+      draft_save_to_notes: () => new Promise((resolve, reject) => { finish = { resolve, reject }; })
+    }
+  });
+  await openDraft();
+  app.click("draft-save-notes-btn");
+  await app.until(() => finish !== null);
+  byId(app, "draft-discard-btn").click();
+  await app.settle();
+  assert.equal(called(app, "draft_discard").length, 0);
+  finish.reject({ message: "Quick Notes is not available." });
+  await app.settle();
+});

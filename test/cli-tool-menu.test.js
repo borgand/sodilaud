@@ -18,6 +18,6 @@ test("the Sodilaud menu opens the command line tool dialog in Rust", async () =>
   await app.settle();
 
   assert.equal(actionsDropdown.classList.contains("show"), false);
-  assert.equal(document.activeElement, actionsButton);
+  assert.ok(document.activeElement === actionsButton, "focus returns to the actions button");
   assert.equal(app.invocations.filter((call) => call.command === "cli_tool_offer").length, 1);
 });

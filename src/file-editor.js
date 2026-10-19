@@ -777,7 +777,7 @@ export function createFileEditor({
 
   async function discardDraft(id = model.active()?.id) {
     const buffer = model.get(id);
-    if (!buffer?.draft) return false;
+    if (!buffer?.draft || lockedId !== null) return false;
     try {
       if (!(await invoke("draft_discard", { path: buffer.path, ask: true }))) return false;
     } catch (error) {

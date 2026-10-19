@@ -372,6 +372,17 @@ pub fn folder_open_dialog(
     add_root(&files, window.label(), &root).map(Some)
 }
 
+/// A draft lives in app data, which is not a folder to browse.
+fn refuse_draft_folder(files: &Files, file: &Path) -> Result<(), FileError> {
+    if files.is_draft(file) {
+        return Err(FileError::new(
+            FileErrorCode::Unsupported,
+            "A draft is not in a folder. Save it as a file first.".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 /// Show Folder in Sidebar: the folder of a file open in this window becomes
 /// a root of it.
 #[tauri::command]
@@ -382,6 +393,7 @@ pub fn folder_browse(
 ) -> Result<FolderRoot, FileError> {
     require_main(window.label())?;
     let file = files.require(&path)?;
+    refuse_draft_folder(&files, &file)?;
     let file_text = file.to_string_lossy().to_string();
     let label = window.label();
     if files
@@ -598,8 +610,9 @@ pub fn draft_save_to_notes(
         .and_then(Path::file_name)
         .map(|name| name.to_string_lossy().to_string())
         .unwrap_or_default();
+    let token = drafts::save_token(&path).map_err(FileError::other)?;
     let arguments = serde_json::json!({
-        "requestId": format!("draft-{folder}"),
+        "requestId": format!("draft-{folder}-{token}"),
         "title": title,
         "content": text,
     });
@@ -690,6 +703,19 @@ mod tests {
         assert!(!path.parent().unwrap().exists());
         assert!(!comments::file_for(&comment_dir, &path).exists());
         assert!(files.drafts().is_empty());
+    }
+
+    #[test]
+    fn a_draft_is_never_shown_as_a_folder() {
+        let dir = std::env::temp_dir().join(format!("sodilaud-browse-{}", uuid::Uuid::new_v4()));
+        let draft = match drafts::create(&dir, "r", "Plan", "# Plan\n").unwrap() {
+            drafts::Created::New(draft) | drafts::Created::Existing(draft) => draft,
+        };
+        let files = Files::for_test_with_drafts(Some(dir.clone()));
+        let error = refuse_draft_folder(&files, Path::new(&draft.path)).unwrap_err();
+        assert_eq!(error.code, FileErrorCode::Unsupported);
+        assert!(refuse_draft_folder(&files, &dir.join("other.md")).is_ok());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

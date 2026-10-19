@@ -105,6 +105,10 @@ struct Meta {
     request_id: String,
     fingerprint: String,
     created_at: u64,
+    /// Secret to the app: keeps the Quick Notes request id from being guessed
+    /// by an agent that can see the draft's path.
+    #[serde(default)]
+    save_token: String,
 }
 
 fn fingerprint(title: &str, content: &str) -> String {
@@ -229,6 +233,7 @@ pub fn create(dir: &Path, request_id: &str, title: &str, content: &str) -> Resul
         request_id: request_id.to_string(),
         fingerprint: wanted.clone(),
         created_at,
+        save_token: String::new(),
     };
     let written = restrict_folder(&folder)
         .and_then(|()| write_owner_only(&file, content.as_bytes()))
@@ -246,6 +251,19 @@ pub fn create(dir: &Path, request_id: &str, title: &str, content: &str) -> Resul
         path: file.to_string_lossy().to_string(),
         created_at,
     }))
+}
+
+/// The token for the draft at `path`, made on first use and kept in its
+/// `draft.json`, so a retried save presents the same one.
+pub fn save_token(path: &Path) -> Result<String, String> {
+    let folder = path.parent().ok_or("The draft has no folder.")?;
+    let mut meta = read_meta(folder).ok_or("The draft's details are missing.")?;
+    if meta.save_token.is_empty() {
+        meta.save_token = uuid::Uuid::new_v4().simple().to_string();
+        let bytes = serde_json::to_vec_pretty(&meta).map_err(|e| e.to_string())?;
+        write_owner_only(&folder.join(META), &bytes)?;
+    }
+    Ok(meta.save_token)
 }
 
 /// Every draft in `dir`, newest first.
@@ -383,6 +401,20 @@ mod tests {
             create(&dir, "r2", "T", "body").unwrap(),
             Created::New(_)
         ));
+    }
+
+    #[test]
+    fn a_save_token_is_made_once_per_draft_and_kept() {
+        let dir = std::env::temp_dir().join(format!("sodilaud-token-{}", uuid::Uuid::new_v4()));
+        let new = |request: &str| match create(&dir, request, "Plan", request).unwrap() {
+            Created::New(draft) | Created::Existing(draft) => PathBuf::from(draft.path),
+        };
+        let (first, second) = (new("one"), new("two"));
+        let token = save_token(&first).unwrap();
+        assert_eq!(token.len(), 32);
+        assert_eq!(save_token(&first).unwrap(), token);
+        assert_ne!(save_token(&second).unwrap(), token);
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

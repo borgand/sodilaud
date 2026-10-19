@@ -63,8 +63,7 @@ reopen at the next launch.
 ## Folders
 
 **File → Open Folder…** (`Cmd+Shift+O`, `Ctrl+Shift+O` on Windows and Linux), the start page's
-**Open Folder…**, and **Show Folder in Sidebar** (in the open files list's context menu for a
-file) add a folder to the **Folders** section of the sidebar. Each window has its own folders;
+**Open Folder…**, and **Show Folder in Sidebar** (File menu, for the shown file) add a folder to the **Folders** section of the sidebar. Each window has its own folders;
 they come back after a restart with the folders you had expanded. Remove a folder with its
 **×** button ("Remove <name> from the sidebar"); nothing on disk changes.
 
