@@ -155,6 +155,36 @@ function followHref(view, href) {
   if (follow) follow(view, href);
 }
 
+const CLICK_SLOP_PX = 4;
+
+// A press on a link follows it on release, unless the pointer travelled: then it
+// is a drag that selects text, as it would anywhere else in the editor.
+function pressLink(view, event, href) {
+  event.preventDefault();
+  const doc = view.dom.ownerDocument;
+  const start = { x: event.clientX, y: event.clientY };
+  const link = eventElement(event)?.closest(".cm-lp-link, a[href]");
+  let anchor = null;
+  const onMove = move => {
+    if (anchor === null) {
+      if (Math.hypot(move.clientX - start.x, move.clientY - start.y) <= CLICK_SLOP_PX) return;
+      view.focus();
+      anchor = view.posAtCoords(start) ?? view.posAtDOM(link);
+    }
+    const head = view.posAtCoords({ x: move.clientX, y: move.clientY }) ?? anchor;
+    view.dispatch({ selection: { anchor, head }, userEvent: "select.pointer" });
+  };
+  const onUp = up => {
+    doc.removeEventListener("mousemove", onMove, true);
+    doc.removeEventListener("mouseup", onUp, true);
+    if (anchor === null && Math.hypot(up.clientX - start.x, up.clientY - start.y) <= CLICK_SLOP_PX) {
+      followHref(view, href);
+    }
+  };
+  doc.addEventListener("mousemove", onMove, true);
+  doc.addEventListener("mouseup", onUp, true);
+}
+
 function showMermaid(wrapper, view, widget) {
   const { renderer, source } = widget;
   wrapper.dataset.source = source;
@@ -287,9 +317,8 @@ class TableWidget extends WidgetType {
       const element = eventElement(event);
       if (element?.closest(".cm-lp-table-composer")) return;
       const link = element?.closest("a[href]");
-      if (link && isOpenLinkClick(event, view)) {
-        event.preventDefault();
-        followHref(view, link.getAttribute("href"));
+      if (link && isPlainClick(event)) {
+        pressLink(view, event, link.getAttribute("href"));
         return;
       }
       if (!isPrimaryClick(event, view)) return;
@@ -996,13 +1025,13 @@ function isMacNavigator(nav) {
   return /mac|iphone|ipad|ipod/i.test(platform);
 }
 
-// macOS turns Ctrl-click into a right-click, so the link modifier is Cmd there.
+// macOS turns Ctrl-click into a right-click.
 function isMacView(view) {
   return isMacNavigator(view.dom.ownerDocument.defaultView?.navigator ?? globalThis.navigator);
 }
 
-function isOpenLinkClick(event, view) {
-  return isMacView(view) ? event.metaKey : event.ctrlKey;
+function isPlainClick(event) {
+  return event.button === 0 && !(event.metaKey || event.ctrlKey || event.altKey || event.shiftKey);
 }
 
 function isPrimaryClick(event, view) {
@@ -1015,8 +1044,9 @@ function isPrimaryClick(event, view) {
  * unless the mode facet is "live".
  *
  * @param {object} [options]
- * @param {(href: string) => void} [options.onOpenLink] called when a link is followed: Cmd-click
- *   (Ctrl-click off macOS) or its hover button; `#anchor` links go to onFollowAnchor instead
+ * @param {(href: string) => void} [options.onOpenLink] called when a link is followed by a plain
+ *   click; Cmd-click (Ctrl-click off macOS) places the caret instead. `#anchor` links go to
+ *   onFollowAnchor instead
  * @param {(fragment: string) => void} [options.onFollowAnchor] called for `#anchor` links; without
  *   one, the editor scrolls to the anchor itself
  * @param {object} [options.mermaid] a renderer from createMermaidRenderer; without one,
@@ -1059,13 +1089,12 @@ export function livePreview({ onOpenLink, onFollowAnchor, mermaid } = {}) {
         return true;
       }
 
-      if (isOpenLinkClick(event, view)) {
-        const link = element.closest(".cm-lp-link");
-        if (link) {
-          event.preventDefault();
-          follow(view, link.getAttribute("data-href") ?? "");
-          return true;
-        }
+      const link = element.closest(".cm-lp-link");
+      if (link && isPlainClick(event)) {
+        const href = link.getAttribute("data-href") ?? "";
+        if (resolveLinkAction(href).kind === "ignore") return false;
+        pressLink(view, event, href);
+        return true;
       }
       return false;
     }
@@ -1080,89 +1109,6 @@ export function livePreview({ onOpenLink, onFollowAnchor, mermaid } = {}) {
     blockFocusSync,
     mermaidThemeSync,
     inlinePreview,
-    followButton,
     handlers
   ];
 }
-
-const FOLLOW_HIDE_DELAY_MS = 300;
-const linkHref = link => link.getAttribute("data-href") ?? link.getAttribute("href") ?? "";
-
-// A plain click places the cursor and reveals a link's Markdown, so hovering a
-// rendered link shows a button that follows it without touching the cursor.
-// It sits outside the content DOM, where CodeMirror's own handlers never see it.
-const followButton = ViewPlugin.fromClass(class {
-  constructor(view) {
-    this.view = view;
-    this.link = null;
-    this.hideTimer = null;
-    const document = view.dom.ownerDocument;
-    this.button = document.createElement("button");
-    this.button.type = "button";
-    this.button.className = "cm-lp-follow";
-    this.button.setAttribute("aria-label", "Follow link");
-    this.button.hidden = true;
-    this.button.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17L17 7M9 7h8v8" /></svg>';
-    this.button.addEventListener("mousedown", event => event.preventDefault());
-    this.button.addEventListener("click", event => {
-      event.preventDefault();
-      const href = this.link ? linkHref(this.link) : "";
-      this.hide();
-      if (href) followHref(view, href);
-    });
-    this.button.addEventListener("mouseenter", () => clearTimeout(this.hideTimer));
-    this.button.addEventListener("mouseleave", () => this.scheduleHide());
-    this.onOver = event => this.over(event);
-    this.onScroll = () => this.hide();
-    this.onLeave = () => this.scheduleHide();
-    view.dom.append(this.button);
-    view.dom.addEventListener("mouseover", this.onOver);
-    view.dom.addEventListener("mouseleave", this.onLeave);
-    view.scrollDOM.addEventListener("scroll", this.onScroll);
-  }
-
-  over(event) {
-    const element = eventElement(event);
-    if (!element || this.button.contains(element)) return;
-    const link = isLive(this.view.state) ? element.closest(".cm-lp-link, .cm-lp-table a[href]") : null;
-    if (!link) {
-      if (this.link) this.scheduleHide();
-      return;
-    }
-    clearTimeout(this.hideTimer);
-    if (link === this.link && !this.button.hidden) return;
-    const href = linkHref(link);
-    if (resolveLinkAction(href).kind === "ignore") return;
-    this.link = link;
-    const rects = link.getClientRects();
-    const rect = rects.length ? rects[rects.length - 1] : link.getBoundingClientRect();
-    const host = this.view.dom.getBoundingClientRect();
-    this.button.style.left = `${rect.right - host.left + 2}px`;
-    this.button.style.top = `${rect.top - host.top + (rect.height - 18) / 2}px`;
-    this.button.title = `Follow link: ${href}`;
-    this.button.hidden = false;
-  }
-
-  scheduleHide() {
-    clearTimeout(this.hideTimer);
-    this.hideTimer = setTimeout(() => this.hide(), FOLLOW_HIDE_DELAY_MS);
-  }
-
-  hide() {
-    clearTimeout(this.hideTimer);
-    this.link = null;
-    this.button.hidden = true;
-  }
-
-  update(update) {
-    if (update.docChanged || update.viewportChanged) this.hide();
-  }
-
-  destroy() {
-    clearTimeout(this.hideTimer);
-    this.view.dom.removeEventListener("mouseover", this.onOver);
-    this.view.dom.removeEventListener("mouseleave", this.onLeave);
-    this.view.scrollDOM.removeEventListener("scroll", this.onScroll);
-    this.button.remove();
-  }
-});

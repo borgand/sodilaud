@@ -126,7 +126,7 @@ test("Reading mode finds headings and hunks by fragment", async () => {
   assert.equal(findReadingAnchor(root, 'x"]'), null);
 });
 
-test("Cmd-click on an anchor link scrolls Live mode instead of opening it", async () => {
+test("a plain click on an anchor link scrolls Live mode instead of opening it", async () => {
   const env = installEditorDom();
   env.window.marked = marked;
   Object.defineProperty(env.window.navigator, "platform", { value: "MacIntel", configurable: true });
@@ -148,9 +148,11 @@ test("Cmd-click on an anchor link scrolls Live mode instead of opening it", asyn
     };
     await settle();
     const link = href => [...env.document.querySelectorAll(".cm-lp-link")].find(element => element.getAttribute("data-href") === href);
-    const click = element => element.dispatchEvent(new env.window.MouseEvent("mousedown", {
-      bubbles: true, cancelable: true, button: 0, metaKey: true
-    }));
+    const click = element => {
+      for (const type of ["mousedown", "mouseup"]) {
+        element.dispatchEvent(new env.window.MouseEvent(type, { bubbles: true, cancelable: true, button: 0 }));
+      }
+    };
     click(link("#target"));
     assert.deepEqual(opened, []);
     assert.equal(scrolled.length, 1);

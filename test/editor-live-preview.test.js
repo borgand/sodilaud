@@ -2,58 +2,14 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { marked } from "marked";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
-import { installEditorDom } from "./helpers/cm-dom.js";
+import { setupLive as setup, settle } from "./helpers/live-editor.js";
 
 function loadHighlighter() {
   const context = {};
   vm.runInNewContext(`${readFileSync(new URL("../src/vendor/highlight.min.js", import.meta.url), "utf8")};this.hljs = hljs;`, context);
   return context.hljs;
-}
-
-const settle = () => new Promise(resolve => setTimeout(resolve, 0));
-
-async function setup(text, { focused = true, mermaid, hljs, comments = false } = {}) {
-  const env = installEditorDom();
-  env.window.marked = marked;
-  if (hljs) env.window.hljs = hljs;
-  const { createMarkdownEditor } = await import("../src/editor-view.js");
-  const live = await import("../src/editor-live-preview.js");
-  const commentsApi = await import("../src/editor-comments.js");
-  const opened = [];
-  const changes = [];
-  const selected = [];
-  const extensions = [live.livePreview({ onOpenLink: href => opened.push(href), mermaid: mermaid?.(env.document) })];
-  if (comments) extensions.push(commentsApi.commentsExtension({ onSubmit: async () => {}, onSelect: id => selected.push(id) }));
-  const editor = createMarkdownEditor({
-    parent: env.document.getElementById("host"),
-    ariaLabel: "t",
-    onChange: value => changes.push(value),
-    extensions
-  });
-  let hasFocus = focused;
-  Object.defineProperty(editor.view, "hasFocus", { get: () => hasFocus, configurable: true });
-  editor.loadText(text);
-  const t = {
-    env, editor, opened, changes, live, commentsApi, selected,
-    view: editor.view,
-    lines: () => [...editor.view.contentDOM.querySelectorAll(".cm-line")],
-    lineTexts: () => t.lines().map(line => line.textContent),
-    setFocus(value) { hasFocus = value; },
-    async caret(pos) {
-      editor.setSelection(pos, pos);
-      await settle();
-    },
-    mousedown(target, init = {}) {
-      const event = new env.window.MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0, ...init });
-      target.dispatchEvent(event);
-      return event;
-    },
-    done() { editor.destroy(); env.cleanup(); }
-  };
-  return t;
 }
 
 test("headings hide their marks unless the caret line is revealed", async () => {
@@ -117,42 +73,86 @@ async function clickLink(t, init = {}) {
 const caretLine = t => t.view.state.doc.lineAt(t.view.state.selection.main.head).number;
 const selectionStartLine = t => t.view.state.doc.lineAt(t.view.state.selection.main.from).number;
 
-test("Cmd-mousedown on a link opens it, a plain mousedown does not", async () => {
+test("a plain click on a link follows it on mouse up and leaves the caret", async () => {
+  const t = await setup("[l](https://x.y)\nother");
+  try {
+    const down = await clickLink(t, { clientX: 10, clientY: 10 });
+    assert.equal(down.defaultPrevented, true);
+    assert.deepEqual(t.opened, [], "nothing opens before the button is released");
+    t.mouseup(t.env.document, { clientX: 10, clientY: 10 });
+    assert.deepEqual(t.opened, ["https://x.y"]);
+    assert.equal(caretLine(t), 2, "following a link leaves the caret where it was");
+  } finally { t.done(); }
+});
+
+test("a press that drags off a link follows nothing", async () => {
+  const t = await setup("[l](https://x.y)\nother");
+  try {
+    await clickLink(t, { clientX: 10, clientY: 10 });
+    t.mousemove(t.env.document, { clientX: 40, clientY: 10 });
+    t.mouseup(t.env.document, { clientX: 40, clientY: 10 });
+    assert.deepEqual(t.opened, []);
+    t.mouseup(t.env.document, { clientX: 10, clientY: 10 });
+    assert.deepEqual(t.opened, [], "the listeners are gone after mouse up");
+  } finally { t.done(); }
+});
+
+test("Cmd-click on a link places the caret in it", async () => {
   const t = await setup("[l](https://x.y)\nother");
   setPlatform(t, "MacIntel");
   try {
-    assert.equal(t.view.hasFocus, true);
-    const open = await clickLink(t, { metaKey: true });
-    assert.deepEqual(t.opened, ["https://x.y"]);
-    assert.equal(open.defaultPrevented, true);
-    assert.equal(caretLine(t), 2, "opening a link leaves the caret where it was");
-
-    await clickLink(t);
-    assert.deepEqual(t.opened, ["https://x.y"], "a plain mousedown never opens the link");
+    await clickLink(t, { metaKey: true });
+    t.mouseup(t.env.document, {});
+    assert.deepEqual(t.opened, []);
     // jsdom has no layout, so CodeMirror maps the click to an approximate range;
     // what matters is that the selection now reaches into the link line.
-    assert.equal(selectionStartLine(t), 1, "a plain mousedown moves the selection into the link line");
+    assert.equal(selectionStartLine(t), 1);
   } finally { t.done(); }
 });
 
-test("on macOS Ctrl-click is a right-click, so only Cmd opens links", async () => {
-  const t = await setup("[l](https://x.y)\nother");
-  setPlatform(t, "MacIntel");
-  try {
-    await clickLink(t, { ctrlKey: true });
-    assert.deepEqual(t.opened, []);
-  } finally { t.done(); }
-});
-
-test("off macOS Ctrl-click opens links and Meta-click does not", async () => {
+test("off macOS Ctrl-click on a link places the caret and Meta-click follows nothing", async () => {
   const t = await setup("[l](https://x.y)\nother");
   setPlatform(t, "Win32");
   try {
     await clickLink(t, { metaKey: true });
+    t.mouseup(t.env.document, {});
     assert.deepEqual(t.opened, []);
-    const open = await clickLink(t, { ctrlKey: true });
-    assert.deepEqual(t.opened, ["https://x.y"]);
-    assert.equal(open.defaultPrevented, true);
+    await clickLink(t, { ctrlKey: true });
+    t.mouseup(t.env.document, {});
+    assert.deepEqual(t.opened, []);
+    assert.equal(selectionStartLine(t), 1);
+  } finally { t.done(); }
+});
+
+test("on macOS Ctrl-click is a right-click and follows nothing", async () => {
+  const t = await setup("[l](https://x.y)\nother");
+  setPlatform(t, "MacIntel");
+  try {
+    await clickLink(t, { ctrlKey: true });
+    t.mouseup(t.env.document, {});
+    assert.deepEqual(t.opened, []);
+  } finally { t.done(); }
+});
+
+test("a plain click on a link in a rendered table follows it", async () => {
+  const t = await setup("intro\n\n| [t](https://t.y) |\n|---|\n| 1 |\n\nafter");
+  try {
+    await t.caret(0);
+    const link = t.view.contentDOM.querySelector(".cm-lp-table a[href]");
+    assert.ok(link);
+    t.mousedown(link);
+    t.mouseup(link);
+    assert.deepEqual(t.opened, ["https://t.y"]);
+  } finally { t.done(); }
+});
+
+test("hovering a link shows no follow button", async () => {
+  const t = await setup("[l](https://x.y)\nother");
+  try {
+    await t.caret(t.editor.getText().length);
+    const link = t.view.contentDOM.querySelector(".cm-lp-link");
+    link.dispatchEvent(new t.env.window.MouseEvent("mouseover", { bubbles: true }));
+    assert.ok(!t.view.dom.querySelector(".cm-lp-follow"));
   } finally { t.done(); }
 });
 
