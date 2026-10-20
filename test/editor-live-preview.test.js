@@ -648,27 +648,100 @@ test("a fence label names the file, else the language, else says code", async ()
   assert.deepEqual(codeFenceMeta("js", null), { label: "js", language: "" });
 });
 
-test("a fenced block shows a header label and hides its closing fence until the caret is on them", async () => {
-  const text = "```js path=src/a.js\nlet a = 1;\n```\nend";
+test("a fenced block keeps its header and hides its closing fence with the caret inside", async () => {
+  const F = "```";
+  const text = `intro\n${F}js\nlet a;\nlet b;\n${F}\nafter`;
+  const t = await setup(text);
+  try {
+    await t.caret(text.indexOf("let a;") + 2);
+    assert.equal(t.view.contentDOM.querySelector(".cm-lp-fence-label")?.textContent, "js");
+    assert.ok(t.lineTexts().every(line => !line.includes(F)));
+    const lines = t.lines();
+    assert.ok(lines[1].classList.contains("cm-lp-codeblock-head"));
+    assert.ok(lines[4].classList.contains("cm-lp-codeblock-foot"));
+  } finally { t.done(); }
+});
+
+test("a cursor moved onto the header goes past it in the direction of travel", async () => {
+  const F = "```";
+  const text = `intro\n${F}js\nlet a;\nlet b;\n${F}\nafter`;
+  const t = await setup(text);
+  try {
+    const open = t.view.state.doc.line(2);
+    const first = t.view.state.doc.line(3);
+    await t.caret(first.from);
+    t.view.dispatch({ selection: { anchor: open.from + 2 }, userEvent: "select" });
+    assert.equal(t.view.state.selection.main.head, 5);
+    t.view.dispatch({ selection: { anchor: open.from + 2 }, userEvent: "select" });
+    assert.equal(t.view.state.selection.main.head, first.from);
+  } finally { t.done(); }
+});
+
+test("a cursor moved onto the closing fence goes past it", async () => {
+  const F = "```";
+  const text = `intro\n${F}js\nlet a;\nlet b;\n${F}\nafter`;
+  const t = await setup(text);
+  try {
+    const { doc } = t.view.state;
+    const last = doc.line(4);
+    const close = doc.line(5);
+    await t.caret(last.to);
+    t.view.dispatch({ selection: { anchor: close.from + 1 }, userEvent: "select" });
+    assert.equal(t.view.state.selection.main.head, doc.line(6).from);
+    t.view.dispatch({ selection: { anchor: close.from + 1 }, userEvent: "select" });
+    assert.equal(t.view.state.selection.main.head, last.to);
+  } finally { t.done(); }
+});
+
+test("a fence at the start of the document keeps an upward cursor on its first code line", async () => {
+  const text = "```js\nx\n```";
+  const t = await setup(text);
+  try {
+    await t.caret(6);
+    t.view.dispatch({ selection: { anchor: 1 }, userEvent: "select" });
+    assert.equal(t.view.state.selection.main.head, 6);
+  } finally { t.done(); }
+});
+
+test("a click on the label puts the caret on the first code line", async () => {
+  const F = "```";
+  const text = `intro\n${F}js\nlet a;\nlet b;\n${F}\nafter`;
   const t = await setup(text);
   try {
     await t.caret(text.length);
-    let lines = t.lines();
-    assert.ok(lines[0].classList.contains("cm-lp-codeblock-head"));
-    assert.equal(lines[0].querySelector(".cm-lp-fence-label")?.textContent, "src/a.js");
-    assert.equal(lines[0].textContent, "src/a.js");
-    assert.ok(lines[2].classList.contains("cm-lp-codeblock-foot"));
-    assert.equal(lines[2].textContent, "");
+    t.mousedown(t.view.contentDOM.querySelector(".cm-lp-fence-label"));
+    assert.equal(t.view.state.selection.main.head, t.view.state.doc.line(3).from);
+  } finally { t.done(); }
+});
 
-    await t.caret(2);
-    lines = t.lines();
-    assert.equal(lines[0].textContent, "```js path=src/a.js");
-    assert.ok(lines[0].classList.contains("cm-lp-codeblock-head"));
+test("Backspace at the first code line and Delete at the last leave the fences intact", async () => {
+  const F = "```";
+  const text = `intro\n${F}js\nlet a;\nlet b;\n${F}\nafter`;
+  const t = await setup(text);
+  try {
+    const { doc } = t.view.state;
+    const first = doc.line(3);
+    const last = doc.line(4);
+    await t.caret(first.from);
+    t.view.dispatch({ changes: { from: first.from - 1, to: first.from }, userEvent: "delete.backward" });
+    assert.equal(t.view.state.doc.toString(), text);
+    await t.caret(last.to);
+    t.view.dispatch({ changes: { from: last.to, to: last.to + 1 }, userEvent: "delete.forward" });
+    assert.equal(t.view.state.doc.toString(), text);
 
-    await t.caret(text.indexOf("```\nend") + 1);
-    lines = t.lines();
-    assert.equal(lines[2].textContent, "```");
-    assert.equal(lines[2].classList.contains("cm-lp-codeblock-foot"), false);
+    t.view.dispatch({ selection: { anchor: 0, head: first.from + 4 } });
+    t.view.dispatch({ changes: { from: 0, to: first.from + 4 }, userEvent: "delete" });
+    assert.equal(t.view.state.doc.toString(), text.slice(first.from + 4));
+  } finally { t.done(); }
+});
+
+test("an empty fenced block shows its fences when the caret is on them", async () => {
+  const F = "```";
+  const text = `a\n${F}\n${F}\nb`;
+  const t = await setup(text);
+  try {
+    await t.caret(text.indexOf(F) + 1);
+    assert.equal(t.lineTexts()[1], F);
   } finally { t.done(); }
 });
 

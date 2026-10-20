@@ -13,7 +13,16 @@ import {
   layer,
   syntaxTree
 } from "./vendor/codemirror.js";
-import { modeFacet, plainTextFacet, syntaxHighlightingFacet } from "./editor-view.js";
+import { syntaxHighlightingFacet } from "./editor-view.js";
+import {
+  fenceBody,
+  fenceCaretFilter,
+  fenceInfo,
+  headedFenceAt,
+  isLive,
+  isMermaidFence,
+  mermaidFacet
+} from "./editor-live-blocks.js";
 import { isSafeMarkdownUrl, renderMarkdown, resolveLinkAction } from "./markdown.js";
 import { scrollToAnchor } from "./editor-anchors.js";
 import { buildHunkElement, languageForPath, reviewHunkMeta } from "./diff-hunk.js";
@@ -58,8 +67,6 @@ function tableHtml(source) {
   }
   return html;
 }
-
-const isLive = state => state.facet(modeFacet) === "live" && !state.facet(plainTextFacet);
 
 function revealedLines(state, focused) {
   if (!focused) return [];
@@ -147,7 +154,6 @@ class ImageWidget extends WidgetType {
 
 const MERMAID_TYPING_PAUSE_MS = 300;
 
-const mermaidFacet = Facet.define({ combine: values => values.find(Boolean) ?? null });
 const followFacet = Facet.define({ combine: values => values.find(Boolean) ?? null });
 
 function followHref(view, href) {
@@ -506,12 +512,19 @@ class FenceLabelWidget extends WidgetType {
     const label = view.dom.ownerDocument.createElement("span");
     label.className = "cm-lp-fence-label";
     label.textContent = this.label;
+    label.addEventListener("mousedown", event => {
+      if (event.button !== 0) return;
+      const fence = headedFenceAt(view.state, view.posAtDOM(label), { mermaid: view.state.facet(mermaidFacet) !== null });
+      if (!fence) return;
+      event.preventDefault();
+      view.dispatch({ selection: EditorSelection.cursor(fence.first.from), userEvent: "select" });
+      view.focus();
+    });
     return label;
   }
 
-  // A click on the label places the cursor there and shows the fence.
   ignoreEvent() {
-    return false;
+    return true;
   }
 }
 
@@ -632,12 +645,13 @@ function buildInline(view, focused) {
     if (!marks.length) return;
     const open = doc.lineAt(node.from);
     lineDecorations.set(open.from, lineClasses["codeblock-head"]);
+    const headed = headedFenceAt(state, node.from, { mermaid: state.facet(mermaidFacet) !== null }) !== null;
     let close = marks.length > 1 ? doc.lineAt(marks.at(-1).from) : null;
-    if (close && (close.from === open.from || isRevealed(close.from, close.to))) close = null;
+    if (close && (close.from === open.from || (!headed && isRevealed(close.from, close.to)))) close = null;
     if (close) lineDecorations.set(close.from, lineClasses["codeblock-foot"]);
     if (handled.has(`fence:${node.from}`)) return;
     handled.add(`fence:${node.from}`);
-    if (!isRevealed(open.from, open.to)) {
+    if (headed || !isRevealed(open.from, open.to)) {
       ranges.push(Decoration.replace({ widget: new FenceLabelWidget(meta.label) }).range(marks[0].from, open.to));
     }
     if (close) hide(marks.at(-1).from, marks.at(-1).to);
@@ -843,21 +857,6 @@ const setTableFocus = StateEffect.define();
 const refreshMermaid = StateEffect.define();
 
 const TABLE_CONTAINERS = new Set(["Document", "BulletList", "OrderedList", "ListItem"]);
-
-function isMermaidFence(state, node) {
-  const info = node.getChild("CodeInfo");
-  return info !== null && state.doc.sliceString(info.from, info.to).trim().toLowerCase() === "mermaid";
-}
-
-function fenceInfo(state, node) {
-  const info = node.getChild("CodeInfo");
-  return info ? state.doc.sliceString(info.from, info.to) : "";
-}
-
-function fenceBody(state, node) {
-  const text = node.getChild("CodeText");
-  return text ? state.doc.sliceString(text.from, text.to) : "";
-}
 
 // A block shown as a widget fills its lines: nothing before it on its first
 // line, nothing after it on its last.
@@ -1109,6 +1108,7 @@ export function livePreview({ onOpenLink, onFollowAnchor, mermaid } = {}) {
 
   return [
     mermaidFacet.of(mermaid ?? null),
+    fenceCaretFilter,
     followFacet.of(follow),
     composerHost.of((state, composer) => isLive(state) && tableHostsComposer(state, composer)),
     blockField,
