@@ -187,6 +187,7 @@ const stillPencilBlock = (state, from) => pencilBlockAt(state, from)?.from === f
 export const rawBlocksField = StateField.define({
   create: () => [],
   update(value, tr) {
+    if (!isLive(tr.state)) return value.length ? [] : value;
     let list = value;
     for (const effect of tr.effects) {
       if (effect.is(toggleRawBlock)) {
@@ -247,9 +248,8 @@ export function pencilButton(document, pressed, onPress) {
   const button = document.createElement("button");
   button.type = "button";
   button.className = "cm-lp-pencil";
-  const label = pressed ? "Show rendered" : "Edit Markdown";
-  button.title = label;
-  button.setAttribute("aria-label", label);
+  button.title = pressed ? "Show rendered" : "Edit Markdown";
+  button.setAttribute("aria-label", "Edit Markdown");
   button.setAttribute("aria-pressed", String(pressed));
   const svg = document.createElementNS(SVG_NS, "svg");
   svg.setAttribute("viewBox", "0 0 16 16");

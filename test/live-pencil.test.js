@@ -47,6 +47,7 @@ test("the fence pencil shows the raw fences and keeps the caret; pressed again s
     const pressed = query(t, '.cm-lp-pencil[aria-pressed="true"]');
     assert.ok(pressed);
     assert.equal(pressed.title, "Show rendered");
+    assert.equal(pressed.getAttribute("aria-label"), "Edit Markdown");
     pressed.click();
     await settle();
     assert.ok(query(t, ".cm-lp-fence-label"));
@@ -110,5 +111,64 @@ test("an edit above a raw block keeps it raw", async () => {
     t.view.dispatch({ changes: { from: 0, insert: "x\n" }, userEvent: "input.type" });
     assert.ok(isRawBlock(t.view.state, FENCE_FROM + 2));
     assert.ok(t.lineTexts().includes(`${F}js`));
+  } finally { t.done(); }
+});
+
+test("a raw fence lets the caret sit on its fence lines and edit the info string", async () => {
+  const t = await setup();
+  try {
+    const { isRawBlock } = await blocks();
+    await t.caret(BODY + 2);
+    query(t, ".cm-lp-codeblock-head .cm-lp-pencil").click();
+    await settle();
+    const openEnd = FENCE_FROM + 5;
+    const closeAt = TEXT.indexOf(`\n${F}\nafter`) + 1;
+    await t.caret(openEnd);
+    assert.equal(t.view.state.selection.main.head, openEnd);
+    await t.caret(closeAt + 1);
+    assert.equal(t.view.state.selection.main.head, closeAt + 1);
+    await t.caret(openEnd);
+    t.view.dispatch({ changes: { from: openEnd - 1, to: openEnd }, userEvent: "delete.backward" });
+    assert.ok(t.view.state.doc.toString().includes(`${F}j\n`));
+    assert.ok(isRawBlock(t.view.state, FENCE_FROM));
+    t.view.dispatch({ changes: { from: openEnd - 1, insert: "s" }, userEvent: "input.type" });
+    await t.caret(FENCE_FROM + 5);
+    query(t, '.cm-lp-pencil[aria-pressed="true"]').click();
+    await settle();
+    assert.ok(!isRawBlock(t.view.state, FENCE_FROM));
+    assert.ok(t.view.state.selection.main.head >= t.view.state.doc.toString().indexOf("let a;"));
+    assert.ok(query(t, ".cm-lp-fence-label"));
+  } finally { t.done(); }
+});
+
+test("the table pencil while a fence is raw leaves only the table raw", async () => {
+  const t = await setup();
+  try {
+    const { isRawBlock, liveTableAt } = await blocks();
+    await t.caret(BODY + 2);
+    query(t, ".cm-lp-codeblock-head .cm-lp-pencil").click();
+    await settle();
+    query(t, ".cm-lp-table .cm-lp-pencil").click();
+    await settle();
+    assert.ok(!isRawBlock(t.view.state, FENCE_FROM));
+    assert.ok(isRawBlock(t.view.state, liveTableAt(t.view.state, TEXT.indexOf("| a")).from));
+    assert.ok(query(t, ".cm-lp-fence-label"));
+  } finally { t.done(); }
+});
+
+test("raw state does not survive leaving Live mode", async () => {
+  const t = await setup();
+  try {
+    const { isRawBlock } = await blocks();
+    await t.caret(BODY + 2);
+    query(t, ".cm-lp-codeblock-head .cm-lp-pencil").click();
+    await settle();
+    assert.ok(isRawBlock(t.view.state, FENCE_FROM));
+    t.editor.setMode("source");
+    await settle();
+    t.editor.setMode("live");
+    await settle();
+    assert.ok(!isRawBlock(t.view.state, FENCE_FROM));
+    assert.ok(query(t, ".cm-lp-fence-label"));
   } finally { t.done(); }
 });
