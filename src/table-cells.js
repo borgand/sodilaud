@@ -1,5 +1,3 @@
-import { isSeparatorRow } from "./editor-tables.js";
-
 function splitLine(lineText, lineFrom) {
   const segments = [];
   let segStart = 0;
@@ -135,10 +133,16 @@ export function newRowText(headerLineText, columns) {
   return `${indent}|${"  |".repeat(columns)}`;
 }
 
-function tableLine(line) {
-  if (isSeparatorRow(line.text)) return null;
+const pipedLine = (doc, n) => n >= 1 && splitLine(doc.line(n).text, 0).piped;
+
+// The cells of line `n` when it is a table row: it holds a pipe and is not
+// the second line of its run of such lines, which is the table's separator
+// whatever its dashes look like.
+function tableLine(doc, n) {
+  const line = doc.line(n);
   const { cells, piped } = splitLine(line.text, line.from);
-  return piped ? cells : null;
+  if (!piped || (pipedLine(doc, n - 1) && !pipedLine(doc, n - 2))) return null;
+  return cells;
 }
 
 function rectWalk(doc, a, b) {
@@ -146,8 +150,8 @@ function rectWalk(doc, a, b) {
   const to = Math.max(a, b);
   const start = doc.lineAt(from);
   const end = doc.lineAt(to);
-  const fromCells = tableLine(start);
-  const toCells = tableLine(end);
+  const fromCells = tableLine(doc, start.number);
+  const toCells = tableLine(doc, end.number);
   if (!fromCells || !toCells) return [];
   const fromCol = cellIndexAt(fromCells, from);
   const toCol = cellIndexAt(toCells, to);
@@ -156,7 +160,7 @@ function rectWalk(doc, a, b) {
   const colMax = Math.max(fromCol, toCol);
   const rows = [];
   for (let n = start.number; n <= end.number; n++) {
-    const cells = tableLine(doc.line(n));
+    const cells = tableLine(doc, n);
     if (!cells) continue;
     const picked = cells.slice(colMin, colMax + 1);
     if (picked.length) rows.push(picked);

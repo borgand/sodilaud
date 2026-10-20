@@ -187,13 +187,9 @@ struct Cell {
     text: String,
 }
 
-// The trimmed cells of a table line, with UTF-16 offsets into the line; None
-// for a line without an unescaped pipe or a separator row. Matches
-// tableLine in src/table-cells.js.
+// The trimmed cells of a line holding an unescaped pipe, with UTF-16 offsets
+// into the line; None for any other line.
 fn row_cells(line: &str) -> Option<Vec<Cell>> {
-    if is_separator_row(line) {
-        return None;
-    }
     let chars: Vec<char> = line.chars().collect();
     let mut units = Vec::with_capacity(chars.len() + 1);
     units.push(0);
@@ -247,39 +243,18 @@ fn row_cells(line: &str) -> Option<Vec<Cell>> {
     )
 }
 
-// A row of `|---|:--:|` cells between outer pipes, as isSeparatorRow in
-// src/editor-tables.js reads it.
-fn is_separator_row(line: &str) -> bool {
-    let chars: Vec<char> = line.chars().collect();
-    let Some(first) = chars.iter().position(|c| !c.is_whitespace()) else {
-        return false;
-    };
-    let Some(last) = chars.iter().rposition(|c| *c != ' ' && *c != '\t') else {
-        return false;
-    };
-    if chars[first] != '|' || chars[last] != '|' {
-        return false;
+// The cells of line `index` when it is a table row: it holds a pipe and is
+// not the second line of its run of such lines, which is the table's
+// separator whatever its dashes look like. Matches tableLine in
+// src/table-cells.js.
+fn table_row(lines: &[(usize, &str)], index: usize) -> Option<Vec<Cell>> {
+    let piped = |index: usize| row_cells(lines[index].1).is_some();
+    let separator = index >= 1 && piped(index - 1) && (index < 2 || !piped(index - 2));
+    if separator {
+        None
+    } else {
+        row_cells(lines[index].1)
     }
-    let escaped = |index: usize| {
-        chars[..index]
-            .iter()
-            .rev()
-            .take_while(|c| **c == '\\')
-            .count()
-            % 2
-            == 1
-    };
-    let pipes: Vec<usize> = (first..=last)
-        .filter(|&index| chars[index] == '|' && !escaped(index))
-        .collect();
-    pipes.len() >= 3
-        && pipes.windows(2).all(|pair| {
-            let cell: String = chars[pair[0] + 1..pair[1]].iter().collect();
-            let cell = cell.trim();
-            let cell = cell.strip_prefix(':').unwrap_or(cell);
-            let cell = cell.strip_suffix(':').unwrap_or(cell);
-            cell.len() >= 3 && cell.chars().all(|c| c == '-')
-        })
 }
 
 /// The cells of the rectangle from the cell holding `from` to the cell
@@ -307,8 +282,7 @@ pub(crate) fn cell_text(text: &str, from: usize, to: usize) -> String {
             .position(|cell| pos >= line_start + cell.seg_from && pos <= line_start + cell.seg_to)
     };
     let (first, last) = (line_of(from), line_of(to));
-    let (Some(first_cells), Some(last_cells)) =
-        (row_cells(lines[first].1), row_cells(lines[last].1))
+    let (Some(first_cells), Some(last_cells)) = (table_row(&lines, first), table_row(&lines, last))
     else {
         return String::new();
     };
@@ -320,8 +294,8 @@ pub(crate) fn cell_text(text: &str, from: usize, to: usize) -> String {
     };
     let (col_min, col_max) = (from_col.min(to_col), from_col.max(to_col));
     let mut rows = Vec::new();
-    for (_, line) in &lines[first..=last] {
-        let Some(cells) = row_cells(line) else {
+    for index in first..=last {
+        let Some(cells) = table_row(&lines, index) else {
             continue;
         };
         let picked: Vec<String> = cells
@@ -691,6 +665,23 @@ mod tests {
             comments[0].anchored_text,
             slice(&text, comments[0].from, comments[0].to)
         );
+    }
+
+    // The same vectors as "cellQuote skips the second line of any table as
+    // its separator" in test/table-cells.test.js.
+    #[test]
+    fn cell_text_skips_the_separator_of_any_table() {
+        let vectors = [
+            ("| a |\n|---|\n| b |", "b", "a\nb"),
+            ("| a | x |\n|-|-|\n| b | y |", "y", "a\tx\nb\ty"),
+            ("a | x\n--- | ---\nb | y", "y", "a\tx\nb\ty"),
+            ("p\n\n| a |\n|:-:|\n| b |\n| c |", "c", "a\nb\nc"),
+        ];
+        for (text, last, quote) in vectors {
+            let from = text.find('a').unwrap();
+            let to = text.rfind(last).unwrap() + 1;
+            assert_eq!(cell_text(text, from, to), quote, "{text}");
+        }
     }
 
     #[test]

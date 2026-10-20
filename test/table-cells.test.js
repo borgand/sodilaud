@@ -104,3 +104,20 @@ test("rectRanges and cellQuote follow the rectangle, not the source span", () =>
   assert.deepEqual(rectRanges(doc, to, from), rectRanges(doc, from, to));
   assert.equal(cellQuote(doc, to, from), cellQuote(doc, from, to));
 });
+
+// The same vectors as cell_text_skips_the_separator_of_any_table in
+// src-tauri/src/docs/comments.rs.
+test("cellQuote skips the second line of any table as its separator", () => {
+  const vectors = [
+    ["| a |\n|---|\n| b |", "b", "a\nb"],
+    ["| a | x |\n|-|-|\n| b | y |", "y", "a\tx\nb\ty"],
+    ["a | x\n--- | ---\nb | y", "y", "a\tx\nb\ty"],
+    ["p\n\n| a |\n|:-:|\n| b |\n| c |", "c", "a\nb\nc"]
+  ];
+  for (const [source, last, quote] of vectors) {
+    const doc = Text.of(source.split("\n"));
+    const from = source.indexOf("a");
+    const to = source.lastIndexOf(last) + 1;
+    assert.equal(cellQuote(doc, from, to), quote, source);
+  }
+});
