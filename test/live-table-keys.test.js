@@ -230,3 +230,48 @@ test("keys with Cmd, Ctrl or Alt keep their usual meaning", async () => {
     assert.notEqual(head(t), endOf(t, "| 1"));
   } finally { t.done(); }
 });
+
+const WIDE = "above\n\n| ab | cd |\n|---|---|\n| ef gh | ij kl |\n\nbelow";
+
+test("Home and End go to the focused cell's start and end", async () => {
+  const t = await setupLive(WIDE);
+  try {
+    await t.caret(posOf(t, "ij kl") + 3);
+    await key(t, "Home");
+    assert.equal(head(t), posOf(t, "ij kl"));
+    await key(t, "End");
+    assert.equal(head(t), endOf(t, "ij kl"));
+    await t.caret(posOf(t, "ef gh") + 3);
+    await key(t, "End");
+    assert.equal(head(t), endOf(t, "ef gh"));
+    assert.ok(await gridded(t));
+  } finally { t.done(); }
+});
+
+test("Shift+Home and Shift+End select to the focused cell's start and end", async () => {
+  const t = await setupLive(WIDE);
+  try {
+    const mid = posOf(t, "ij kl") + 3;
+    await t.caret(mid);
+    await key(t, "Home", { shiftKey: true });
+    assert.deepEqual([t.view.state.selection.main.anchor, head(t)], [mid, posOf(t, "ij kl")]);
+    assert.ok(await gridded(t));
+    await t.caret(posOf(t, "ef gh") + 3);
+    await key(t, "End", { shiftKey: true });
+    assert.deepEqual([t.view.state.selection.main.anchor, head(t)], [posOf(t, "ef gh") + 3, endOf(t, "ef gh")]);
+    assert.ok(await gridded(t));
+  } finally { t.done(); }
+});
+
+test("Cmd+Backspace deletes to the cell's start and no further", async () => {
+  const t = await setupLive(WIDE);
+  try {
+    await t.caret(posOf(t, "ij kl") + 3);
+    await key(t, "Backspace", { metaKey: true });
+    assert.ok(text(t).includes("| ef gh | kl |"), text(t));
+    assert.equal(head(t), posOf(t, "kl |"));
+    await key(t, "Backspace", { metaKey: true });
+    assert.ok(text(t).includes("| ef gh | kl |"), text(t));
+    assert.ok(await gridded(t));
+  } finally { t.done(); }
+});

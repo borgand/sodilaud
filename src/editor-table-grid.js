@@ -11,7 +11,8 @@ import {
   StateEffect,
   StateField,
   Transaction,
-  isolateHistory
+  isolateHistory,
+  keymap
 } from "./vendor/codemirror.js";
 import { PencilWidget, isLive, isMacView, isRawBlock, liveFocusField, liveTableAt } from "./editor-live-blocks.js";
 import { commentComposer, commentTarget, commentsDiffer } from "./editor-comments.js";
@@ -562,6 +563,36 @@ const gridKeys = Prec.highest(EditorView.domEventHandlers({
   cut: (event, view) => copyRect(event, view, true)
 }));
 
+// Home and End (with Shift, selecting) go to the focused cell's start and
+// end rather than the row's.
+const toCellEdge = (forward, extend) => view => {
+  const gridded = gridTable(view.state);
+  if (!gridded) return false;
+  const cell = focusedCell(gridded);
+  const pos = forward ? cell.to : cell.from;
+  const anchor = extend ? view.state.selection.main.anchor : pos;
+  view.dispatch({ selection: EditorSelection.single(anchor, pos), scrollIntoView: true, userEvent: "select" });
+  return true;
+};
+
+// Cmd+Backspace deletes to the focused cell's start rather than the line's.
+function deleteToCellStart(view) {
+  const gridded = gridTable(view.state);
+  const { main } = view.state.selection;
+  if (!gridded || gridded.rect || !main.empty || view.state.readOnly) return false;
+  const cell = focusedCell(gridded);
+  if (main.head > cell.from) {
+    view.dispatch({ changes: { from: cell.from, to: main.head }, scrollIntoView: true, userEvent: "delete.line" });
+  }
+  return true;
+}
+
+const cellEdgeKeys = Prec.highest(keymap.of([
+  { key: "Home", run: toCellEdge(false, false), shift: toCellEdge(false, true) },
+  { key: "End", run: toCellEdge(true, false), shift: toCellEdge(true, true) },
+  { mac: "Mod-Backspace", run: deleteToCellStart }
+]));
+
 function copyRect(event, view, cut) {
   if (!cellRect(view.state) || !event.clipboardData) return false;
   event.clipboardData.setData("text/plain", rectText(view.state));
@@ -627,6 +658,7 @@ export function gridExtension() {
     cellSnapFilter,
     gridEditFilter,
     gridKeys,
+    cellEdgeKeys,
     remoteSnap,
     EditorView.mouseSelectionStyle.of(tableMouseStyle)
   ];
