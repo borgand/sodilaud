@@ -556,6 +556,9 @@ const gridKeys = Prec.highest(EditorView.domEventHandlers({
     }
     if (!spec) return false;
     event.preventDefault();
+    // The window's own Escape (closing the find bar, say) is not for a key
+    // that left a cell.
+    if (event.key === "Escape") event.stopPropagation();
     view.dispatch({ ...spec, scrollIntoView: true });
     return true;
   },
