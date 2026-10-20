@@ -3923,7 +3923,14 @@ kbd {
   border: 1px solid var(--preview-table-border);
   padding: 8px 12px;
   text-align: left;
+  vertical-align: middle;
   line-height: var(--editor-line-height);
+  word-break: normal;
+  overflow-wrap: normal;
+}
+
+.cm-mode-live .cm-lp-ttoken {
+  white-space: nowrap;
 }
 
 .cm-mode-live .cm-lp-trow-head .cm-lp-tcell {

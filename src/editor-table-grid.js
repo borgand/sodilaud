@@ -13,6 +13,7 @@ import {
 } from "./vendor/codemirror.js";
 import { PencilWidget, isLive, isRawBlock, liveFocusField, liveTableAt } from "./editor-live-blocks.js";
 import { commentComposer, commentsDiffer } from "./editor-comments.js";
+import { keepsWhole } from "./markdown.js";
 import { pointToSource } from "./source-map.js";
 import { cellAt, escapeCellText, snapToCell, tableGrid } from "./table-cells.js";
 
@@ -51,6 +52,17 @@ const separatorLine = Decoration.line({ class: "cm-lp-trow cm-lp-trow-sep" });
 // Inclusive, so the hidden pipes at a cell's edges render inside it.
 const cellMark = Decoration.mark({ class: "cm-lp-tcell", inclusive: true });
 const focusedCellMark = Decoration.mark({ class: "cm-lp-tcell cm-lp-tcell-focus", inclusive: true });
+const wholeToken = Decoration.mark({ class: "cm-lp-ttoken" });
+
+// The short values the rendered table keeps from breaking (see
+// keepTableValuesWhole in markdown.js), so columns get the same widths.
+function wholeTokens(cell, ranges) {
+  let pos = cell.from;
+  for (const part of cell.text.split(/(\s+)/)) {
+    if (keepsWhole(part)) ranges.push(wholeToken.range(pos, pos + part.length));
+    pos += part.length;
+  }
+}
 
 /**
  * The decorations that draw the table at `gridded` (from gridTable) as a grid.
@@ -75,6 +87,7 @@ export function gridDecorations(state, gridded) {
       const end = last ? line.to : cell.segTo;
       const focused = index === gridded.cell?.row && col === gridded.cell?.col;
       ranges.push((focused ? focusedCellMark : cellMark).range(start, end));
+      wholeTokens(cell, ranges);
       hide(start, cell.from);
       hide(cell.to, end);
       start = end;

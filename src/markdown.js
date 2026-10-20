@@ -212,7 +212,7 @@ const BREAKABLE_CHARACTER = /[^\p{L}\p{N}\p{M}]/u;
 const CJK_CHARACTER = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
 const SHOW_TEXT = 4;
 
-function keepsWhole(token) {
+export function keepsWhole(token) {
   const length = [...token].length;
   return length > 1 && length <= TABLE_TOKEN_MAX_LENGTH &&
     BREAKABLE_CHARACTER.test(token) && !CJK_CHARACTER.test(token);

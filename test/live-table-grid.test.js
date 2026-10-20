@@ -303,3 +303,11 @@ test("emphasis in a rendered cell is bold or italic like the widget's", async ()
     assert.equal(t.view.contentDOM.querySelector(".cm-lp-tcell .cm-lp-em")?.textContent, "b");
   } finally { t.done(); }
 });
+
+test("grid cells keep the short values whole that the rendered table keeps whole", async () => {
+  const t = await setupLive("x\n\n| Date | Notes |\n|---|---|\n| 2026-09-30 | a long description |\n\ny");
+  try {
+    await t.caret(posOf(t, "a long"));
+    assert.deepEqual([...t.view.contentDOM.querySelectorAll(".cm-lp-ttoken")].map(span => span.textContent), ["2026-09-30"]);
+  } finally { t.done(); }
+});
