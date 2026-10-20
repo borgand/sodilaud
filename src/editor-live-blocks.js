@@ -17,6 +17,20 @@ import { tableGrid } from "./table-cells.js";
 
 export const isLive = state => state.facet(modeFacet) === "live" && !state.facet(plainTextFacet);
 
+// Whether the editor had focus at its last update, kept in state so decorations
+// built from state alone can depend on it.
+export const setLiveFocus = StateEffect.define();
+
+export const liveFocusField = StateField.define({
+  create: () => false,
+  update(value, tr) {
+    for (const effect of tr.effects) {
+      if (effect.is(setLiveFocus)) value = effect.value;
+    }
+    return value;
+  }
+});
+
 export const mermaidFacet = Facet.define({ combine: values => values.find(Boolean) ?? null });
 
 export function isMermaidFence(state, node) {

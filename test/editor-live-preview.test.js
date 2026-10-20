@@ -273,7 +273,7 @@ test("remote images never render, data images do", async () => {
   } finally { t.done(); }
 });
 
-test("tables render as an HTML widget until the caret enters them", async () => {
+test("tables render as an HTML widget until the caret enters them, then as a grid", async () => {
   const table = "| a | b |\n|---|---|\n| 1 | 2 |";
   const t = await setup(`intro\n\n${table}\n\nafter`);
   try {
@@ -282,7 +282,9 @@ test("tables render as an HTML widget until the caret enters them", async () => 
     assert.ok(t.lineTexts().every(text => !text.includes("|---")));
     await t.caret(t.editor.getText().indexOf("| 1"));
     assert.ok(!t.view.contentDOM.querySelector(".cm-lp-table"), "expected no match");
-    assert.ok(t.lineTexts().some(text => text.includes("|---")));
+    assert.equal(t.view.contentDOM.querySelectorAll(".cm-line.cm-lp-trow").length, 3);
+    assert.ok(t.lineTexts().every(text => !text.includes("|")));
+    assert.equal(t.editor.getSelection().start, t.editor.getText().indexOf("1 |"));
   } finally { t.done(); }
 });
 
@@ -297,14 +299,15 @@ test("the Live table widget keeps short values whole and scrolls wide tables", a
   } finally { t.done(); }
 });
 
-test("clicking a table widget moves the caret into the table", async () => {
+test("clicking a table widget moves the caret into the table's grid", async () => {
   const t = await setup("intro\n\n| a |\n|---|\n| 1 |");
   try {
     await t.caret(0);
     t.mousedown(t.view.contentDOM.querySelector(".cm-lp-table"));
     await settle();
-    assert.equal(t.editor.getSelection().start, 7);
+    assert.equal(t.editor.getSelection().start, 9);
     assert.ok(!t.view.contentDOM.querySelector(".cm-lp-table"), "expected no match");
+    assert.equal(t.view.contentDOM.querySelectorAll(".cm-line.cm-lp-trow").length, 3);
   } finally { t.done(); }
 });
 

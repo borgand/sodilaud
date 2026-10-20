@@ -264,7 +264,8 @@ test("a Reading composer left in another file is gone after switching back in Li
   view.dispatch({ selection: { anchor: view.state.doc.toString().indexOf("middle") } });
   await app.settle(100);
   assert.ok(!doc.querySelector(".cm-comment-composer"), "no composer lingers");
-  assert.ok(!view.contentDOM.querySelector(".cm-lp-table"), "the table reveals its source with the caret inside");
+  assert.ok(!view.contentDOM.querySelector(".cm-lp-table"), "the table widget gives way to the grid");
+  assert.ok(view.contentDOM.querySelector(".cm-lp-trow"), "the table is a grid with the caret inside");
 });
 
 test("a Live composer left in another file is gone after switching back in Reading", async () => {
@@ -290,7 +291,7 @@ test("a Live composer left in another file is gone after switching back in Readi
   assert.ok(!doc.querySelector(".cm-comment-composer"), "no composer lingers");
 });
 
-test("Live: a table ignores a Reading composer and reveals its source around the caret", async () => {
+test("Live: a table ignores a Reading composer and shows its grid around the caret", async () => {
   const app = await boot(10);
   const doc = app.dom.window.document;
   const { startCommentAt } = await import("../src/editor-comments.js");
@@ -302,5 +303,6 @@ test("Live: a table ignores a Reading composer and reveals its source around the
   view.dispatch({ selection: { anchor: from } });
   await app.settle(100);
   assert.ok(!doc.querySelector(".cm-comment-composer"), "the Reading composer is not drawn in Live");
-  assert.ok(!view.contentDOM.querySelector(".cm-lp-table"), "the table reveals its source with the caret inside");
+  assert.ok(!view.contentDOM.querySelector(".cm-lp-table"), "the table widget gives way to the grid");
+  assert.ok(view.contentDOM.querySelector(".cm-lp-trow"), "the table is a grid with the caret inside");
 });

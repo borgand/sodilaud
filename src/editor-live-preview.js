@@ -26,12 +26,15 @@ import {
   isLive,
   isMermaidFence,
   isRawBlock,
+  liveFocusField,
   mermaidFacet,
   pencilButton,
   pressPencil,
   rawBlockKeymap,
-  rawBlocksField
+  rawBlocksField,
+  setLiveFocus
 } from "./editor-live-blocks.js";
+import { focusedCell, gridExtension, gridTable, tableClickPos } from "./editor-table-grid.js";
 import { isSafeMarkdownUrl, renderMarkdown, resolveLinkAction } from "./markdown.js";
 import { scrollToAnchor } from "./editor-anchors.js";
 import { buildHunkElement, languageForPath, reviewHunkMeta } from "./diff-hunk.js";
@@ -351,7 +354,7 @@ class TableWidget extends WidgetType {
         selectComment(view, marked.getAttribute("data-comment-id"));
         return;
       }
-      const anchor = view.posAtDOM(wrapper);
+      const anchor = tableClickPos(wrapper, this.source, view.posAtDOM(wrapper), event);
       view.dispatch({ selection: EditorSelection.cursor(anchor) });
       view.focus();
     });
@@ -626,8 +629,13 @@ function buildInline(view, focused) {
   const ranges = [];
   const lineDecorations = new Map();
   const handled = new Set();
+  const gridded = gridTable(state);
+  const cell = gridded && focusedCell(gridded);
 
-  const isRevealed = (from, to) => touchesRevealed(state, revealed, from, to);
+  // In a grid table only the focused cell shows its Markdown.
+  const isRevealed = (from, to) => gridded && from >= gridded.from && to <= gridded.to
+    ? from <= cell.segTo && to >= cell.segFrom
+    : touchesRevealed(state, revealed, from, to);
   const singleLine = (from, to) => to > from && !doc.sliceString(from, to).includes("\n");
   const hide = (from, to) => {
     if (singleLine(from, to)) ranges.push(hidden.range(from, to));
@@ -753,6 +761,7 @@ function buildInline(view, focused) {
             if (!seen && !isRevealed(from, to) && singleLine(from, to)) ranges.push(ruleWidget.range(from, to));
             return false;
           case "Table":
+            return gridded?.from === from;
           case "CodeBlock":
           case "HTMLBlock":
             return false;
@@ -864,7 +873,9 @@ const inlinePreview = ViewPlugin.fromClass(class {
     if (
       !modeChanged && !treeChanged && !highlightingChanged && !update.docChanged && !update.selectionSet &&
       !update.viewportChanged && !update.focusChanged &&
-      update.startState.field(rawBlocksField) === update.state.field(rawBlocksField)
+      update.startState.field(rawBlocksField) === update.state.field(rawBlocksField) &&
+      update.startState.field(liveFocusField) === update.state.field(liveFocusField) &&
+      commentComposer(update.startState) === commentComposer(update.state)
     ) {
       return;
     }
@@ -872,7 +883,6 @@ const inlinePreview = ViewPlugin.fromClass(class {
   }
 }, { decorations: plugin => plugin.decorations });
 
-const setTableFocus = StateEffect.define();
 const refreshMermaid = StateEffect.define();
 
 // Whether the composer's whole range lies in one table that renders as a widget.
@@ -889,11 +899,12 @@ function tableHostsComposer(state, composer) {
   return hosted;
 }
 
-function buildBlocks(state, focused) {
+function buildBlocks(state) {
   if (!isLive(state)) return Decoration.none;
   const { doc } = state;
   const mermaid = state.facet(mermaidFacet);
-  const revealed = revealedLines(state, focused);
+  const revealed = revealedLines(state, state.field(liveFocusField));
+  const gridFrom = gridTable(state)?.from;
   const opened = commentComposer(state);
   // A Reading composer is drawn in the preview, never in a table here.
   const composer = opened?.outside ? null : opened;
@@ -919,7 +930,8 @@ function buildBlocks(state, focused) {
         // which a widget would hide.
         const hosts = composer !== null && composerWithin(composer, ref.from, ref.to);
         const partial = composer !== null && !hosts && composer.from < ref.to && composer.to > ref.from;
-        if ((!inside || hosts) && !partial) {
+        if (!hosts && (partial || gridFrom === ref.from)) return false;
+        if (!inside || hosts) {
           const source = doc.sliceString(ref.from, ref.to);
           const widget = new TableWidget(source, tableReview(state, ref.from, ref.to));
           ranges.push(Decoration.replace({ widget, block: true }).range(start.from, end.to));
@@ -947,15 +959,10 @@ function buildBlocks(state, focused) {
 }
 
 const blockField = StateField.define({
-  create: state => ({ focused: false, decorations: buildBlocks(state, false) }),
+  create: state => buildBlocks(state),
   update(value, tr) {
-    let { focused } = value;
-    let refreshed = false;
-    for (const effect of tr.effects) {
-      if (effect.is(setTableFocus)) focused = effect.value;
-      if (effect.is(refreshMermaid)) refreshed = true;
-    }
-    const changed = focused !== value.focused ||
+    const refreshed = tr.effects.some(effect => effect.is(refreshMermaid));
+    const changed = tr.startState.field(liveFocusField) !== tr.state.field(liveFocusField) ||
       refreshed ||
       tr.docChanged ||
       tr.selection !== undefined ||
@@ -964,9 +971,9 @@ const blockField = StateField.define({
       isLive(tr.startState) !== isLive(tr.state) ||
       syntaxTree(tr.startState) !== syntaxTree(tr.state);
     if (!changed) return value;
-    return { focused, decorations: buildBlocks(tr.state, focused) };
+    return buildBlocks(tr.state);
   },
-  provide: field => EditorView.decorations.from(field, value => value.decorations)
+  provide: field => EditorView.decorations.from(field)
 });
 
 // Code blocks get their background from a layer under the selection's, since a
@@ -987,7 +994,7 @@ const codeBlockLayer = layer({
     const box = line.getBoundingClientRect();
     const left = box.left - scroller.left + view.scrollDOM.scrollLeft;
     const top = view.documentTop - scroller.top + view.scrollDOM.scrollTop;
-    const widgets = view.state.field(blockField).decorations;
+    const widgets = view.state.field(blockField);
     const markers = [];
     const drawn = new Set();
     for (const { from, to } of view.visibleRanges) {
@@ -1016,11 +1023,11 @@ const codeBlockLayer = layer({
 
 const blockFocusSync = EditorView.updateListener.of(update => {
   const { view } = update;
-  if (update.state.field(blockField).focused === view.hasFocus) return;
+  if (update.state.field(liveFocusField) === view.hasFocus) return;
   queueMicrotask(() => {
-    const field = view.state.field(blockField, false);
-    if (field && field.focused !== view.hasFocus) {
-      view.dispatch({ effects: setTableFocus.of(view.hasFocus) });
+    const focused = view.state.field(liveFocusField, false);
+    if (focused !== undefined && focused !== view.hasFocus) {
+      view.dispatch({ effects: setLiveFocus.of(view.hasFocus) });
     }
   });
 });
@@ -1123,8 +1130,10 @@ export function livePreview({ onOpenLink, onFollowAnchor, mermaid } = {}) {
 
   return [
     mermaidFacet.of(mermaid ?? null),
+    liveFocusField,
     fenceCaretFilter,
     rawBlocksField,
+    gridExtension(),
     rawBlockKeymap,
     followFacet.of(follow),
     composerHost.of((state, composer) => isLive(state) && tableHostsComposer(state, composer)),

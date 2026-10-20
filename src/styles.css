@@ -3900,6 +3900,55 @@ kbd {
   margin-bottom: 0;
 }
 
+/* Grid mode: the table's own lines, drawn as one anonymous CSS table. */
+.cm-mode-live .cm-content {
+  border-collapse: collapse;
+}
+
+.cm-mode-live .cm-lp-trow {
+  display: table-row;
+}
+
+.cm-mode-live .cm-lp-tcell {
+  display: table-cell;
+  position: relative;
+  border: 1px solid var(--preview-table-border);
+  padding: 8px 12px;
+  text-align: left;
+}
+
+.cm-mode-live .cm-lp-trow-head .cm-lp-tcell {
+  background-color: var(--preview-table-head-bg);
+  font-weight: 600;
+}
+
+/* The header row parses as a heading; the rendered table does not color it. */
+.cm-mode-live .cm-lp-trow-head .syntax-heading {
+  color: inherit;
+}
+
+.cm-mode-live .cm-lp-trow-sep {
+  font-size: 0;
+  line-height: 0;
+}
+
+.cm-mode-live .cm-lp-tcell-focus {
+  outline: 1px solid var(--accent-color);
+  outline-offset: -1px;
+}
+
+.cm-mode-live .cm-lp-trow-head .cm-lp-tcell:last-child {
+  padding-right: 28px;
+}
+
+.cm-mode-live .cm-lp-tcell .cm-lp-pencil {
+  position: absolute;
+  top: 6px;
+  right: 4px;
+  float: none;
+  opacity: 1;
+}
+
 .cm-mode-live .cm-lp-table-composer {
   cursor: auto;
 }
