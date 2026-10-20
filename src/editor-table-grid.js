@@ -216,7 +216,8 @@ function snappedSelection(state, selection) {
 // rectangle of cells, with the caret in the head cell.
 const rectSelectionFilter = EditorState.transactionFilter.of(tr => {
   if (!tr.selection || tr.docChanged || !isLive(tr.state)) return tr;
-  if (!tr.isUserEvent("select.pointer") && !tr.isUserEvent("select.extend")) return tr;
+  const event = tr.annotation(Transaction.userEvent);
+  if (event !== "select" && !tr.isUserEvent("select.pointer") && !tr.isUserEvent("select.extend")) return tr;
   const { main } = tr.selection;
   if (main.empty) return tr;
   const table = renderedTableAt(tr.state, main.anchor);

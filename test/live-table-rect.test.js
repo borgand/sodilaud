@@ -85,8 +85,12 @@ test("Shift+ArrowRight past a cell edge starts a rectangle and Shift+arrows grow
   const t = await setupLive(T);
   try {
     await t.caret(endOf(t, "| 1"));
-    t.view.dispatch({ selection: { anchor: endOf(t, "| 1"), head: posOf(t, "**2**") }, userEvent: "select.extend" });
-    await settle();
+    // CodeMirror's own Shift+ArrowRight: the first press only reaches the
+    // hidden padding before the pipe, the second crosses it.
+    await key(t, "ArrowRight", { shiftKey: true });
+    assert.equal(grid.cellRect(t.view.state), null);
+    assert.equal(t.view.state.selection.main.head, endOf(t, "| 1") + 1);
+    await key(t, "ArrowRight", { shiftKey: true });
     let rect = t.view.state.field(grid.cellRectField);
     assert.deepEqual(rect.anchor, { row: 1, col: 0 });
     assert.deepEqual(rect.head, { row: 1, col: 1 });
