@@ -34,7 +34,7 @@ import {
   rawBlocksField,
   setLiveFocus
 } from "./editor-live-blocks.js";
-import { focusedCell, gridExtension, gridTable } from "./editor-table-grid.js";
+import { focusedCell, gridExtension, gridTable, tableMouseStyle } from "./editor-table-grid.js";
 import { isSafeMarkdownUrl, renderMarkdown, resolveLinkAction } from "./markdown.js";
 import { scrollToAnchor } from "./editor-anchors.js";
 import { buildHunkElement, languageForPath, reviewHunkMeta } from "./diff-hunk.js";
@@ -176,12 +176,14 @@ function followHref(view, href) {
 const CLICK_SLOP_PX = 4;
 
 // A press on a link follows it on release, unless the pointer travelled: then it
-// is a drag that selects text, as it would anywhere else in the editor.
-function pressLink(view, event, href) {
+// is a drag that selects text, as it would anywhere else in the editor. A
+// `style` (a CodeMirror mouse selection style) picks the selection for the drag.
+function pressLink(view, event, href, style = null) {
   event.preventDefault();
   const doc = view.dom.ownerDocument;
   const start = { x: event.clientX, y: event.clientY };
   const link = eventElement(event)?.closest(".cm-lp-link, a[href]");
+  let dragging = false;
   let anchor = null;
   const end = () => {
     doc.removeEventListener("mousemove", onMove, true);
@@ -192,17 +194,20 @@ function pressLink(view, event, href) {
       end();
       return;
     }
-    if (anchor === null) {
+    if (!dragging) {
       if (Math.hypot(move.clientX - start.x, move.clientY - start.y) <= CLICK_SLOP_PX) return;
+      dragging = true;
       view.focus();
-      anchor = view.posAtCoords(start) ?? view.posAtDOM(link);
+      if (!style) anchor = view.posAtCoords(start) ?? view.posAtDOM(link);
     }
-    const head = view.posAtCoords({ x: move.clientX, y: move.clientY }) ?? anchor;
-    view.dispatch({ selection: { anchor, head }, userEvent: "select.pointer" });
+    const selection = style
+      ? style.get(move, false, false)
+      : EditorSelection.single(anchor, view.posAtCoords({ x: move.clientX, y: move.clientY }) ?? anchor);
+    view.dispatch({ selection, userEvent: "select.pointer" });
   };
   const onUp = up => {
     end();
-    if (anchor === null && Math.hypot(up.clientX - start.x, up.clientY - start.y) <= CLICK_SLOP_PX) {
+    if (!dragging && Math.hypot(up.clientX - start.x, up.clientY - start.y) <= CLICK_SLOP_PX) {
       followHref(view, href);
     }
   };
@@ -344,7 +349,7 @@ class TableWidget extends WidgetType {
       if (element?.closest(".cm-lp-table-composer, .cm-lp-pencil")) return;
       const link = element?.closest("a[href]");
       if (link && isPlainClick(event) && resolveLinkAction(link.getAttribute("href")).kind !== "ignore") {
-        pressLink(view, event, link.getAttribute("href"));
+        pressLink(view, event, link.getAttribute("href"), tableMouseStyle(view, event));
         return;
       }
       if (!isPrimaryClick(event, view)) return;

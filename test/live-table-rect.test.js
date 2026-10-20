@@ -39,7 +39,11 @@ async function key(t, name, init = {}) {
 
 function clipboardEvent(t, type) {
   const event = new t.env.window.Event(type, { bubbles: true, cancelable: true });
-  const clipboardData = { data: {}, setData(kind, value) { this.data[kind] = value; } };
+  const clipboardData = {
+    data: {},
+    setData(kind, value) { this.data[kind] = value; },
+    clearData() { this.data = {}; }
+  };
   Object.defineProperty(event, "clipboardData", { value: clipboardData });
   t.view.contentDOM.dispatchEvent(event);
   return { event, clipboardData };
@@ -254,5 +258,108 @@ test("the widget's selection style follows the pointer from cell to cell", async
     const modified = new t.env.window.MouseEvent("mousedown", { bubbles: true, button: 0, shiftKey: true });
     Object.defineProperty(modified, "target", { value: start });
     assert.equal(grid.tableMouseStyle(t.view, modified), null);
+  } finally { t.done(); }
+});
+
+test("a remote change that deletes a selected row drops the rectangle", async () => {
+  const t = await setupLive(T);
+  try {
+    const { Transaction } = await import("../src/vendor/codemirror.js");
+    t.view.dispatch({ selection: { anchor: posOf(t, "5"), head: endOf(t, "3") }, userEvent: "select.pointer" });
+    await settle();
+    assert.ok(grid.cellRect(t.view.state));
+    const from = posOf(t, "\n| 4");
+    const to = endOf(t, "| 7 |");
+    t.view.dispatch({ changes: { from, to }, annotations: Transaction.remote.of(true) });
+    await settle();
+    assert.equal(t.view.state.field(grid.cellRectField), null);
+    assert.equal(grid.cellRect(t.view.state), null);
+    assert.equal(selectedCells(t), 0);
+  } finally { t.done(); }
+});
+
+test("a remote edit elsewhere keeps the rectangle, mapped", async () => {
+  const t = await setupLive(T);
+  try {
+    const { Transaction } = await import("../src/vendor/codemirror.js");
+    await drag(t, "2", "7");
+    const before = t.view.state.field(grid.cellRectField);
+    t.view.dispatch({ changes: { from: 0, insert: "intro " }, annotations: Transaction.remote.of(true) });
+    await settle();
+    const rect = t.view.state.field(grid.cellRectField);
+    assert.ok(rect);
+    assert.equal(rect.table, before.table + "intro ".length);
+    assert.equal(grid.rectText(t.view.state), "**2**\t3\n5 | 6\t7");
+  } finally { t.done(); }
+});
+
+test("a search match across a pipe stays a normal selection", async () => {
+  const t = await setupLive(T);
+  try {
+    const from = posOf(t, "1 | **2");
+    t.view.dispatch({ selection: { anchor: from, head: from + "1 | **2".length }, userEvent: "select.search" });
+    await settle();
+    assert.equal(grid.cellRect(t.view.state), null);
+    const { main } = t.view.state.selection;
+    assert.equal(main.from, from);
+    assert.equal(main.to, from + "1 | **2".length);
+  } finally { t.done(); }
+});
+
+test("a cross-cell selection keeps the transaction's own effects", async () => {
+  const t = await setupLive(T);
+  try {
+    const { StateEffect, StateField } = await import("../src/vendor/codemirror.js");
+    const mark = StateEffect.define();
+    const seen = StateField.define({
+      create: () => false,
+      update: (value, tr) => value || tr.effects.some(effect => effect.is(mark))
+    });
+    t.view.dispatch({ effects: StateEffect.appendConfig.of(seen) });
+    t.view.dispatch({ selection: { anchor: posOf(t, "b"), head: endOf(t, "5") }, effects: mark.of(null), userEvent: "select.pointer" });
+    await settle();
+    assert.ok(grid.cellRect(t.view.state));
+    assert.ok(t.view.state.field(seen));
+  } finally { t.done(); }
+});
+
+test("a drag from a link in the rendered table selects a rectangle from the link's cell", async () => {
+  const t = await setupLive("x\n\n| a | [l](https://x.y) |\n|---|---|\n| 1 | 2 |\n\ny");
+  try {
+    await t.caret(0);
+    const link = t.view.contentDOM.querySelector(".cm-lp-table a[href]");
+    assert.ok(link);
+    const target = [...t.view.contentDOM.querySelectorAll(".cm-lp-table td")].find(td => td.textContent === "1");
+    t.mousedown(link, { clientX: 10, clientY: 10 });
+    t.mousemove(target, { clientX: 40, clientY: 40, buttons: 1 });
+    await settle();
+    const rect = t.view.state.field(grid.cellRectField);
+    assert.ok(rect);
+    assert.deepEqual(rect.anchor, { row: 0, col: 1 });
+    assert.deepEqual(rect.head, { row: 1, col: 0 });
+    t.mouseup(t.view.contentDOM, { clientX: 40, clientY: 40 });
+    await settle();
+    assert.deepEqual(t.opened, []);
+  } finally { t.done(); }
+});
+
+test("Mod-a drops the rectangle", async () => {
+  const t = await setupLive(T);
+  try {
+    await drag(t, "b", "5");
+    await key(t, "a", { metaKey: true, keyCode: 65 });
+    assert.equal(grid.cellRect(t.view.state), null);
+    assert.equal(t.view.state.selection.main.to - t.view.state.selection.main.from, T.length);
+  } finally { t.done(); }
+});
+
+// CodeMirror's own copy handler then copies the selected text.
+test("copy without a rectangle leaves the event to CodeMirror", async () => {
+  const t = await setupLive(T);
+  try {
+    await drag(t, "**2", "**2");
+    const { clipboardData } = clipboardEvent(t, "copy");
+    assert.deepEqual(clipboardData.data, { "text/plain": "**2" });
+    assert.equal(text(t), T);
   } finally { t.done(); }
 });

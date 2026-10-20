@@ -64,10 +64,20 @@ export const cellRectField = StateField.define({
       }
     }
     if (!set && tr.selection) return null;
-    if (rect && (!isLive(tr.state) || renderedTableAt(tr.state, rect.table)?.from !== rect.table)) return null;
-    return rect;
+    return rect && isLive(tr.state) && rectGrid(tr.state, rect) ? rect : null;
   }
 });
+
+const cellFits = (grid, { row, col }) => row < grid.rows.length && col < grid.rows[row].cells.length;
+
+// The grid of the rendered table starting at the rectangle's `table`, when it
+// still holds both corner cells; otherwise null.
+function rectGrid(state, rect) {
+  const table = renderedTableAt(state, rect.table);
+  if (table?.from !== rect.table) return null;
+  const grid = gridOf(state, table);
+  return cellFits(grid, rect.anchor) && cellFits(grid, rect.head) ? grid : null;
+}
 
 /**
  * The selected rectangle with its table's grid and cells (rows of cells), and
@@ -76,12 +86,11 @@ export const cellRectField = StateField.define({
  */
 export function cellRect(state) {
   const rect = state.field(cellRectField, false);
-  if (!rect) return null;
-  const table = renderedTableAt(state, rect.table);
-  if (!table) return null;
-  const grid = gridOf(state, table);
+  const grid = rect && isLive(state) ? rectGrid(state, rect) : null;
+  if (!grid) return null;
   const cells = rectCells(grid, rect.anchor, rect.head);
-  return { table: table.from, grid, cells, from: cells[0][0].from, to: cells.at(-1).at(-1).to };
+  if (cells.some(row => !row.length)) return null;
+  return { table: rect.table, grid, cells, from: cells[0][0].from, to: cells.at(-1).at(-1).to };
 }
 
 /** The rectangle's cells as text: tab-separated cells, one line per row. */
@@ -206,7 +215,8 @@ function snappedSelection(state, selection) {
 // A user selection from one cell of a rendered table into another becomes a
 // rectangle of cells, with the caret in the head cell.
 const rectSelectionFilter = EditorState.transactionFilter.of(tr => {
-  if (!tr.selection || tr.docChanged || !tr.isUserEvent("select") || !isLive(tr.state)) return tr;
+  if (!tr.selection || tr.docChanged || !isLive(tr.state)) return tr;
+  if (!tr.isUserEvent("select.pointer") && !tr.isUserEvent("select.extend")) return tr;
   const { main } = tr.selection;
   if (main.empty) return tr;
   const table = renderedTableAt(tr.state, main.anchor);
@@ -215,12 +225,11 @@ const rectSelectionFilter = EditorState.transactionFilter.of(tr => {
   const anchor = cellAt(grid, main.anchor);
   const head = cellAt(grid, main.head);
   if (!anchor || !head || (anchor.row === head.row && anchor.col === head.col)) return tr;
-  return {
+  return [tr, {
     selection: EditorSelection.cursor(grid.rows[head.row].cells[head.col].to),
     effects: setCellRect.of({ table: table.from, anchor, head }),
-    userEvent: tr.annotation(Transaction.userEvent),
-    scrollIntoView: tr.scrollIntoView
-  };
+    sequential: true
+  }];
 });
 
 const cellSnapFilter = EditorState.transactionFilter.of(tr => {
@@ -378,9 +387,10 @@ function moveRectHead(grid, rect, key) {
 
 // Empties every cell of the rectangle in one undo step and keeps it selected.
 function clearRect(state, userEvent) {
-  if (state.readOnly) return {};
+  const rect = cellRect(state);
+  if (state.readOnly || !rect) return {};
   const value = state.field(cellRectField);
-  const { grid, cells } = cellRect(state);
+  const { grid, cells } = rect;
   const changes = state.changes(cells.flat().filter(cell => cell.to > cell.from).map(({ from, to }) => ({ from, to })));
   const head = columnIn(grid.rows[value.head.row], value.head.col);
   return { ...gridChange(changes, changes.mapPos(head.to), userEvent), effects: setCellRect.of(value) };
