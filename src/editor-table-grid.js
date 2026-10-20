@@ -379,6 +379,15 @@ const STEP = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRig
 
 const clamp = (value, max) => Math.min(Math.max(value, 0), max);
 
+// Shift+arrow across a cell's edge selects that cell and its neighbour in the
+// row at once, rather than first the hidden padding before the pipe.
+function startRect(gridded, col) {
+  const { row } = gridded.cell;
+  const head = { row, col };
+  const rect = { table: gridded.from, anchor: gridded.cell, head };
+  return { ...cursor(gridded.grid.rows[row].cells[col].to), effects: setCellRect.of(rect) };
+}
+
 function moveRectHead(grid, rect, key) {
   const [rowStep, colStep] = STEP[key];
   const row = clamp(rect.head.row + rowStep, grid.rows.length - 1);
@@ -465,11 +474,13 @@ function cellCommand(state, gridded, key, shift) {
       return line.number < doc.lines ? cursor(doc.line(line.number + 1).from) : null;
     }
     case "ArrowLeft":
-      if (shift || main.head > cell.from) return null;
+      if (shift) return main.head <= cell.from && col > 0 ? startRect(gridded, col - 1) : null;
+      if (main.head > cell.from) return null;
       if (col > 0) return cursor(cells[col - 1].to);
       return row > 0 ? cursor(rows[row - 1].cells.at(-1).to) : null;
     case "ArrowRight":
-      if (shift || main.head < cell.to) return null;
+      if (shift) return main.head >= cell.to && col < cells.length - 1 ? startRect(gridded, col + 1) : null;
+      if (main.head < cell.to) return null;
       if (col < cells.length - 1) return cursor(cells[col + 1].from);
       return lastRow ? null : cursor(rows[row + 1].cells[0].from);
     case "Escape":

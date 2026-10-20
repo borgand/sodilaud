@@ -85,11 +85,6 @@ test("Shift+ArrowRight past a cell edge starts a rectangle and Shift+arrows grow
   const t = await setupLive(T);
   try {
     await t.caret(endOf(t, "| 1"));
-    // CodeMirror's own Shift+ArrowRight: the first press only reaches the
-    // hidden padding before the pipe, the second crosses it.
-    await key(t, "ArrowRight", { shiftKey: true });
-    assert.equal(grid.cellRect(t.view.state), null);
-    assert.equal(t.view.state.selection.main.head, endOf(t, "| 1") + 1);
     await key(t, "ArrowRight", { shiftKey: true });
     let rect = t.view.state.field(grid.cellRectField);
     assert.deepEqual(rect.anchor, { row: 1, col: 0 });
@@ -365,5 +360,40 @@ test("copy without a rectangle leaves the event to CodeMirror", async () => {
     const { clipboardData } = clipboardEvent(t, "copy");
     assert.deepEqual(clipboardData.data, { "text/plain": "**2" });
     assert.equal(text(t), T);
+  } finally { t.done(); }
+});
+
+test("one Shift+ArrowLeft at a cell's start selects it and the cell before", async () => {
+  const t = await setupLive(T);
+  try {
+    await t.caret(posOf(t, "**2**"));
+    const event = await key(t, "ArrowLeft", { shiftKey: true });
+    assert.ok(event.defaultPrevented);
+    const rect = t.view.state.field(grid.cellRectField);
+    assert.deepEqual(rect.anchor, { row: 1, col: 1 });
+    assert.deepEqual(rect.head, { row: 1, col: 0 });
+    assert.equal(head(t), endOf(t, "| 1"));
+  } finally { t.done(); }
+});
+
+test("Shift+ArrowRight inside a cell's text selects text only", async () => {
+  const t = await setupLive(T);
+  try {
+    await t.caret(posOf(t, "**2**") + 1);
+    await key(t, "ArrowRight", { shiftKey: true });
+    assert.equal(grid.cellRect(t.view.state), null);
+    const { main } = t.view.state.selection;
+    assert.equal(main.anchor, posOf(t, "**2**") + 1);
+    assert.equal(main.head, posOf(t, "**2**") + 2);
+  } finally { t.done(); }
+});
+
+test("Shift+ArrowRight in a row's last cell is CodeMirror's", async () => {
+  const t = await setupLive(T);
+  try {
+    await t.caret(endOf(t, "| 3"));
+    await key(t, "ArrowRight", { shiftKey: true });
+    assert.equal(grid.cellRect(t.view.state), null);
+    assert.equal(t.view.state.selection.main.head, endOf(t, "| 3") + 1);
   } finally { t.done(); }
 });
