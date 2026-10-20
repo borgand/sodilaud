@@ -89,11 +89,57 @@ test("a press that drags off a link follows nothing", async () => {
   const t = await setup("[l](https://x.y)\nother");
   try {
     await clickLink(t, { clientX: 10, clientY: 10 });
-    t.mousemove(t.env.document, { clientX: 40, clientY: 10 });
+    const drags = [];
+    const dispatch = t.view.dispatch.bind(t.view);
+    t.view.dispatch = (...specs) => {
+      specs.forEach(spec => spec?.userEvent === "select.pointer" && drags.push(spec.selection));
+      return dispatch(...specs);
+    };
+    t.mousemove(t.env.document, { clientX: 40, clientY: 10, buttons: 1 });
     t.mouseup(t.env.document, { clientX: 40, clientY: 10 });
     assert.deepEqual(t.opened, []);
+    assert.ok(drags.length === 1, "the drag extends the selection");
     t.mouseup(t.env.document, { clientX: 10, clientY: 10 });
     assert.deepEqual(t.opened, [], "the listeners are gone after mouse up");
+  } finally { t.done(); }
+});
+
+test("a lost mouse up leaves no phantom drag", async () => {
+  const t = await setup("[l](https://x.y)\nother");
+  try {
+    await clickLink(t, { clientX: 10, clientY: 10 });
+    const drags = [];
+    const dispatch = t.view.dispatch.bind(t.view);
+    t.view.dispatch = (...specs) => {
+      specs.forEach(spec => spec?.userEvent === "select.pointer" && drags.push(spec));
+      return dispatch(...specs);
+    };
+    t.mousemove(t.env.document, { clientX: 40, clientY: 10, buttons: 0 });
+    t.mousemove(t.env.document, { clientX: 80, clientY: 10, buttons: 1 });
+    assert.ok(drags.length === 0);
+  } finally { t.done(); }
+});
+
+test("a double click on a link is left to the editor and follows nothing", async () => {
+  const t = await setup("[l](https://x.y)\nother");
+  try {
+    await clickLink(t, { detail: 2 });
+    t.mouseup(t.env.document, {});
+    assert.deepEqual(t.opened, []);
+    assert.ok(selectionStartLine(t) === 1);
+  } finally { t.done(); }
+});
+
+test("a plain click on an ignored-scheme link in a table places the caret", async () => {
+  const t = await setup("intro\n\n| [t](#) |\n|---|\n| 1 |\n\nafter");
+  try {
+    await t.caret(0);
+    const link = t.view.contentDOM.querySelector(".cm-lp-table a[href]");
+    assert.ok(link);
+    t.mousedown(link);
+    t.mouseup(link);
+    assert.deepEqual(t.opened, []);
+    assert.ok(t.view.state.selection.main.head > 0);
   } finally { t.done(); }
 });
 

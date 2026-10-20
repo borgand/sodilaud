@@ -56,5 +56,4 @@ export async function setupLive(text, { focused = true, mermaid, hljs, comments 
     done() { editor.destroy(); env.cleanup(); }
   };
   return t;
-  return t;
 }

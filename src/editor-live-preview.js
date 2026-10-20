@@ -165,7 +165,15 @@ function pressLink(view, event, href) {
   const start = { x: event.clientX, y: event.clientY };
   const link = eventElement(event)?.closest(".cm-lp-link, a[href]");
   let anchor = null;
+  const end = () => {
+    doc.removeEventListener("mousemove", onMove, true);
+    doc.removeEventListener("mouseup", onUp, true);
+  };
   const onMove = move => {
+    if (move.buttons === 0) {
+      end();
+      return;
+    }
     if (anchor === null) {
       if (Math.hypot(move.clientX - start.x, move.clientY - start.y) <= CLICK_SLOP_PX) return;
       view.focus();
@@ -175,8 +183,7 @@ function pressLink(view, event, href) {
     view.dispatch({ selection: { anchor, head }, userEvent: "select.pointer" });
   };
   const onUp = up => {
-    doc.removeEventListener("mousemove", onMove, true);
-    doc.removeEventListener("mouseup", onUp, true);
+    end();
     if (anchor === null && Math.hypot(up.clientX - start.x, up.clientY - start.y) <= CLICK_SLOP_PX) {
       followHref(view, href);
     }
@@ -317,7 +324,7 @@ class TableWidget extends WidgetType {
       const element = eventElement(event);
       if (element?.closest(".cm-lp-table-composer")) return;
       const link = element?.closest("a[href]");
-      if (link && isPlainClick(event)) {
+      if (link && isPlainClick(event) && resolveLinkAction(link.getAttribute("href")).kind !== "ignore") {
         pressLink(view, event, link.getAttribute("href"));
         return;
       }
@@ -1031,7 +1038,7 @@ function isMacView(view) {
 }
 
 function isPlainClick(event) {
-  return event.button === 0 && !(event.metaKey || event.ctrlKey || event.altKey || event.shiftKey);
+  return event.button === 0 && event.detail < 2 && !(event.metaKey || event.ctrlKey || event.altKey || event.shiftKey);
 }
 
 function isPrimaryClick(event, view) {
