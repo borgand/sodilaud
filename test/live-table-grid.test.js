@@ -387,3 +387,14 @@ for (const [platform, init] of [["MacIntel", { metaKey: true }], ["Linux x86_64"
     } finally { t.done(); }
   });
 }
+
+test("a state's grid is parsed once and shared by every reader", async () => {
+  const t = await setupLive(T);
+  try {
+    await t.caret(posOf(t, "1 |") + 1);
+    type(t, "x");
+    const { gridTable } = await import("../src/editor-table-grid.js");
+    const first = gridTable(t.view.state);
+    assert.ok(first && first === gridTable(t.view.state));
+  } finally { t.done(); }
+});

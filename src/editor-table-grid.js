@@ -34,7 +34,19 @@ import {
 // leaves them as they are.
 export const gridEdit = Annotation.define();
 
-const gridOf = (state, table) => tableGrid(state.doc.sliceString(table.from, table.to), table.from);
+// States never change, so each table's grid and the grid-mode table are
+// parsed once per state, however many fields, filters and keys ask.
+const gridCache = new WeakMap();
+const griddedCache = new WeakMap();
+
+function gridOf(state, table) {
+  let grids = gridCache.get(state);
+  if (!grids) gridCache.set(state, (grids = new Map()));
+  const key = `${table.from}:${table.to}`;
+  let grid = grids.get(key);
+  if (!grid) grids.set(key, (grid = tableGrid(state.doc.sliceString(table.from, table.to), table.from)));
+  return grid;
+}
 
 const withinCell = (cell, from, to) => from >= cell.segFrom && to <= cell.segTo;
 
@@ -107,6 +119,11 @@ export function rectText(state) {
  * `rect` is the selected rectangle of cells (see cellRect), or null.
  */
 export function gridTable(state) {
+  if (!griddedCache.has(state)) griddedCache.set(state, findGridTable(state));
+  return griddedCache.get(state);
+}
+
+function findGridTable(state) {
   if (!isLive(state) || !state.field(liveFocusField, false)) return null;
   const { main } = state.selection;
   const table = liveTableAt(state, main.head);
