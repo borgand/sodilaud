@@ -15,14 +15,22 @@ import {
 } from "./vendor/codemirror.js";
 import { syntaxHighlightingFacet } from "./editor-view.js";
 import {
+  PencilWidget,
+  TABLE_CONTAINERS,
   fenceBody,
   fenceCaretFilter,
   fenceInfo,
   fenceOptions,
+  fillsLines,
   headedFenceAt,
   isLive,
   isMermaidFence,
-  mermaidFacet
+  isRawBlock,
+  mermaidFacet,
+  pencilButton,
+  pressPencil,
+  rawBlockKeymap,
+  rawBlocksField
 } from "./editor-live-blocks.js";
 import { isSafeMarkdownUrl, renderMarkdown, resolveLinkAction } from "./markdown.js";
 import { scrollToAnchor } from "./editor-anchors.js";
@@ -312,7 +320,7 @@ class TableWidget extends WidgetType {
   updateDOM(dom, view) {
     if (dom.tableSource !== this.source) {
       for (const child of [...dom.childNodes]) {
-        if (!child.classList?.contains("cm-lp-table-composer")) child.remove();
+        if (!child.classList?.contains("cm-lp-table-composer") && !child.classList?.contains("cm-lp-pencil")) child.remove();
       }
       dom.insertAdjacentHTML("afterbegin", tableHtml(this.source));
       dom.tableSource = this.source;
@@ -327,9 +335,10 @@ class TableWidget extends WidgetType {
     wrapper.innerHTML = tableHtml(this.source);
     wrapper.tableSource = this.source;
     showTableReview(wrapper, view, this);
+    wrapper.append(pencilButton(view.dom.ownerDocument, false, () => pressPencil(view, view.posAtDOM(wrapper))));
     wrapper.addEventListener("mousedown", event => {
       const element = eventElement(event);
-      if (element?.closest(".cm-lp-table-composer")) return;
+      if (element?.closest(".cm-lp-table-composer, .cm-lp-pencil")) return;
       const link = element?.closest("a[href]");
       if (link && isPlainClick(event) && resolveLinkAction(link.getAttribute("href")).kind !== "ignore") {
         pressLink(view, event, link.getAttribute("href"));
@@ -500,16 +509,19 @@ class HunkWidget extends WidgetType {
 
 // The label a fenced code block shows in place of its opening fence.
 class FenceLabelWidget extends WidgetType {
-  constructor(label) {
+  constructor(label, from) {
     super();
     this.label = label;
+    this.from = from;
   }
 
   eq(other) {
-    return other.label === this.label;
+    return other.label === this.label && other.from === this.from;
   }
 
   toDOM(view) {
+    const wrapper = view.dom.ownerDocument.createElement("span");
+    wrapper.className = "cm-lp-fence-head";
     const label = view.dom.ownerDocument.createElement("span");
     label.className = "cm-lp-fence-label";
     label.textContent = this.label;
@@ -521,7 +533,8 @@ class FenceLabelWidget extends WidgetType {
       view.dispatch({ selection: EditorSelection.cursor(fence.first.from), userEvent: "select" });
       view.focus();
     });
-    return label;
+    wrapper.append(label, pencilButton(view.dom.ownerDocument, false, () => pressPencil(view, this.from)));
+    return wrapper;
   }
 
   ignoreEvent() {
@@ -546,6 +559,7 @@ const headingLine = classes => {
 for (const name of ["head", "foot", "highlighted"]) {
   lineClasses[`codeblock-${name}`] = Decoration.line({ class: `cm-lp-codeblock cm-lp-codeblock-${name}` });
 }
+lineClasses["codeblock-head-caret"] = Decoration.line({ class: "cm-lp-codeblock cm-lp-codeblock-head cm-lp-codeblock-caret" });
 
 const FENCE_PATH = /(?:^|\s)(?:path|file|filename|title)=(?:"([^"]*)"|'([^']*)'|(\S+))/;
 
@@ -645,15 +659,18 @@ function buildInline(view, focused) {
     const marks = node.getChildren("CodeMark");
     if (!marks.length) return;
     const open = doc.lineAt(node.from);
-    lineDecorations.set(open.from, lineClasses["codeblock-head"]);
-    const headed = headedFenceAt(state, node.from, fenceOptions(state)) !== null;
+    const raw = isRawBlock(state, node.from);
+    lineDecorations.set(open.from, lineClasses[isRevealed(node.from, node.to) ? "codeblock-head-caret" : "codeblock-head"]);
+    const headed = !raw && headedFenceAt(state, node.from, fenceOptions(state)) !== null;
     let close = marks.length > 1 ? doc.lineAt(marks.at(-1).from) : null;
-    if (close && (close.from === open.from || (!headed && isRevealed(close.from, close.to)))) close = null;
+    if (close && (close.from === open.from || raw || (!headed && isRevealed(close.from, close.to)))) close = null;
     if (close) lineDecorations.set(close.from, lineClasses["codeblock-foot"]);
     if (handled.has(`fence:${node.from}`)) return;
     handled.add(`fence:${node.from}`);
-    if (headed || !isRevealed(open.from, open.to)) {
-      ranges.push(Decoration.replace({ widget: new FenceLabelWidget(meta.label) }).range(marks[0].from, open.to));
+    if (raw) {
+      ranges.push(Decoration.widget({ widget: new PencilWidget(node.from, true), side: 1 }).range(open.to));
+    } else if (headed || !isRevealed(open.from, open.to)) {
+      ranges.push(Decoration.replace({ widget: new FenceLabelWidget(meta.label, node.from) }).range(marks[0].from, open.to));
     }
     if (close) hide(marks.at(-1).from, marks.at(-1).to);
     if (text && meta.language) {
@@ -846,7 +863,8 @@ const inlinePreview = ViewPlugin.fromClass(class {
     const highlightingChanged = update.startState.facet(syntaxHighlightingFacet) !== update.state.facet(syntaxHighlightingFacet);
     if (
       !modeChanged && !treeChanged && !highlightingChanged && !update.docChanged && !update.selectionSet &&
-      !update.viewportChanged && !update.focusChanged
+      !update.viewportChanged && !update.focusChanged &&
+      update.startState.field(rawBlocksField) === update.state.field(rawBlocksField)
     ) {
       return;
     }
@@ -856,15 +874,6 @@ const inlinePreview = ViewPlugin.fromClass(class {
 
 const setTableFocus = StateEffect.define();
 const refreshMermaid = StateEffect.define();
-
-const TABLE_CONTAINERS = new Set(["Document", "BulletList", "OrderedList", "ListItem"]);
-
-// A block shown as a widget fills its lines: nothing before it on its first
-// line, nothing after it on its last.
-function fillsLines(doc, ref) {
-  const start = doc.lineAt(ref.from);
-  return /^\s*$/.test(doc.sliceString(start.from, ref.from)) && ref.to === doc.lineAt(ref.to).to;
-}
 
 // Whether the composer's whole range lies in one table that renders as a widget.
 function tableHostsComposer(state, composer) {
@@ -901,6 +910,10 @@ function buildBlocks(state, focused) {
       const start = doc.lineAt(ref.from);
       const end = doc.lineAt(ref.to);
       const inside = touchesRevealed(state, revealed, ref.from, ref.to);
+      if (isTable && isRawBlock(state, ref.from)) {
+        ranges.push(Decoration.widget({ widget: new PencilWidget(ref.from, true), side: 1 }).range(start.to));
+        return false;
+      }
       if (isTable) {
         // A composer reaching past the table is drawn under its last line,
         // which a widget would hide.
@@ -947,6 +960,7 @@ const blockField = StateField.define({
       tr.docChanged ||
       tr.selection !== undefined ||
       commentsDiffer(tr.startState, tr.state) ||
+      tr.startState.field(rawBlocksField) !== tr.state.field(rawBlocksField) ||
       isLive(tr.startState) !== isLive(tr.state) ||
       syntaxTree(tr.startState) !== syntaxTree(tr.state);
     if (!changed) return value;
@@ -1110,6 +1124,8 @@ export function livePreview({ onOpenLink, onFollowAnchor, mermaid } = {}) {
   return [
     mermaidFacet.of(mermaid ?? null),
     fenceCaretFilter,
+    rawBlocksField,
+    rawBlockKeymap,
     followFacet.of(follow),
     composerHost.of((state, composer) => isLive(state) && tableHostsComposer(state, composer)),
     blockField,

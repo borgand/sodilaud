@@ -3789,6 +3789,47 @@ kbd {
   font-weight: 600;
 }
 
+.cm-lp-pencil {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 4px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.85em;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.cm-lp-pencil:hover,
+.cm-lp-pencil:focus-visible {
+  color: var(--text-secondary);
+  background-color: var(--preview-code-bg);
+}
+
+.cm-lp-pencil[aria-pressed="true"],
+.cm-lp-table:hover .cm-lp-pencil,
+.cm-lp-codeblock-head:hover .cm-lp-pencil,
+.cm-lp-codeblock-caret .cm-lp-pencil,
+.cm-lp-pencil:focus-visible {
+  opacity: 1;
+}
+
+.cm-lp-table .cm-lp-pencil {
+  position: absolute;
+  top: 6px;
+  right: 4px;
+}
+
+.cm-line .cm-lp-pencil,
+.cm-lp-fence-head .cm-lp-pencil {
+  float: right;
+}
+
 /* Highlighted code takes its colors from the tokens, as in Reading mode. */
 .cm-mode-live .cm-lp-codeblock-highlighted .syntax-code {
   color: inherit;
@@ -3840,6 +3881,7 @@ kbd {
 }
 
 .cm-mode-live .cm-lp-table.markdown-preview {
+  position: relative;
   flex: none;
   overflow: visible;
   min-width: 0;

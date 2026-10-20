@@ -1,8 +1,19 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { EditorSelection, EditorState, Facet, syntaxTree } from "./vendor/codemirror.js";
+import {
+  EditorSelection,
+  EditorState,
+  Facet,
+  Prec,
+  StateEffect,
+  StateField,
+  WidgetType,
+  keymap,
+  syntaxTree
+} from "./vendor/codemirror.js";
 import { modeFacet, plainTextFacet } from "./editor-view.js";
 import { reviewHunkMeta } from "./diff-hunk.js";
+import { tableGrid } from "./table-cells.js";
 
 export const isLive = state => state.facet(modeFacet) === "live" && !state.facet(plainTextFacet);
 
@@ -58,7 +69,41 @@ export function headedFenceAt(state, pos, { mermaid = false } = {}) {
   };
 }
 
+export const TABLE_CONTAINERS = new Set(["Document", "BulletList", "OrderedList", "ListItem"]);
+
+// A block shown as a widget fills its lines: nothing before it on its first
+// line, nothing after it on its last.
+export function fillsLines(doc, ref) {
+  const start = doc.lineAt(ref.from);
+  return /^\s*$/.test(doc.sliceString(start.from, ref.from)) && ref.to === doc.lineAt(ref.to).to;
+}
+
+// The table around `pos` that Live draws as a widget.
+export function liveTableAt(state, pos) {
+  let found = null;
+  syntaxTree(state).iterate({
+    from: pos,
+    to: pos,
+    enter: ref => {
+      if (found) return false;
+      if (TABLE_CONTAINERS.has(ref.name)) return true;
+      if (ref.name === "Table" && ref.from <= pos && pos <= ref.to && fillsLines(state.doc, ref)) {
+        found = { from: ref.from, to: ref.to };
+      }
+      return false;
+    }
+  });
+  return found;
+}
+
 export const fenceOptions = state => ({ mermaid: state.facet(mermaidFacet) !== null });
+
+// A fence whose hidden lines the caret and deletes must respect: not one the
+// pencil has switched to its raw Markdown.
+function guardedFenceAt(state, pos, options) {
+  const fence = headedFenceAt(state, pos, options);
+  return fence && !isRawBlock(state, fence.from) ? fence : null;
+}
 
 // Whether deleting fromA..toA would remove a hidden fence line's text, or join
 // a fence line onto code text that stays on the neighbouring line.
@@ -76,7 +121,7 @@ function breaksFence(fence, fromA, toA) {
 function skipHiddenFences(state, pos, backward, options) {
   const { doc } = state;
   for (let guard = 0; guard <= doc.lines; guard++) {
-    const fence = headedFenceAt(state, pos, options);
+    const fence = guardedFenceAt(state, pos, options);
     if (!fence) return pos;
     const line = doc.lineAt(pos);
     let next = pos;
@@ -102,12 +147,12 @@ export const fenceCaretFilter = EditorState.transactionFilter.of(tr => {
     let move = null;
     tr.changes.iterChangedRanges((fromA, toA) => {
       if (!heads.some(head => head >= fromA && head <= toA)) return;
-      const before = headedFenceAt(start, fromA, options);
+      const before = guardedFenceAt(start, fromA, options);
       if (before?.close && fromA === before.close.to && toA === fromA + 1) move = before.last.to;
-      const after = headedFenceAt(start, toA, options);
+      const after = guardedFenceAt(start, toA, options);
       if (after && toA === after.open.from && fromA === toA - 1) move = after.first.from;
       for (const pos of [fromA, toA]) {
-        const fence = headedFenceAt(start, pos, options);
+        const fence = guardedFenceAt(start, pos, options);
         if (fence && breaksFence(fence, fromA, toA)) blocked = true;
       }
     });
@@ -124,3 +169,125 @@ export const fenceCaretFilter = EditorState.transactionFilter.of(tr => {
   if (target === range.head) return tr;
   return [tr, { selection: EditorSelection.cursor(target), sequential: true }];
 });
+
+export const toggleRawBlock = StateEffect.define();
+
+// The block around `pos` that carries a pencil. `stillPencilBlock` below is the
+// one place that says whether the pencil still applies to the block at `from`.
+export function pencilBlockAt(state, pos) {
+  const table = liveTableAt(state, pos);
+  if (table) return { ...table, kind: "table" };
+  const fence = headedFenceAt(state, pos, fenceOptions(state));
+  return fence ? { from: fence.from, to: fence.to, kind: "fence" } : null;
+}
+
+const stillPencilBlock = (state, from) => pencilBlockAt(state, from)?.from === from;
+
+// Starts of the blocks shown as raw Markdown, kept only while the caret is in them.
+export const rawBlocksField = StateField.define({
+  create: () => [],
+  update(value, tr) {
+    let list = value;
+    for (const effect of tr.effects) {
+      if (effect.is(toggleRawBlock)) {
+        list = list.includes(effect.value) ? list.filter(from => from !== effect.value) : [...list, effect.value];
+      }
+    }
+    if (!list.length) return list.length === value.length ? value : list;
+    const { state } = tr;
+    const head = state.selection.main.head;
+    const kept = [];
+    for (const pos of list) {
+      const from = tr.changes.mapPos(pos, 1);
+      if (kept.includes(from) || !stillPencilBlock(state, from)) continue;
+      const block = pencilBlockAt(state, from);
+      if (head >= block.from && head <= block.to) kept.push(from);
+    }
+    return kept.length === value.length && kept.every((from, i) => from === value[i]) ? value : kept;
+  }
+});
+
+export const isRawBlock = (state, from) => state.field(rawBlocksField, false)?.includes(from) ?? false;
+
+export function pressPencil(view, from) {
+  const { state } = view;
+  const block = pencilBlockAt(state, from);
+  if (!block || block.from !== from) return;
+  const on = !isRawBlock(state, from);
+  const spec = { effects: toggleRawBlock.of(from) };
+  const head = state.selection.main.head;
+  if (on && (head < block.from || head > block.to)) {
+    const entry = block.kind === "table"
+      ? tableGrid(state.doc.sliceString(block.from, block.to), block.from).rows[0].cells[0].to
+      : headedFenceAt(state, from, fenceOptions(state)).first.from;
+    spec.selection = EditorSelection.cursor(entry);
+    spec.userEvent = "select";
+  } else if (!on) {
+    // Setting the selection again lets the fence filter move a head off a line that hides again.
+    spec.selection = state.selection;
+    spec.userEvent = "select";
+  }
+  view.dispatch(spec);
+  view.focus();
+}
+
+export function toggleRawCommand(view) {
+  if (!isLive(view.state)) return false;
+  const block = pencilBlockAt(view.state, view.state.selection.main.head);
+  if (!block) return false;
+  pressPencil(view, block.from);
+  return true;
+}
+
+export const rawBlockKeymap = Prec.high(keymap.of([{ key: "Mod-Alt-e", run: toggleRawCommand, preventDefault: true }]));
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+export function pencilButton(document, pressed, onPress) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "cm-lp-pencil";
+  const label = pressed ? "Show rendered" : "Edit Markdown";
+  button.title = label;
+  button.setAttribute("aria-label", label);
+  button.setAttribute("aria-pressed", String(pressed));
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("viewBox", "0 0 16 16");
+  svg.setAttribute("width", "14");
+  svg.setAttribute("height", "14");
+  svg.setAttribute("aria-hidden", "true");
+  const path = document.createElementNS(SVG_NS, "path");
+  path.setAttribute("d", "M11.5 2.5l2 2L5 13l-2.8.8L3 11z");
+  path.setAttribute("fill", "none");
+  path.setAttribute("stroke", "currentColor");
+  path.setAttribute("stroke-width", "1.3");
+  path.setAttribute("stroke-linejoin", "round");
+  svg.append(path);
+  button.append(svg);
+  button.addEventListener("mousedown", event => {
+    event.preventDefault();
+    event.stopPropagation();
+  });
+  button.addEventListener("click", onPress);
+  return button;
+}
+
+export class PencilWidget extends WidgetType {
+  constructor(from, pressed) {
+    super();
+    this.from = from;
+    this.pressed = pressed;
+  }
+
+  eq(other) {
+    return other.from === this.from && other.pressed === this.pressed;
+  }
+
+  toDOM(view) {
+    return pencilButton(view.dom.ownerDocument, this.pressed, () => pressPencil(view, this.from));
+  }
+
+  ignoreEvent() {
+    return true;
+  }
+}
