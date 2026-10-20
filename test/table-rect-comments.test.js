@@ -84,9 +84,8 @@ test("a cell comment is tinted on its cells only, in the widget and in the grid"
 
     await t.caret(posOf(t, "a"));
     assert.ok(!widget(t), "the table is a grid");
-    const marks = texts(t.view.contentDOM, ".cm-comment").join("|");
-    assert.ok(marks.includes("b") && marks.includes("2") && marks.includes("6"), marks);
-    assert.ok(!marks.includes("1") && !marks.includes("4") && !marks.includes("c"), marks);
+    // The grid hides the bold markers, and the escaped pipe is its own token.
+    assert.deepEqual(texts(t.view.contentDOM, ".cm-comment"), ["b", "2", "5 ", "\\|", " 6"]);
   } finally { t.done(); }
 });
 
@@ -100,5 +99,21 @@ test("an ordinary comment across cells is still one range", async () => {
     await t.caret(0);
     const tinted = texts(widget(t), '[data-comment-id="c1"]');
     assert.ok(tinted.includes("c") && tinted.includes("1"), tinted.join("|"));
+  } finally { t.done(); }
+});
+
+const STACK = "x\n\n| h | i |\n|---|---|\n| a | b |\n| c | d |\n| e | f |\n\ny";
+
+test("a cell comment whose top row is deleted is tinted over its range", async () => {
+  const t = await setupLive(STACK, { comments: true });
+  try {
+    await withComment(t, { from: posOf(t, "a |"), to: endOf(t, "f"), cellText: "a\tb\nc\td\ne\tf" });
+    const row = posOf(t, "| a");
+    t.view.dispatch({ changes: { from: row, to: row + "| a | b |\n".length } });
+    await settle();
+    const [comment] = t.commentsApi.shownComments(t.view.state);
+    assert.deepEqual(t.commentsApi.commentRanges(t.view.state, comment), [{ from: comment.from, to: comment.to }]);
+    await t.caret(0);
+    assert.deepEqual(texts(widget(t), '[data-comment-id="c1"]'), ["c", "d", "e", "f"]);
   } finally { t.done(); }
 });

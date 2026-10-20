@@ -269,7 +269,7 @@ export function createComments({ document, invoke, root, countButton, editors, a
     if (!comment.replyTo) {
       const snippet = document.createElement("blockquote");
       snippet.className = "comment-snippet";
-      const quote = comment.cellText ?? comment.anchoredText;
+      const quote = comment.cellText || comment.anchoredText;
       snippet.textContent = quote.length > SNIPPET_CHARS ? `${quote.slice(0, SNIPPET_CHARS)}…` : quote;
       element.append(snippet);
     }

@@ -135,7 +135,8 @@ export function createFakeFileDocs({ emit, disk = {} }) {
         return addComment(path, doc, { from: root.from, to: root.to, body, replyTo: root.id, cellText: root.cellText });
       }
       if (at !== version(doc)) throw new Error("The selected text changed; select it again");
-      const cellText = cells ? cellQuote(Text.of(doc.text.split("\n")), from, to) : undefined;
+      // As Rust does, a rectangle whose ends are not in cells is an ordinary range.
+      const cellText = cells ? cellQuote(Text.of(doc.text.split("\n")), from, to) || undefined : undefined;
       return addComment(path, doc, { from, to, body, cellText });
     },
     comment_edit: (args) => { const { path, doc, comment } = commentOf(args); comment.body = args.body; changedComments(path, doc); },

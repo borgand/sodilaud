@@ -117,11 +117,12 @@ impl Comment {
     }
 
     /// Takes `from..to` of `text` as the anchored text, and its cells' text
-    /// for a cell rectangle.
+    /// for a cell rectangle. One whose ends left the table's cells becomes an
+    /// ordinary range comment.
     fn set_anchor(&mut self, text: &str, anchored: String) {
         self.anchored_text = anchored;
         if self.cell_text.is_some() {
-            self.cell_text = Some(cell_text(text, self.from, self.to));
+            self.cell_text = rect_quote(text, self.from, self.to);
         }
     }
 
@@ -290,7 +291,8 @@ pub(crate) fn cell_text(text: &str, from: usize, to: usize) -> String {
     let mut lines = Vec::new();
     let mut start = 0;
     for line in text.split('\n') {
-        lines.push((start, line));
+        // CodeMirror counts a CRLF break as one, so keep `\r` out of the cells.
+        lines.push((start, line.strip_suffix('\r').unwrap_or(line)));
         start += changes::utf16_len(line) + 1;
     }
     let line_of = |pos: usize| {
@@ -333,6 +335,12 @@ pub(crate) fn cell_text(text: &str, from: usize, to: usize) -> String {
         }
     }
     rows.join("\n")
+}
+
+/// The cells' text for a rectangle comment on `from..to`, or None when its
+/// ends no longer fall in table cells and it is an ordinary range comment.
+pub(crate) fn rect_quote(text: &str, from: usize, to: usize) -> Option<String> {
+    Some(cell_text(text, from, to)).filter(|quote| !quote.is_empty())
 }
 
 fn is_fence(line: &str) -> bool {
@@ -683,6 +691,58 @@ mod tests {
             comments[0].anchored_text,
             slice(&text, comments[0].from, comments[0].to)
         );
+    }
+
+    #[test]
+    fn cell_text_counts_utf16_units_through_non_ascii_text() {
+        let text = "ü😀\n| a | bé | c |\n|---|---|---|\n| d | 😀 \\| f | g |\n";
+        let at = |needle: &str| changes::utf16_of_byte(text, text.find(needle).unwrap());
+        assert_eq!(cell_text(text, at("bé"), at("g |") + 1), "bé\tc\n😀 | f\tg");
+    }
+
+    #[test]
+    fn cell_text_reads_crlf_lines_as_codemirror_does() {
+        let text = TABLE.replace('\n', "\r\n");
+        let at = |needle: &str| changes::utf16_of_byte(&text, text.find(needle).unwrap());
+        assert_eq!(
+            cell_text(&text, at("b |"), at("j |") + 1),
+            "b\tc\ne | f\tg\ni\tj"
+        );
+    }
+
+    #[test]
+    fn reanchoring_a_cell_comment_refreshes_its_cell_text() {
+        let mut comment = cell_comment(TABLE);
+        comment.cell_text = Some("stale".into());
+        reanchor(&mut comment, &format!("new line\n{TABLE}"));
+        assert!(!comment.orphaned);
+        assert_eq!(comment.quote(), "b\tc\ne | f\tg\ni\tj");
+    }
+
+    #[test]
+    fn a_cell_comment_whose_top_row_is_deleted_falls_back_to_its_range() {
+        let mut comments = vec![cell_comment(TABLE)];
+        let line = changes::utf16_of_byte(TABLE, TABLE.find("| a").unwrap());
+        let length = changes::utf16_len(TABLE);
+        let text = apply(
+            &mut comments,
+            TABLE,
+            json!([line, [14], length - line - 14]),
+        );
+        assert!(!text.contains("| a |"));
+        assert!(!comments[0].orphaned);
+        assert_eq!(comments[0].cell_text, None);
+        assert_eq!(comments[0].quote(), comments[0].anchored_text);
+        assert!(!comments[0].anchored_text.is_empty());
+    }
+
+    #[test]
+    fn a_saved_comment_without_cell_text_still_loads() {
+        let mut saved = serde_json::to_value(comment("some text", "text")).unwrap();
+        saved.as_object_mut().unwrap().remove("cellText");
+        let loaded: Comment = serde_json::from_value(saved).unwrap();
+        assert_eq!(loaded.cell_text, None);
+        assert_eq!(loaded.quote(), "text");
     }
 
     #[test]

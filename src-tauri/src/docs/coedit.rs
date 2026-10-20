@@ -797,7 +797,7 @@ impl Registry {
                 now_ms(),
             );
             if cells && comment.reply_to.is_none() {
-                comment.cell_text = Some(comments::cell_text(collab.text(), range.0, range.1));
+                comment.cell_text = comments::rect_quote(collab.text(), range.0, range.1);
             }
             share_anchor(&mut comment, &collab.comments);
             collab.comments.push(comment.clone());

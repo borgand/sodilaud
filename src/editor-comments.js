@@ -88,10 +88,14 @@ const flashField = StateField.define({
 
 /**
  * The ranges a comment or the composer tints: one per cell for a rectangle of
- * table cells, else its whole range.
+ * table cells, else its whole range. A rectangle whose ends left the table's
+ * cells tints its whole range, as Rust then quotes it.
  */
 export function commentRanges(state, item) {
-  if (item.cellText != null || item.cells === true) return rectRanges(state.doc, item.from, item.to);
+  if (item.cellText != null || item.cells === true) {
+    const cells = rectRanges(state.doc, item.from, item.to);
+    if (cells.length) return cells;
+  }
   return [{ from: item.from, to: item.to }];
 }
 
@@ -170,7 +174,7 @@ export const commentTarget = Facet.define();
 
 /**
  * Opens the composer on the first comment target, else under the selection.
- * Returns false when nothing is selected.
+ * Returns false when the range it would comment on is empty.
  */
 export function startComment(view) {
   for (const target of view.state.facet(commentTarget)) {
