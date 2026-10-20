@@ -3813,6 +3813,7 @@ kbd {
 
 .cm-lp-pencil[aria-pressed="true"],
 .cm-lp-table:hover .cm-lp-pencil,
+.cm-lp-mermaid-block:hover .cm-lp-pencil,
 .cm-lp-codeblock-head:hover .cm-lp-pencil,
 .cm-lp-codeblock-caret .cm-lp-pencil,
 .cm-lp-pencil:focus-visible {
@@ -3824,6 +3825,17 @@ kbd {
   position: absolute;
   top: 6px;
   left: calc(100% + 1px);
+}
+
+/* Inside the diagram's top-right corner. */
+.cm-lp-mermaid-block {
+  position: relative;
+}
+
+.cm-lp-mermaid-block .cm-lp-pencil {
+  position: absolute;
+  top: 6px;
+  right: 6px;
 }
 
 .cm-line .cm-lp-pencil,
@@ -3997,7 +4009,6 @@ kbd {
   margin-inline: 0;
   padding: 4px 0;
   margin-bottom: 0;
-  cursor: text;
 }
 
 .cm-mode-live .cm-lp-mermaid-preview {

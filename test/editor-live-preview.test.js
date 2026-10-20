@@ -544,10 +544,12 @@ test("a mermaid block renders as a diagram widget while the caret is outside it"
   } finally { t.done(); }
 });
 
-test("with the caret inside, the source stays editable and the diagram renders below it", async () => {
+test("with the pencil on, the source stays editable and the diagram renders below it", async () => {
   const t = await mermaidSetup(`intro\n\n${flowchart}\n\nafter`);
   try {
-    await t.caret(t.editor.getText().indexOf("A-->B"));
+    await t.caret(0);
+    await settle();
+    t.view.contentDOM.querySelector(".cm-lp-mermaid-block .cm-lp-pencil").click();
     await settle();
     assert.ok(t.lineTexts().includes("  A-->B"));
     const [diagram] = t.diagrams();
@@ -587,17 +589,73 @@ test("a syntax error shows Mermaid's message in place of the diagram", async () 
   } finally { t.done(); }
 });
 
-test("clicking a diagram moves the caret into its block", async () => {
+test("clicking a diagram leaves the caret where it was", async () => {
   const t = await mermaidSetup(`intro\n\n${flowchart}`);
   try {
     await t.caret(0);
     await settle();
     t.mousedown(t.diagrams()[0]);
     await settle();
-    assert.equal(t.editor.getSelection().start, 7);
+    assert.equal(t.editor.getSelection().start, 0);
+    assert.ok(t.diagrams()[0].classList.contains("cm-lp-mermaid-block"));
+  } finally { t.done(); }
+});
+
+test("the diagram's pencil shows the source with the diagram below", async () => {
+  const t = await mermaidSetup(`intro\n\n${flowchart}\n\nafter`);
+  try {
+    await t.caret(0);
+    await settle();
+    t.view.contentDOM.querySelector(".cm-lp-mermaid-block .cm-lp-pencil").click();
+    await settle();
+    assert.ok(t.lineTexts().includes("  A-->B"));
+    assert.ok(t.diagrams()[0].classList.contains("cm-lp-mermaid-preview"));
+    assert.equal(t.editor.getSelection().start, t.editor.getText().indexOf("graph TD"));
+    const pressed = t.view.contentDOM.querySelector('.cm-lp-pencil[aria-pressed="true"]');
+    assert.ok(pressed);
+    pressed.click();
+    await settle();
+    assert.ok(t.diagrams()[0].classList.contains("cm-lp-mermaid-block"));
+    assert.ok(t.diagrams()[0].querySelector(".cm-lp-pencil"));
+  } finally { t.done(); }
+});
+
+test("the diagram keeps its pencil after a re-render", async () => {
+  const t = await mermaidSetup(`${flowchart}\n\nafter`);
+  try {
+    await t.caret(t.editor.getText().length);
+    await settle();
+    assert.ok(t.diagrams()[0].querySelector(".cm-lp-pencil"));
+    t.renderer().setTheme?.({});
+    await settle();
+    assert.ok(t.diagrams()[0].querySelector(".cm-lp-pencil"));
+  } finally { t.done(); }
+});
+
+test("arrowing onto a diagram goes past it", async () => {
+  const F = "```";
+  const t = await mermaidSetup(`a\n${F}mermaid\ngraph TD\n${F}\nb`);
+  try {
+    await t.caret(1);
+    await settle();
+    t.view.dispatch({ selection: { anchor: 2 }, userEvent: "select" });
+    assert.equal(t.view.state.selection.main.head, t.editor.getText().indexOf("b"));
+    t.view.dispatch({ selection: { anchor: t.editor.getText().indexOf("b") - 1 }, userEvent: "select" });
+    assert.equal(t.view.state.selection.main.head, 1);
+  } finally { t.done(); }
+});
+
+test("a programmatic selection inside the block still shows the source", async () => {
+  const t = await mermaidSetup(`intro\n\n${flowchart}\n\nafter`);
+  try {
+    await t.caret(0);
+    t.view.dispatch({ selection: { anchor: t.editor.getText().indexOf("A-->B") } });
+    await settle();
+    assert.ok(t.lineTexts().includes("  A-->B"));
     assert.ok(t.diagrams()[0].classList.contains("cm-lp-mermaid-preview"));
   } finally { t.done(); }
 });
+
 
 test("a known diagram renders without a placeholder and without re-rendering", async () => {
   const t = await mermaidSetup(`intro\n\n${flowchart}`);

@@ -83,6 +83,17 @@ export function headedFenceAt(state, pos, { mermaid = false } = {}) {
   };
 }
 
+// The mermaid fence around `pos` that Live draws as a diagram widget.
+function mermaidFenceAt(state, pos) {
+  if (!state.facet(mermaidFacet)) return null;
+  const node = fencedCodeAt(state, pos);
+  if (!node || pos < node.from || pos > node.to || !isMermaidFence(state, node)) return null;
+  const { doc } = state;
+  const open = doc.lineAt(node.from);
+  if (open.number === doc.lines || !fillsLines(doc, node)) return null;
+  return { from: node.from, to: node.to, open, first: doc.line(open.number + 1) };
+}
+
 export const TABLE_CONTAINERS = new Set(["Document", "BulletList", "OrderedList", "ListItem"]);
 
 // A block shown as a widget fills its lines: nothing before it on its first
@@ -179,6 +190,23 @@ export const fenceCaretFilter = EditorState.transactionFilter.of(tr => {
   if (!tr.selection) return tr;
   const range = tr.selection.main;
   if (!range.empty) return tr;
+  const diagram = mermaidFenceAt(tr.state, range.head);
+  if (diagram && tr.isUserEvent("select") && !isRawBlock(tr.state, diagram.from)) {
+    const before = start.selection.main.head;
+    const wasInside = before >= diagram.from && before <= diagram.to;
+    if (wasInside && !isRawBlock(start, diagram.from)) return tr;
+    const { doc } = tr.state;
+    const backward = before > range.head;
+    const lineBefore = doc.lineAt(diagram.from).number - 1;
+    const lineAfter = doc.lineAt(diagram.to).number + 1;
+    const hasBefore = lineBefore >= 1;
+    const hasAfter = lineAfter <= doc.lines;
+    const endBefore = hasBefore ? doc.line(lineBefore).to : null;
+    const startAfter = hasAfter ? doc.line(lineAfter).from : null;
+    // A head leaving a block whose pencil just went off has to get out, whichever side has a line.
+    const target = (backward ? endBefore ?? (wasInside ? startAfter : null) : startAfter ?? (wasInside ? endBefore : null)) ?? before;
+    return [tr, { selection: EditorSelection.cursor(target), sequential: true }];
+  }
   const target = skipHiddenFences(tr.state, range.head, start.selection.main.head > range.head, options);
   if (target === range.head) return tr;
   return [tr, { selection: EditorSelection.cursor(target), sequential: true }];
@@ -191,8 +219,8 @@ export const toggleRawBlock = StateEffect.define();
 export function pencilBlockAt(state, pos) {
   const table = liveTableAt(state, pos);
   if (table) return { ...table, kind: "table" };
-  const fence = headedFenceAt(state, pos, fenceOptions(state));
-  return fence ? { from: fence.from, to: fence.to, kind: "fence" } : null;
+  const fence = headedFenceAt(state, pos, fenceOptions(state)) ?? mermaidFenceAt(state, pos);
+  return fence ? { from: fence.from, to: fence.to, kind: "fence", entry: fence.first.from } : null;
 }
 
 const stillPencilBlock = (state, from) => pencilBlockAt(state, from)?.from === from;
@@ -234,7 +262,7 @@ export function pressPencil(view, from) {
   if (on && (head < block.from || head > block.to)) {
     const entry = block.kind === "table"
       ? tableGrid(state.doc.sliceString(block.from, block.to), block.from).rows[0].cells[0].to
-      : headedFenceAt(state, from, fenceOptions(state)).first.from;
+      : block.entry;
     spec.selection = EditorSelection.cursor(entry);
     spec.userEvent = "select";
   } else if (!on) {

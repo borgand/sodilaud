@@ -219,14 +219,19 @@ function pressLink(view, event, href, style = null) {
 function showMermaid(wrapper, view, widget) {
   const { renderer, source } = widget;
   wrapper.dataset.source = source;
+  // fill replaces every child, the pencil included.
+  const fill = result => {
+    renderer.fill(wrapper, result);
+    if (wrapper.pencil) wrapper.append(wrapper.pencil);
+  };
   const hit = renderer.cached(source);
   if (hit) {
-    renderer.fill(wrapper, hit);
+    fill(hit);
     return;
   }
   renderer.render(source).then(result => {
     if (wrapper.dataset.source !== source || !wrapper.isConnected) return;
-    renderer.fill(wrapper, result);
+    fill(result);
     view.requestMeasure();
   });
 }
@@ -256,15 +261,11 @@ class MermaidWidget extends WidgetType {
       placeholder.textContent = "Rendering diagram…";
       wrapper.append(placeholder);
     }
-    showMermaid(wrapper, view, this);
     if (this.kind === "block") {
-      wrapper.addEventListener("mousedown", event => {
-        if (!isPrimaryClick(event, view)) return;
-        event.preventDefault();
-        view.dispatch({ selection: EditorSelection.cursor(view.posAtDOM(wrapper)) });
-        view.focus();
-      });
+      wrapper.pencil = pencilButton(view.dom.ownerDocument, false, () => pressPencil(view, view.posAtDOM(wrapper)));
     }
+    showMermaid(wrapper, view, this);
+    if (wrapper.pencil && !wrapper.pencil.isConnected) wrapper.append(wrapper.pencil);
     return wrapper;
   }
 
@@ -968,7 +969,9 @@ function buildBlocks(state) {
         return false;
       }
       const source = fenceBody(state, ref.node);
-      if (inside) {
+      const raw = isRawBlock(state, ref.from);
+      if (inside || raw) {
+        if (raw) ranges.push(Decoration.widget({ widget: new PencilWidget(ref.from, true), side: 1 }).range(start.to));
         ranges.push(Decoration.widget({ widget: new MermaidWidget(source, mermaid, "preview"), block: true, side: 1 }).range(end.to));
       } else {
         ranges.push(Decoration.replace({ widget: new MermaidWidget(source, mermaid, "block"), block: true }).range(start.from, end.to));
