@@ -24,6 +24,7 @@ import {
   fillsLines,
   headedFenceAt,
   isLive,
+  isMacView,
   isMermaidFence,
   isRawBlock,
   liveFocusField,
@@ -1072,20 +1073,11 @@ function eventElement(event) {
   return target && target.nodeType === 1 ? target : target?.parentElement ?? null;
 }
 
-function isMacNavigator(nav) {
-  const platform = nav?.userAgentData?.platform || nav?.platform || nav?.userAgent || "";
-  return /mac|iphone|ipad|ipod/i.test(platform);
-}
-
-// macOS turns Ctrl-click into a right-click.
-function isMacView(view) {
-  return isMacNavigator(view.dom.ownerDocument.defaultView?.navigator ?? globalThis.navigator);
-}
-
 function isPlainClick(event) {
   return event.button === 0 && event.detail < 2 && !(event.metaKey || event.ctrlKey || event.altKey || event.shiftKey);
 }
 
+// macOS turns Ctrl-click into a right-click.
 function isPrimaryClick(event, view) {
   return event.button === 0 && !(event.ctrlKey && isMacView(view));
 }

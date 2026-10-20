@@ -353,3 +353,37 @@ test("deleting back to a space at the end of a cell keeps the caret after it", a
     assert.ok(text(t).includes("| 1 w |"), text(t));
   } finally { t.done(); }
 });
+
+// A link-modifier click on the rendered table's link, landing on its first
+// character.
+async function modifierClickLink(t, platform, init) {
+  Object.defineProperty(t.env.window.navigator, "platform", { value: platform, configurable: true });
+  await t.caret(0);
+  const link = t.view.contentDOM.querySelector(".cm-lp-table a[href]");
+  assert.ok(link);
+  t.env.document.caretRangeFromPoint = () => {
+    const range = t.env.document.createRange();
+    range.setStart(link.firstChild, 0);
+    return range;
+  };
+  try {
+    t.mousedown(link, init);
+    t.mouseup(link, init);
+    await settle();
+  } finally {
+    delete t.env.document.caretRangeFromPoint;
+  }
+}
+
+for (const [platform, init] of [["MacIntel", { metaKey: true }], ["Linux x86_64", { ctrlKey: true }]]) {
+  test(`a link-modifier click on a table link on ${platform} puts the caret in the link's Markdown`, async () => {
+    const t = await setupLive(T);
+    try {
+      await modifierClickLink(t, platform, init);
+      assert.equal(t.opened.length, 0);
+      assert.equal(head(t), posOf(t, "[l]") + 1);
+      assert.ok(await gridded(t));
+      assert.ok(focusedCell(t).textContent.includes("[l](https://x.y)"), focusedCell(t).textContent);
+    } finally { t.done(); }
+  });
+}

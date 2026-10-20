@@ -13,7 +13,7 @@ import {
   Transaction,
   isolateHistory
 } from "./vendor/codemirror.js";
-import { PencilWidget, isLive, isRawBlock, liveFocusField, liveTableAt } from "./editor-live-blocks.js";
+import { PencilWidget, isLive, isMacView, isRawBlock, liveFocusField, liveTableAt } from "./editor-live-blocks.js";
 import { commentComposer, commentTarget, commentsDiffer } from "./editor-comments.js";
 import { keepsWhole } from "./markdown.js";
 import { pointToSource } from "./source-map.js";
@@ -580,16 +580,24 @@ function tableWidgetAt(view, event) {
 
 const widgetClickPos = (view, wrapper, event) => tableClickPos(wrapper, wrapper.tableSource, view.posAtDOM(wrapper), event);
 
+// Cmd-click on macOS, Ctrl-click elsewhere: the press that edits a link.
+const linkModifier = (view, event) => (isMacView(view) ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey);
+
 /**
- * CodeMirror's selection style for a plain press on a rendered table: it
- * starts at the pressed cell and follows the pointer, through the widget and,
+ * CodeMirror's selection style for a plain press on a rendered table, or a
+ * link-modifier press on one of its links: it starts at the pressed cell (or
+ * character of the link) and follows the pointer, through the widget and,
  * once the grid replaces it, through the document.
  */
 export function tableMouseStyle(view, event) {
   if (!isLive(view.state) || event.button !== 0) return null;
-  if (event.shiftKey || event.metaKey || event.ctrlKey || event.altKey) return null;
+  if (event.shiftKey || event.altKey) return null;
   const wrapper = tableWidgetAt(view, event);
   if (!wrapper) return null;
+  if (event.metaKey || event.ctrlKey) {
+    const element = event.target?.nodeType === 1 ? event.target : event.target?.parentElement;
+    if (!linkModifier(view, event) || !element?.closest("a[href]")) return null;
+  }
   let anchor = widgetClickPos(view, wrapper, event);
   return {
     get(cur) {

@@ -17,6 +17,12 @@ import { tableGrid } from "./table-cells.js";
 
 export const isLive = state => state.facet(modeFacet) === "live" && !state.facet(plainTextFacet);
 
+export function isMacView(view) {
+  const nav = view.dom.ownerDocument.defaultView?.navigator ?? globalThis.navigator;
+  const platform = nav?.userAgentData?.platform || nav?.platform || nav?.userAgent || "";
+  return /mac|iphone|ipad|ipod/i.test(platform);
+}
+
 // Whether the editor had focus at its last update, kept in state so decorations
 // built from state alone can depend on it.
 export const setLiveFocus = StateEffect.define();
