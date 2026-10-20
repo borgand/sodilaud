@@ -3973,6 +3973,10 @@ kbd {
   outline-offset: -1px;
 }
 
+.cm-mode-live .cm-lp-tcell.cm-lp-tcell-selected {
+  background-color: color-mix(in srgb, var(--accent-color) 35%, transparent);
+}
+
 .cm-mode-live .cm-lp-tcell .cm-lp-pencil {
   position: absolute;
   top: 6px;

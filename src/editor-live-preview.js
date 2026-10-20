@@ -34,7 +34,7 @@ import {
   rawBlocksField,
   setLiveFocus
 } from "./editor-live-blocks.js";
-import { focusedCell, gridExtension, gridTable, tableClickPos } from "./editor-table-grid.js";
+import { focusedCell, gridExtension, gridTable } from "./editor-table-grid.js";
 import { isSafeMarkdownUrl, renderMarkdown, resolveLinkAction } from "./markdown.js";
 import { scrollToAnchor } from "./editor-anchors.js";
 import { buildHunkElement, languageForPath, reviewHunkMeta } from "./diff-hunk.js";
@@ -348,21 +348,19 @@ class TableWidget extends WidgetType {
         return;
       }
       if (!isPrimaryClick(event, view)) return;
-      event.preventDefault();
       const marked = element?.closest("[data-comment-id]");
       if (marked) {
+        event.preventDefault();
         selectComment(view, marked.getAttribute("data-comment-id"));
-        return;
       }
-      const anchor = tableClickPos(wrapper, this.source, view.posAtDOM(wrapper), event);
-      view.dispatch({ selection: EditorSelection.cursor(anchor) });
-      view.focus();
     });
     return wrapper;
   }
 
-  ignoreEvent() {
-    return true;
+  // A press on a cell goes to CodeMirror, whose mouse selection (see
+  // tableMouseStyle) places the caret and drags out cell rectangles.
+  ignoreEvent(event) {
+    return event.type !== "mousedown" || Boolean(eventElement(event)?.closest(".cm-lp-table-composer, .cm-lp-pencil"));
   }
 }
 
