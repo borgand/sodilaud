@@ -354,6 +354,21 @@ test("deleting back to a space at the end of a cell keeps the caret after it", a
   } finally { t.done(); }
 });
 
+test("a remote edit between a typed space and the next letter keeps the space", async () => {
+  const t = await setupLive(T);
+  try {
+    const { Transaction } = await import("../src/vendor/codemirror.js");
+    await t.caret(posOf(t, "1 |") + 1);
+    type(t, "x");
+    type(t, " ");
+    await settle();
+    t.view.dispatch({ changes: { from: 0, insert: "R" }, annotations: Transaction.remote.of(true) });
+    await settle();
+    type(t, "y");
+    assert.ok(text(t).includes("| 1x y |"), text(t));
+  } finally { t.done(); }
+});
+
 // A link-modifier click on the rendered table's link, landing on its first
 // character.
 async function modifierClickLink(t, platform, init) {

@@ -269,10 +269,10 @@ const cellSnapFilter = EditorState.transactionFilter.of(tr => {
 // moved into its cell right after, before the browser paints the raw row.
 const remoteSnap = EditorView.updateListener.of(update => {
   if (!isLive(update.state) || !update.transactions.some(tr => tr.annotation(Transaction.remote))) return;
-  if (!snappedSelection(update.state, update.state.selection)) return;
+  if (!snappedSelection(update.state, update.state.selection, true)) return;
   const { view } = update;
   queueMicrotask(() => {
-    const selection = isLive(view.state) ? snappedSelection(view.state, view.state.selection) : null;
+    const selection = isLive(view.state) ? snappedSelection(view.state, view.state.selection, true) : null;
     if (selection) view.dispatch({ selection });
   });
 });
