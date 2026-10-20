@@ -18,6 +18,7 @@ import {
   fenceBody,
   fenceCaretFilter,
   fenceInfo,
+  fenceOptions,
   headedFenceAt,
   isLive,
   isMermaidFence,
@@ -514,7 +515,7 @@ class FenceLabelWidget extends WidgetType {
     label.textContent = this.label;
     label.addEventListener("mousedown", event => {
       if (event.button !== 0) return;
-      const fence = headedFenceAt(view.state, view.posAtDOM(label), { mermaid: view.state.facet(mermaidFacet) !== null });
+      const fence = headedFenceAt(view.state, view.posAtDOM(label), fenceOptions(view.state));
       if (!fence) return;
       event.preventDefault();
       view.dispatch({ selection: EditorSelection.cursor(fence.first.from), userEvent: "select" });
@@ -645,7 +646,7 @@ function buildInline(view, focused) {
     if (!marks.length) return;
     const open = doc.lineAt(node.from);
     lineDecorations.set(open.from, lineClasses["codeblock-head"]);
-    const headed = headedFenceAt(state, node.from, { mermaid: state.facet(mermaidFacet) !== null }) !== null;
+    const headed = headedFenceAt(state, node.from, fenceOptions(state)) !== null;
     let close = marks.length > 1 ? doc.lineAt(marks.at(-1).from) : null;
     if (close && (close.from === open.from || (!headed && isRevealed(close.from, close.to)))) close = null;
     if (close) lineDecorations.set(close.from, lineClasses["codeblock-foot"]);

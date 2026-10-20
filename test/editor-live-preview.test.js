@@ -752,6 +752,106 @@ test("Backspace after the closing fence and Delete before the header move the ca
   } finally { t.done(); }
 });
 
+test("the cursor skips chains of back-to-back fences in both directions", async () => {
+  const F = "```";
+  const text = `${F}a\nx\n${F}\n${F}b\ny\n${F}\n${F}c\nz\n${F}`;
+  const t = await setup(text);
+  try {
+    const { doc } = t.view.state;
+    const go = pos => t.view.dispatch({ selection: { anchor: pos }, userEvent: "select" });
+    await t.caret(doc.line(2).to);
+    go(doc.line(3).from + 1);
+    assert.equal(t.view.state.selection.main.head, doc.line(5).from);
+    await t.caret(doc.line(5).from);
+    go(doc.line(4).from + 1);
+    assert.equal(t.view.state.selection.main.head, doc.line(2).to);
+    await t.caret(doc.line(5).to);
+    go(doc.line(6).from + 1);
+    assert.equal(t.view.state.selection.main.head, doc.line(8).from);
+    await t.caret(doc.line(8).from);
+    go(doc.line(7).from + 1);
+    assert.equal(t.view.state.selection.main.head, doc.line(5).to);
+    await t.caret(doc.line(2).to);
+    go(doc.line(3).from + 1);
+    go(doc.line(6).from + 1);
+    assert.ok(![3, 4, 6, 7].includes(doc.lineAt(t.view.state.selection.main.head).number));
+  } finally { t.done(); }
+});
+
+test("deleting the last code line whole leaves the fences intact and applies", async () => {
+  const F = "```";
+  const text = `intro\n${F}js\nlet a;\nlet b;\n${F}\nafter`;
+  const t = await setup(text);
+  try {
+    const { doc } = t.view.state;
+    const last = doc.line(4);
+    await t.caret(last.from + 1);
+    t.view.dispatch({ changes: { from: last.from, to: last.to + 1 }, userEvent: "delete.line" });
+    assert.equal(t.view.state.doc.toString(), `intro\n${F}js\nlet a;\n${F}\nafter`);
+    const first = t.view.state.doc.line(3);
+    await t.caret(first.from);
+    t.view.dispatch({ changes: { from: first.from, to: first.to + 1 }, userEvent: "delete.line" });
+    assert.equal(t.view.state.doc.toString(), `intro\n${F}js\n${F}\nafter`);
+  } finally { t.done(); }
+});
+
+test("a multi-cursor delete is blocked when any empty cursor would break a fence", async () => {
+  const F = "```";
+  const text = `intro\n${F}js\nlet a;\nlet b;\n${F}\nafter`;
+  const t = await setup(text);
+  try {
+    const { doc } = t.view.state;
+    const first = doc.line(3);
+    const { EditorSelection, EditorState, StateEffect } = await import("../src/vendor/codemirror.js");
+    t.view.dispatch({ effects: StateEffect.appendConfig.of(EditorState.allowMultipleSelections.of(true)) });
+    t.view.dispatch({ selection: EditorSelection.create([EditorSelection.cursor(2), EditorSelection.cursor(first.from)], 0) });
+    t.view.dispatch({
+      changes: [{ from: 1, to: 2 }, { from: first.from - 1, to: first.from }],
+      userEvent: "delete.backward"
+    });
+    assert.equal(t.view.state.doc.toString(), text);
+  } finally { t.done(); }
+});
+
+test("an unterminated fence keeps its header and the cursor skips it", async () => {
+  const F = "```";
+  const text = `intro\n${F}js\nlet a;\nlet b;`;
+  const t = await setup(text);
+  try {
+    const { doc } = t.view.state;
+    await t.caret(doc.line(3).from);
+    assert.equal(t.view.contentDOM.querySelector(".cm-lp-fence-label")?.textContent, "js");
+    t.view.dispatch({ selection: { anchor: doc.line(2).from + 1 }, userEvent: "select" });
+    assert.equal(t.view.state.selection.main.head, doc.line(1).to);
+  } finally { t.done(); }
+});
+
+test("a fence in a list item skips its hidden lines", async () => {
+  const F = "```";
+  const text = `- item\n  ${F}js\n  let a;\n  ${F}\n- next`;
+  const t = await setup(text);
+  try {
+    const { doc } = t.view.state;
+    await t.caret(doc.line(3).to);
+    t.view.dispatch({ selection: { anchor: doc.line(4).from + 3 }, userEvent: "select" });
+    assert.equal(t.view.state.selection.main.head, doc.line(5).from);
+    await t.caret(doc.line(3).from);
+    t.view.dispatch({ selection: { anchor: doc.line(2).from + 3 }, userEvent: "select" });
+    assert.equal(t.view.state.selection.main.head, doc.line(1).to);
+  } finally { t.done(); }
+});
+
+test("a fence ending the document keeps a downward cursor on its last code line", async () => {
+  const text = "intro\n```js\nlet a;\n```";
+  const t = await setup(text);
+  try {
+    const { doc } = t.view.state;
+    await t.caret(doc.line(3).from);
+    t.view.dispatch({ selection: { anchor: doc.line(4).from + 1 }, userEvent: "select" });
+    assert.equal(t.view.state.selection.main.head, doc.line(3).to);
+  } finally { t.done(); }
+});
+
 test("an empty fenced block shows its fences when the caret is on them", async () => {
   const F = "```";
   const text = `a\n${F}\n${F}\nb`;
