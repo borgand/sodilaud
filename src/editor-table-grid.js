@@ -14,7 +14,7 @@ import {
   isolateHistory
 } from "./vendor/codemirror.js";
 import { PencilWidget, isLive, isRawBlock, liveFocusField, liveTableAt } from "./editor-live-blocks.js";
-import { commentComposer, commentsDiffer } from "./editor-comments.js";
+import { commentComposer, commentTarget, commentsDiffer } from "./editor-comments.js";
 import { keepsWhole } from "./markdown.js";
 import { pointToSource } from "./source-map.js";
 import {
@@ -596,9 +596,16 @@ export function tableMouseStyle(view, event) {
   };
 }
 
+// A comment started on a rectangle is on its cells.
+const rectCommentTarget = commentTarget.of(state => {
+  const rect = cellRect(state);
+  return rect && { from: rect.from, to: rect.to, cells: true };
+});
+
 export function gridExtension() {
   return [
     cellRectField,
+    rectCommentTarget,
     gridField,
     rectSelectionFilter,
     cellSnapFilter,

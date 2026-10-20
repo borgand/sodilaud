@@ -9,6 +9,7 @@ import {
   activeComment,
   closeComposer,
   commentComposer,
+  commentRanges,
   commentsDiffer,
   createComposerElement,
   selectComment,
@@ -115,16 +116,16 @@ export function createReadingComments({ preview, view, enabled, onShortcut }) {
     if (!current) return;
     const { state } = current;
     const active = activeComment(state);
-    const ranges = shownComments(state).filter(visible).map(comment => ({
+    const ranges = shownComments(state).filter(visible).flatMap(comment => commentRanges(state, comment).map(range => ({
       id: comment.id,
       author: comment.author,
-      from: comment.from,
-      to: comment.to,
+      from: range.from,
+      to: range.to,
       className: `cm-comment cm-comment-${comment.author}${comment.id === active ? " cm-comment-active" : ""}`
-    }));
+    })));
     const opened = commentComposer(state);
     const composer = opened?.outside ? opened : null;
-    const draft = composer ? [{ from: composer.from, to: composer.to, className: DRAFT }] : [];
+    const draft = composer ? commentRanges(state, composer).map(range => ({ ...range, className: DRAFT })) : [];
 
     paintSourceMarks(preview, [...ranges, ...draft], state.doc.toString());
 

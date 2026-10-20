@@ -152,13 +152,13 @@ export function createComments({ document, invoke, root, countButton, editors, a
     }
   }
 
-  async function submit(view, { from, to, body }) {
+  async function submit(view, { from, to, body, cells = false }) {
     const target = editors().find(editor => editor.view === view)?.doc;
     if (!target) throw new Error("This document cannot take comments");
     await flush();
     const range = toConfirmed(view.state, from, to);
     if (range.to <= range.from) throw new Error("The selected text changed; select it again");
-    await invoke("comment_add", { doc: target, comment: { version: range.version, from: range.from, to: range.to, body } });
+    await invoke("comment_add", { doc: target, comment: { version: range.version, from: range.from, to: range.to, body, cells } });
     await refresh(target);
     if (!open) toggle(true);
   }
@@ -269,7 +269,8 @@ export function createComments({ document, invoke, root, countButton, editors, a
     if (!comment.replyTo) {
       const snippet = document.createElement("blockquote");
       snippet.className = "comment-snippet";
-      snippet.textContent = comment.anchoredText.length > SNIPPET_CHARS ? `${comment.anchoredText.slice(0, SNIPPET_CHARS)}…` : comment.anchoredText;
+      const quote = comment.cellText ?? comment.anchoredText;
+      snippet.textContent = quote.length > SNIPPET_CHARS ? `${quote.slice(0, SNIPPET_CHARS)}…` : quote;
       element.append(snippet);
     }
     const body = document.createElement("p");

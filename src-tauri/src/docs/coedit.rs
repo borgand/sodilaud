@@ -138,7 +138,7 @@ fn agent_view(comment: &Comment, text: &str) -> Value {
         "id": comment.id,
         "author": comment.author,
         "state": comment.shown_state(),
-        "anchoredText": comment.anchored_text,
+        "anchoredText": comment.quote(),
         "headingPath": comment.heading_path,
         "offset": changes::utf16_to_char(text, comment.from),
         "body": comment.body,
@@ -171,7 +171,7 @@ fn pending_view(doc: &DocRef, comment: &Comment, all: &[Comment], text: &str) ->
         "id": comment.id,
         "doc": doc.json(),
         "headingPath": comment.heading_path,
-        "anchoredText": comment.anchored_text,
+        "anchoredText": comment.quote(),
         "contextBefore": before,
         "contextAfter": after,
         "body": comment.body,
@@ -218,6 +218,7 @@ fn share_anchor(reply: &mut Comment, all: &[Comment]) {
         .and_then(|id| all.iter().find(|c| c.id == id))
     {
         reply.anchored_text = root.anchored_text.clone();
+        reply.cell_text = root.cell_text.clone();
         reply.heading_path = root.heading_path.clone();
         reply.orphaned = root.orphaned;
     }
@@ -747,6 +748,8 @@ impl Registry {
 
     /// The owner's comment on `from..to` of the text at `version`, or a reply
     /// on the unresolved thread holding `reply_to`, which takes its range.
+    /// With `cells`, a new comment is on the rectangle of table cells from
+    /// `from` to `to`.
     pub(crate) fn comment_add(
         &self,
         page: &PageDoc,
@@ -754,6 +757,7 @@ impl Registry {
         (from, to): (usize, usize),
         body: &str,
         reply_to: Option<&str>,
+        cells: bool,
     ) -> Result<Comment, String> {
         let body = body.trim();
         if body.is_empty() || body.chars().count() > MAX_BODY_CHARS {
@@ -792,6 +796,9 @@ impl Registry {
                 root,
                 now_ms(),
             );
+            if cells && comment.reply_to.is_none() {
+                comment.cell_text = Some(comments::cell_text(collab.text(), range.0, range.1));
+            }
             share_anchor(&mut comment, &collab.comments);
             collab.comments.push(comment.clone());
             collab.comments_changed();
@@ -1046,6 +1053,7 @@ mod tests {
                 at("Owner line."),
                 "keep this",
                 None,
+                false,
             )
             .unwrap();
         registry
@@ -1055,6 +1063,7 @@ mod tests {
                 at("None."),
                 "list real risks",
                 None,
+                false,
             )
             .unwrap();
         let applied = registry
@@ -1131,6 +1140,7 @@ mod tests {
                 (0, 1),
                 "Postgres",
                 Some(&question),
+                false,
             )
             .unwrap();
         assert_eq!((reply.from, reply.to), (10, 19));
@@ -1151,7 +1161,14 @@ mod tests {
         );
         assert!(registry.coedit_resolve("c_missing", "x").is_err());
         assert!(registry
-            .comment_add(&page(&collection, "a"), 0, (0, 1), "x", Some(&reply.id))
+            .comment_add(
+                &page(&collection, "a"),
+                0,
+                (0, 1),
+                "x",
+                Some(&reply.id),
+                false
+            )
             .is_err());
     }
 
@@ -1161,7 +1178,7 @@ mod tests {
         let doc = DocRef::Note("a".into());
         let page = page(&collection, "a");
         let root = registry
-            .comment_add(&page, 0, (6, 11), "Why a queue?", None)
+            .comment_add(&page, 0, (6, 11), "Why a queue?", None, false)
             .unwrap();
         assert_eq!(registry.coedit_take_pending(None).len(), 1);
         let answer = registry
@@ -1180,7 +1197,14 @@ mod tests {
         // The owner answers the agent's reply; it joins the root's thread.
         registry.set_hold_for_review(true);
         let held = registry
-            .comment_add(&page, 0, (0, 0), "How big are bursts?", Some(&answer_id))
+            .comment_add(
+                &page,
+                0,
+                (0, 0),
+                "How big are bursts?",
+                Some(&answer_id),
+                false,
+            )
             .unwrap();
         assert_eq!(held.state, State::Held);
         assert_eq!(held.reply_to.as_deref(), Some(root.id.as_str()));
@@ -1213,7 +1237,7 @@ mod tests {
         assert!(all.iter().all(Comment::is_resolved));
         assert!(registry.coedit_reply(&root.id, "late", "r2").is_err());
         assert!(registry
-            .comment_add(&page, 0, (0, 0), "late", Some(&root.id))
+            .comment_add(&page, 0, (0, 0), "late", Some(&root.id), false)
             .is_err());
     }
 
@@ -1227,7 +1251,7 @@ mod tests {
             .unwrap();
         let id = asked["comment"]["id"].as_str().unwrap().to_string();
         let owner = registry
-            .comment_add(&page, 0, (0, 0), "Because.", Some(&id))
+            .comment_add(&page, 0, (0, 0), "Because.", Some(&id), false)
             .unwrap();
         assert!(!owner.unread);
         registry.coedit_reply(&owner.id, "Thanks", "r1").unwrap();
@@ -1258,7 +1282,7 @@ mod tests {
         let doc = page(&collection, "a");
         registry.set_hold_for_review(true);
         let held = registry
-            .comment_add(&doc, 0, (0, 5), "first", None)
+            .comment_add(&doc, 0, (0, 5), "first", None, false)
             .unwrap();
         assert_eq!(held.state, State::Held);
         assert!(registry.coedit_take_pending(None).is_empty());
@@ -1276,9 +1300,11 @@ mod tests {
         registry.comments_clear_resolved(&doc).unwrap();
         assert!(registry.comments_get(&doc).unwrap().comments.is_empty());
         assert!(registry
-            .comment_add(&page("old", "a"), 0, (0, 5), "x", None)
+            .comment_add(&page("old", "a"), 0, (0, 5), "x", None, false)
             .is_err());
-        assert!(registry.comment_add(&doc, 0, (0, 5), "  ", None).is_err());
+        assert!(registry
+            .comment_add(&doc, 0, (0, 5), "  ", None, false)
+            .is_err());
         assert!(
             recorder
                 .coedit
@@ -1295,13 +1321,25 @@ mod tests {
         let (registry, _, collection) = shared(&[note("a", "alpha beta", 1)]);
         push(&registry, &collection, "a", json!([[0, ">> "], 10]));
         let comment = registry
-            .comment_add(&page(&collection, "a"), 0, (6, 10), "b", None)
+            .comment_add(&page(&collection, "a"), 0, (6, 10), "b", None, false)
             .unwrap();
         assert_eq!(comment.anchored_text, "beta");
         push(&registry, &collection, "a", json!([3, [10]]));
         assert!(registry
-            .comment_add(&page(&collection, "a"), 1, (6, 10), "b", None)
+            .comment_add(&page(&collection, "a"), 1, (6, 10), "b", None, false)
             .is_err());
+    }
+
+    #[test]
+    fn a_cell_comment_reaches_the_agent_quoting_its_cells() {
+        let text = "| a | b |\n|---|---|\n| c | d |\n";
+        let (registry, _, collection) = shared(&[note("a", text, 1)]);
+        let comment = registry
+            .comment_add(&page(&collection, "a"), 0, (6, 27), "why", None, true)
+            .unwrap();
+        assert_eq!(comment.cell_text.as_deref(), Some("b\nd"));
+        let pending = registry.coedit_take_pending(None);
+        assert_eq!(pending[0]["anchoredText"], "b\nd");
     }
 
     #[test]
@@ -1343,7 +1381,7 @@ mod tests {
             doc_id: doc_id.clone(),
         };
         registry
-            .comment_add(&page, 1, (7, 11), "why", None)
+            .comment_add(&page, 1, (7, 11), "why", None, false)
             .unwrap();
         let list = registry.coedit_list();
         assert_eq!(list[0]["pendingComments"], 1);
@@ -1368,7 +1406,7 @@ mod tests {
         waiting.as_mut().enable();
         let guard = registry.coedit_listen();
         registry
-            .comment_add(&page(&collection, "a"), 0, (0, 5), "go", None)
+            .comment_add(&page(&collection, "a"), 0, (0, 5), "go", None, false)
             .unwrap();
         tokio::time::timeout(std::time::Duration::from_secs(1), waiting)
             .await

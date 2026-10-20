@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // Shared boot for Live-mode editor tests. Exports: setupLive(text, options) returns a
-// harness `t` (view, editor, opened, caret(pos), mousedown/mouseup/mousemove(target, init),
-// done()); settle() waits one macrotask.
+// harness `t` (view, editor, opened, submitted comments, caret(pos),
+// mousedown/mouseup/mousemove(target, init), done()); settle() waits one macrotask.
 import { marked } from "marked";
 import { installEditorDom } from "./cm-dom.js";
 
@@ -18,8 +18,11 @@ export async function setupLive(text, { focused = true, mermaid, hljs, comments 
   const opened = [];
   const changes = [];
   const selected = [];
+  const submitted = [];
   const extensions = [live.livePreview({ onOpenLink: href => opened.push(href), mermaid: mermaid?.(env.document) })];
-  if (comments) extensions.push(commentsApi.commentsExtension({ onSubmit: async () => {}, onSelect: id => selected.push(id) }));
+  if (comments) {
+    extensions.push(commentsApi.commentsExtension({ onSubmit: async (_view, comment) => { submitted.push(comment); }, onSelect: id => selected.push(id) }));
+  }
   const editor = createMarkdownEditor({
     parent: env.document.getElementById("host"),
     ariaLabel: "t",
@@ -35,7 +38,7 @@ export async function setupLive(text, { focused = true, mermaid, hljs, comments 
     return event;
   };
   const t = {
-    env, editor, opened, changes, live, commentsApi, selected,
+    env, editor, opened, changes, live, commentsApi, selected, submitted,
     view: editor.view,
     lines: () => [...editor.view.contentDOM.querySelectorAll(".cm-line")],
     lineTexts: () => t.lines().map(line => line.textContent),

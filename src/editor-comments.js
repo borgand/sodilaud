@@ -17,6 +17,7 @@ import {
   sendableUpdates,
   syntaxTree
 } from "./vendor/codemirror.js";
+import { rectRanges } from "./table-cells.js";
 
 // Comments anchored to text, shown as tinted ranges with a gutter marker, an
 // inline composer for new ones, and a short highlight where an agent edited.
@@ -85,12 +86,24 @@ const flashField = StateField.define({
   provide: field => EditorView.decorations.from(field)
 });
 
+/**
+ * The ranges a comment or the composer tints: one per cell for a rectangle of
+ * table cells, else its whole range.
+ */
+export function commentRanges(state, item) {
+  if (item.cellText != null || item.cells === true) return rectRanges(state.doc, item.from, item.to);
+  return [{ from: item.from, to: item.to }];
+}
+
 const commentDecorations = EditorView.decorations.compute([commentsField, activeField], state => {
   const active = state.field(activeField);
-  const ranges = state.field(commentsField).filter(visible).map(comment => Decoration.mark({
-    class: `cm-comment cm-comment-${comment.author}${comment.id === active ? " cm-comment-active" : ""}`,
-    attributes: { "data-comment-id": comment.id }
-  }).range(comment.from, comment.to));
+  const ranges = state.field(commentsField).filter(visible).flatMap(comment => {
+    const mark = Decoration.mark({
+      class: `cm-comment cm-comment-${comment.author}${comment.id === active ? " cm-comment-active" : ""}`,
+      attributes: { "data-comment-id": comment.id }
+    });
+    return commentRanges(state, comment).map(range => mark.range(range.from, range.to));
+  });
   return Decoration.set(ranges, true);
 });
 
@@ -149,8 +162,21 @@ export function fromConfirmed(state, comments) {
   });
 }
 
-/** Opens the composer under the selection. Returns false when nothing is selected. */
+/**
+ * What a new comment is on, when something other than the selection says:
+ * each value is a `(state) => {from, to, cells} | null`.
+ */
+export const commentTarget = Facet.define();
+
+/**
+ * Opens the composer on the first comment target, else under the selection.
+ * Returns false when nothing is selected.
+ */
 export function startComment(view) {
+  for (const target of view.state.facet(commentTarget)) {
+    const found = target(view.state);
+    if (found) return startCommentAt(view, found.from, found.to, { cells: found.cells });
+  }
   const selection = view.state.selection.main;
   return startCommentAt(view, selection.from, selection.to);
 }
@@ -160,10 +186,12 @@ export function startComment(view) {
  * `hosted` composer is drawn by the widget that covers the range, not below
  * its line, which a replacing widget would hide. An `outside` composer is
  * drawn outside the editor (Reading mode), so no widget draws it either.
+ * With `cells`, the comment is on the rectangle of table cells from..to.
  */
-export function startCommentAt(view, from, to, { hosted = false, outside = false } = {}) {
+export function startCommentAt(view, from, to, { hosted = false, outside = false, cells = false } = {}) {
   if (to <= from || view.state.field(composerField, false) === undefined) return false;
-  view.dispatch({ effects: composerEffect.of({ from, to, hosted: hosted || outside, outside, key: Date.now() + Math.random() }) });
+  const composer = { from, to, cells: Boolean(cells), hosted: hosted || outside, outside, key: Date.now() + Math.random() };
+  view.dispatch({ effects: composerEffect.of(composer) });
   return true;
 }
 
@@ -235,7 +263,7 @@ export function createComposerElement(view, key, { refocus = true } = {}) {
     if (!composer || !body) return;
     add.disabled = true;
     try {
-      await view.state.facet(commentHandlers).onSubmit(view, { from: composer.from, to: composer.to, body });
+      await view.state.facet(commentHandlers).onSubmit(view, { from: composer.from, to: composer.to, body, cells: composer.cells });
       if (view.state.field(composerField)?.key === key) close();
     } catch (failure) {
       error.textContent = failure?.message ?? String(failure);
@@ -278,7 +306,7 @@ export function flashChanges(view, transaction) {
 
 /**
  * @param {object} options
- * @param {(view: EditorView, comment: {from: number, to: number, body: string}) => Promise<void>} options.onSubmit
+ * @param {(view: EditorView, comment: {from: number, to: number, body: string, cells: boolean}) => Promise<void>} options.onSubmit
  *   adds the comment; rejects with an error to show in the composer
  * @param {(id: string) => void} [options.onSelect] a comment's range or marker was clicked
  */
@@ -306,10 +334,11 @@ export function commentsExtension({ onSubmit, onSelect = () => {} }) {
     const composer = state.field(composerField);
     if (!composer || composerHosted(state)) return Decoration.none;
     const end = state.doc.lineAt(composer.to).to;
+    const draft = Decoration.mark({ class: "cm-comment cm-comment-draft" });
     return Decoration.set([
-      Decoration.mark({ class: "cm-comment cm-comment-draft" }).range(composer.from, Math.max(composer.from, composer.to)),
+      ...commentRanges(state, composer).filter(range => range.from < range.to).map(range => draft.range(range.from, range.to)),
       Decoration.widget({ widget: new ComposerWidget(composer.key), block: true, side: 1 }).range(end)
-    ].filter(range => range.from < range.to || range.value.spec.widget), true);
+    ], true);
   };
 
   const composerDecorations = StateField.define({

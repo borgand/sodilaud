@@ -53,6 +53,7 @@ import {
 import {
   activeComment,
   commentComposer,
+  commentRanges,
   commentsDiffer,
   composerHost,
   createComposerElement,
@@ -408,16 +409,19 @@ function tableReview(state, from, to) {
   const active = activeComment(state);
   const marks = shownComments(state)
     .filter(comment => !comment.orphaned && comment.state !== "resolved" && comment.to > comment.from)
-    .filter(comment => comment.from < to && comment.to > from)
-    .map(comment => ({
-      from: Math.max(comment.from, from) - from,
-      to: Math.min(comment.to, to) - from,
-      className: `cm-comment cm-comment-${comment.author}${comment.id === active ? " cm-comment-active" : ""}`,
-      id: comment.id
-    }));
+    .flatMap(comment => commentRanges(state, comment)
+      .filter(range => range.from < to && range.to > from)
+      .map(range => ({
+        from: Math.max(range.from, from) - from,
+        to: Math.min(range.to, to) - from,
+        className: `cm-comment cm-comment-${comment.author}${comment.id === active ? " cm-comment-active" : ""}`,
+        id: comment.id
+      })));
   const composer = commentComposer(state);
   if (!composer || composer.outside || !composerWithin(composer, from, to)) return { marks, composer: null };
-  marks.push({ from: composer.from - from, to: composer.to - from, className: "cm-comment cm-comment-draft" });
+  for (const range of commentRanges(state, composer)) {
+    marks.push({ from: range.from - from, to: range.to - from, className: "cm-comment cm-comment-draft" });
+  }
   return { marks, composer: { key: composer.key } };
 }
 

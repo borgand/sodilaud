@@ -44,6 +44,11 @@ pub(crate) struct Comment {
     pub(crate) from: usize,
     pub(crate) to: usize,
     pub(crate) anchored_text: String,
+    /// A comment on a rectangle of table cells holds the cells' text, tabs
+    /// between cells and newlines between rows; `from..to` runs from the
+    /// top-left cell to the bottom-right one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) cell_text: Option<String>,
     #[serde(default)]
     pub(crate) heading_path: Vec<String>,
     pub(crate) body: String,
@@ -78,6 +83,7 @@ impl Comment {
             from,
             to,
             anchored_text: slice(text, from, to),
+            cell_text: None,
             heading_path: heading_path(text, from),
             body,
             note: None,
@@ -103,6 +109,20 @@ impl Comment {
 
     pub(crate) fn is_resolved(&self) -> bool {
         self.state == State::Resolved
+    }
+
+    /// The text the comment quotes: its cells' text for a cell rectangle.
+    pub(crate) fn quote(&self) -> &str {
+        self.cell_text.as_deref().unwrap_or(&self.anchored_text)
+    }
+
+    /// Takes `from..to` of `text` as the anchored text, and its cells' text
+    /// for a cell rectangle.
+    fn set_anchor(&mut self, text: &str, anchored: String) {
+        self.anchored_text = anchored;
+        if self.cell_text.is_some() {
+            self.cell_text = Some(cell_text(text, self.from, self.to));
+        }
     }
 
     /// The ID of the thread's root: its own for a root.
@@ -158,6 +178,161 @@ pub(crate) fn slice(text: &str, from: usize, to: usize) -> String {
         (Some(start), Some(end)) if start <= end => text[start..end].to_string(),
         _ => String::new(),
     }
+}
+
+struct Cell {
+    seg_from: usize,
+    seg_to: usize,
+    text: String,
+}
+
+// The trimmed cells of a table line, with UTF-16 offsets into the line; None
+// for a line without an unescaped pipe or a separator row. Matches
+// tableLine in src/table-cells.js.
+fn row_cells(line: &str) -> Option<Vec<Cell>> {
+    if is_separator_row(line) {
+        return None;
+    }
+    let chars: Vec<char> = line.chars().collect();
+    let mut units = Vec::with_capacity(chars.len() + 1);
+    units.push(0);
+    for character in &chars {
+        units.push(units.last().unwrap() + character.len_utf16());
+    }
+    let mut segments = Vec::new();
+    let mut start = 0;
+    let mut backslashes = 0;
+    for (index, &character) in chars.iter().enumerate() {
+        if character == '\\' {
+            backslashes += 1;
+            continue;
+        }
+        if character == '|' && backslashes % 2 == 0 {
+            segments.push((start, index));
+            start = index + 1;
+        }
+        backslashes = 0;
+    }
+    if segments.is_empty() {
+        return None;
+    }
+    segments.push((start, chars.len()));
+    let blank = |(from, to): (usize, usize)| chars[from..to].iter().all(|c| c.is_whitespace());
+    if segments.len() > 1 && blank(segments[0]) {
+        segments.remove(0);
+    }
+    if segments.len() > 1 && blank(segments[segments.len() - 1]) {
+        segments.pop();
+    }
+    let padding = |c: char| c == ' ' || c == '\t';
+    Some(
+        segments
+            .into_iter()
+            .map(|(seg_from, seg_to)| {
+                let (mut from, mut to) = (seg_from, seg_to);
+                while from < to && padding(chars[from]) {
+                    from += 1;
+                }
+                while to > from && padding(chars[to - 1]) {
+                    to -= 1;
+                }
+                Cell {
+                    seg_from: units[seg_from],
+                    seg_to: units[seg_to],
+                    text: chars[from..to].iter().collect(),
+                }
+            })
+            .collect(),
+    )
+}
+
+// A row of `|---|:--:|` cells between outer pipes, as isSeparatorRow in
+// src/editor-tables.js reads it.
+fn is_separator_row(line: &str) -> bool {
+    let chars: Vec<char> = line.chars().collect();
+    let Some(first) = chars.iter().position(|c| !c.is_whitespace()) else {
+        return false;
+    };
+    let Some(last) = chars.iter().rposition(|c| *c != ' ' && *c != '\t') else {
+        return false;
+    };
+    if chars[first] != '|' || chars[last] != '|' {
+        return false;
+    }
+    let escaped = |index: usize| {
+        chars[..index]
+            .iter()
+            .rev()
+            .take_while(|c| **c == '\\')
+            .count()
+            % 2
+            == 1
+    };
+    let pipes: Vec<usize> = (first..=last)
+        .filter(|&index| chars[index] == '|' && !escaped(index))
+        .collect();
+    pipes.len() >= 3
+        && pipes.windows(2).all(|pair| {
+            let cell: String = chars[pair[0] + 1..pair[1]].iter().collect();
+            let cell = cell.trim();
+            let cell = cell.strip_prefix(':').unwrap_or(cell);
+            let cell = cell.strip_suffix(':').unwrap_or(cell);
+            cell.len() >= 3 && cell.chars().all(|c| c == '-')
+        })
+}
+
+/// The cells of the rectangle from the cell holding `from` to the cell
+/// holding `to` (UTF-16 offsets), trimmed and with `\|` turned back into `|`:
+/// tabs between cells, newlines between rows, separator rows skipped. The
+/// same as cellQuote in src/table-cells.js.
+pub(crate) fn cell_text(text: &str, from: usize, to: usize) -> String {
+    let (from, to) = (from.min(to), from.max(to));
+    let mut lines = Vec::new();
+    let mut start = 0;
+    for line in text.split('\n') {
+        lines.push((start, line));
+        start += changes::utf16_len(line) + 1;
+    }
+    let line_of = |pos: usize| {
+        lines
+            .iter()
+            .rposition(|(start, _)| *start <= pos)
+            .unwrap_or(0)
+    };
+    let column = |cells: &[Cell], line_start: usize, pos: usize| {
+        cells
+            .iter()
+            .position(|cell| pos >= line_start + cell.seg_from && pos <= line_start + cell.seg_to)
+    };
+    let (first, last) = (line_of(from), line_of(to));
+    let (Some(first_cells), Some(last_cells)) =
+        (row_cells(lines[first].1), row_cells(lines[last].1))
+    else {
+        return String::new();
+    };
+    let (Some(from_col), Some(to_col)) = (
+        column(&first_cells, lines[first].0, from),
+        column(&last_cells, lines[last].0, to),
+    ) else {
+        return String::new();
+    };
+    let (col_min, col_max) = (from_col.min(to_col), from_col.max(to_col));
+    let mut rows = Vec::new();
+    for (_, line) in &lines[first..=last] {
+        let Some(cells) = row_cells(line) else {
+            continue;
+        };
+        let picked: Vec<String> = cells
+            .iter()
+            .skip(col_min)
+            .take(col_max - col_min + 1)
+            .map(|cell| cell.text.replace("\\|", "|"))
+            .collect();
+        if !picked.is_empty() {
+            rows.push(picked.join("\t"));
+        }
+    }
+    rows.join("\n")
 }
 
 fn is_fence(line: &str) -> bool {
@@ -307,7 +482,7 @@ pub(crate) fn reanchor(comment: &mut Comment, text: &str) {
         Some((start, end)) => {
             comment.from = changes::utf16_of_byte(text, start);
             comment.to = changes::utf16_of_byte(text, end);
-            comment.anchored_text = text[start..end].to_string();
+            comment.set_anchor(text, text[start..end].to_string());
             comment.orphaned = false;
         }
         None => {
@@ -340,7 +515,7 @@ pub(crate) fn map_through(comments: &mut [Comment], updates: &[Vec<Section>], te
         if (from, to) != (comment.from, comment.to) || anchored != comment.anchored_text {
             comment.from = from;
             comment.to = to;
-            comment.anchored_text = anchored;
+            comment.set_anchor(text, anchored);
             changed = true;
         }
     }
@@ -462,6 +637,60 @@ mod tests {
             comments[0].anchored_text, "phrase here",
             "the snippet is kept"
         );
+    }
+
+    const TABLE: &str = "x\n| a | b | c |\n|---|---|---|\n| d | e \\| f | g |\n| h | i | j |\n";
+
+    fn cell_comment(text: &str) -> Comment {
+        let at = |needle: &str| changes::utf16_of_byte(text, text.find(needle).unwrap());
+        let range = (at("b |"), at("j |") + 1);
+        let mut comment = Comment::new(
+            Author::Owner,
+            State::Queued,
+            text,
+            range,
+            "body".into(),
+            None,
+            1,
+        );
+        comment.cell_text = Some(cell_text(text, range.0, range.1));
+        comment
+    }
+
+    #[test]
+    fn cell_text_quotes_the_rectangle_not_the_source_span() {
+        let comment = cell_comment(TABLE);
+        assert_eq!(
+            cell_text(TABLE, comment.from, comment.to),
+            "b\tc\ne | f\tg\ni\tj"
+        );
+        assert_eq!(comment.quote(), "b\tc\ne | f\tg\ni\tj");
+        assert!(comment.anchored_text.starts_with("b | c |\n|---"));
+    }
+
+    #[test]
+    fn a_cell_comment_keeps_its_cell_text_current_through_edits() {
+        let mut comments = vec![cell_comment(TABLE)];
+        let at = changes::utf16_of_byte(TABLE, TABLE.find("e \\|").unwrap());
+        let length = changes::utf16_len(TABLE);
+        let text = apply(&mut comments, TABLE, json!([at, [0, "Z"], length - at]));
+        let quote = comments[0].cell_text.as_deref().unwrap();
+        assert!(
+            quote == "b\tc\nZe | f\tg\ni\tj" || quote == "b\tc\neZ | f\tg\ni\tj",
+            "{quote}"
+        );
+        assert_eq!(
+            comments[0].anchored_text,
+            slice(&text, comments[0].from, comments[0].to)
+        );
+    }
+
+    #[test]
+    fn a_comment_without_cells_serializes_without_cell_text() {
+        let plain = serde_json::to_value(comment("some text", "text")).unwrap();
+        assert!(plain.get("cellText").is_none());
+        let cells = serde_json::to_value(cell_comment(TABLE)).unwrap();
+        assert_eq!(cells["cellText"], "b\tc\ne | f\tg\ni\tj");
     }
 
     #[test]
