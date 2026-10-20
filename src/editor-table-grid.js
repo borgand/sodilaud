@@ -9,13 +9,14 @@ import {
   EditorView,
   Prec,
   StateField,
-  Transaction
+  Transaction,
+  isolateHistory
 } from "./vendor/codemirror.js";
 import { PencilWidget, isLive, isRawBlock, liveFocusField, liveTableAt } from "./editor-live-blocks.js";
 import { commentComposer, commentsDiffer } from "./editor-comments.js";
 import { keepsWhole } from "./markdown.js";
 import { pointToSource } from "./source-map.js";
-import { cellAt, escapeCellText, snapToCell, tableGrid } from "./table-cells.js";
+import { cellAt, cellForColumn, escapeCellText, newRowText, rowCells, snapToCell, tableGrid } from "./table-cells.js";
 
 // Marks a transaction whose changes the grid built itself, so the edit filter
 // leaves them as they are.
@@ -240,12 +241,150 @@ const gridEditFilter = EditorState.transactionFilter.of(tr => {
   };
 });
 
+const cursor = pos => ({ selection: EditorSelection.cursor(pos) });
+
+const columnIn = (row, col) => row.cells[Math.min(col, row.cells.length - 1)];
+
+const gridChange = (changes, pos, userEvent) => ({
+  changes,
+  selection: EditorSelection.cursor(pos),
+  annotations: [gridEdit.of(true), isolateHistory.of("full")],
+  userEvent
+});
+
+// A new empty row after the last one, with the caret in its cell at `col`.
+function addRow(state, gridded, col) {
+  const { rows, columns } = gridded.grid;
+  const last = rows[rows.length - 1];
+  const text = newRowText(state.doc.lineAt(rows[0].from).text, columns);
+  const row = { cells: rowCells(text, last.to + 1) };
+  return gridChange({ from: last.to, insert: "\n" + text }, columnIn(row, col).to, "input");
+}
+
+// The caret at the start of the line after the table, adding that line when
+// the table ends the document.
+function leaveTable(state, tableTo) {
+  const line = state.doc.lineAt(tableTo);
+  if (line.number < state.doc.lines) return cursor(state.doc.line(line.number + 1).from);
+  return gridChange({ from: tableTo, insert: "\n" }, tableTo + 1, "input");
+}
+
+const rowEmpty = row => row.cells.every(cell => cell.text === "");
+
+/**
+ * What `key` does with the caret in a grid cell, as a transaction spec, or
+ * null when the editor is not in grid mode or the key keeps its default.
+ */
+export function cellKeyCommand(state, key, { shift = false } = {}) {
+  const gridded = gridTable(state);
+  if (!gridded) return null;
+  const { rows } = gridded.grid;
+  const { row, col } = gridded.cell;
+  const cells = rows[row].cells;
+  const cell = cells[col];
+  const lastRow = row === rows.length - 1;
+  const { main } = state.selection;
+  const { doc } = state;
+  switch (key) {
+    case "Tab":
+      if (shift) {
+        if (col > 0) return cursor(cells[col - 1].to);
+        return row > 0 ? cursor(rows[row - 1].cells.at(-1).to) : {};
+      }
+      if (col < cells.length - 1) return cursor(cells[col + 1].to);
+      return lastRow ? addRow(state, gridded, 0) : cursor(rows[row + 1].cells[0].to);
+    case "Enter": {
+      if (!lastRow) return cursor(columnIn(rows[row + 1], col).to);
+      if (row === 0 || !rowEmpty(rows[row])) return addRow(state, gridded, col);
+      const line = doc.lineAt(rows[row].from);
+      const insert = line.to === doc.length ? "\n" : "";
+      return gridChange({ from: line.from - 1, to: line.to, insert }, line.from, "delete");
+    }
+    case "ArrowUp":
+    case "ArrowDown": {
+      if (shift) return null;
+      if (key === "ArrowUp") {
+        if (row > 0) return cursor(columnIn(rows[row - 1], col).to);
+        const line = doc.lineAt(gridded.from);
+        return line.number > 1 ? cursor(doc.line(line.number - 1).to) : null;
+      }
+      if (!lastRow) return cursor(columnIn(rows[row + 1], col).to);
+      const line = doc.lineAt(gridded.to);
+      return line.number < doc.lines ? cursor(doc.line(line.number + 1).from) : null;
+    }
+    case "ArrowLeft":
+      if (shift || main.head > cell.from) return null;
+      if (col > 0) return cursor(cells[col - 1].to);
+      return row > 0 ? cursor(rows[row - 1].cells.at(-1).to) : null;
+    case "ArrowRight":
+      if (shift || main.head < cell.to) return null;
+      if (col < cells.length - 1) return cursor(cells[col + 1].from);
+      return lastRow ? null : cursor(rows[row + 1].cells[0].from);
+    case "Escape":
+      return leaveTable(state, gridded.to);
+    case "Backspace": {
+      if (!main.empty || main.head !== cell.from) return null;
+      if (row === 0 || !rowEmpty(rows[row])) return {};
+      const line = doc.lineAt(rows[row].from);
+      return gridChange({ from: line.from - 1, to: line.to }, columnIn(rows[row - 1], col).to, "delete");
+    }
+    case "Delete":
+      return main.empty && main.head === cell.to ? {} : null;
+    default:
+      return null;
+  }
+}
+
+// The table a vertical move from `from` to `to` enters: one containing `to`,
+// or one lying wholly between the two.
+function tableEntered(state, from, to, forward) {
+  const { doc } = state;
+  const contains = table => table && !isRawBlock(state, table.from) && (forward ? table.from > from : table.to < from);
+  const target = liveTableAt(state, to);
+  if (contains(target)) return target;
+  const a = doc.lineAt(from).number;
+  const b = doc.lineAt(to).number;
+  for (let n = Math.min(a, b) + 1; n < Math.max(a, b); n++) {
+    const table = liveTableAt(state, doc.line(n).from);
+    if (contains(table)) return table;
+  }
+  return null;
+}
+
+/**
+ * Where ArrowDown (`forward`) or ArrowUp from outside every grid table puts
+ * the caret when the move enters a rendered table: its first or last row, in
+ * the cell under the caret's column. Null when the move enters no table.
+ */
+export function enterTableSpec(view, forward) {
+  const { state } = view;
+  if (!isLive(state) || gridTable(state)) return null;
+  const { main } = state.selection;
+  const next = view.moveVertically(main, forward);
+  const table = tableEntered(state, main.head, next.head, forward);
+  if (!table) return null;
+  const { rows } = gridOf(state, table);
+  const row = forward ? rows[0] : rows[rows.length - 1];
+  const column = main.head - state.doc.lineAt(main.head).from;
+  const cell = cellForColumn(row, column);
+  return cursor(Math.min(Math.max(row.from + column, cell.from), cell.to));
+}
+
+const CELL_KEYS = new Set(["Tab", "Enter", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Escape", "Backspace", "Delete"]);
+
 const gridKeys = Prec.highest(EditorView.domEventHandlers({
   keydown(event, view) {
-    if (event.key !== "Enter" && event.key !== "Tab") return false;
-    if (event.isComposing || view.composing || event.metaKey || event.ctrlKey || event.altKey) return false;
-    if (!gridTable(view.state)) return false;
+    if (!CELL_KEYS.has(event.key)) return false;
+    if (event.isComposing || view.composing || event.keyCode === 229) return false;
+    if (event.metaKey || event.ctrlKey || event.altKey) return false;
+    const shift = event.shiftKey;
+    let spec = cellKeyCommand(view.state, event.key, { shift });
+    if (!spec && !shift && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
+      spec = enterTableSpec(view, event.key === "ArrowDown");
+    }
+    if (!spec) return false;
     event.preventDefault();
+    view.dispatch({ ...spec, scrollIntoView: true });
     return true;
   }
 }));
