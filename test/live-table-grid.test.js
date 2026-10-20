@@ -311,3 +311,45 @@ test("grid cells keep the short values whole that the rendered table keeps whole
     assert.deepEqual([...t.view.contentDOM.querySelectorAll(".cm-lp-ttoken")].map(span => span.textContent), ["2026-09-30"]);
   } finally { t.done(); }
 });
+
+test("typing words at the end of a cell keeps each space before the caret", async () => {
+  const t = await setupLive(T);
+  try {
+    await t.caret(posOf(t, "1 |") + 1);
+    for (const ch of "x y z") {
+      type(t, ch);
+      await settle();
+      if (ch === " ") assert.ok(focusedCell(t).textContent.endsWith(" "), "the typed space shows");
+    }
+    assert.ok(text(t).includes("| 1x y z |"), text(t));
+    assert.equal(head(t), posOf(t, "1x y z") + "1x y z".length);
+    assert.ok(await gridded(t));
+  } finally { t.done(); }
+});
+
+test("typing words into an empty cell keeps each space before the caret", async () => {
+  const t = await setupLive("intro\n\n| a | b |\n|---|---|\n|  | 2 |\n\nafter");
+  try {
+    await t.caret(posOf(t, "|  |") + 2);
+    for (const ch of "p q") {
+      type(t, ch);
+      await settle();
+    }
+    const cell = text(t).split("\n")[4].split("|")[1];
+    assert.equal(cell.trim(), "p q");
+    assert.equal(head(t), posOf(t, "p q") + 3);
+    assert.ok(await gridded(t));
+  } finally { t.done(); }
+});
+
+test("deleting back to a space at the end of a cell keeps the caret after it", async () => {
+  const t = await setupLive(T);
+  try {
+    await t.caret(posOf(t, "1 |") + 1);
+    for (const ch of " y") type(t, ch);
+    const at = head(t);
+    t.view.dispatch({ changes: { from: at - 1, to: at }, selection: { anchor: at - 1 }, userEvent: "delete.backward" });
+    type(t, "w");
+    assert.ok(text(t).includes("| 1 w |"), text(t));
+  } finally { t.done(); }
+});

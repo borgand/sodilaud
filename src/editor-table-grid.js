@@ -154,6 +154,7 @@ export function gridDecorations(state, gridded) {
   const { rows, separator } = gridded.grid;
   const ranges = [];
   const selected = new Set(gridded.rect?.cells.flat().map(cell => cell.segFrom));
+  const { head } = state.selection.main;
   const hide = (from, to) => {
     if (to > from) ranges.push(hidden.range(from, to));
   };
@@ -169,8 +170,10 @@ export function gridDecorations(state, gridded) {
       const mark = focused ? (inRect ? focusedSelectedCellMark : focusedCellMark) : (inRect ? selectedCellMark : cellMark);
       ranges.push(mark.range(start, end));
       wholeTokens(cell, ranges);
+      // A space just typed after the text shows, up to the caret.
+      const shown = focused && head > cell.to && head <= cell.segTo ? head : cell.to;
       hide(start, cell.from);
-      hide(cell.to, end);
+      hide(shown, end);
       start = end;
     });
     if (index === 0) {
@@ -202,13 +205,18 @@ function gridSet(state) {
 }
 
 // The selection with its main cursor moved into the nearest cell's text, when
-// it rests in a rendered table outside every cell; otherwise null.
-function snappedSelection(state, selection) {
+// it rests in a rendered table outside every cell; otherwise null. With
+// `keepPadding`, a cursor in the padding after a cell's text stays: an edit
+// put it there, as typing a space after the text does.
+function snappedSelection(state, selection, keepPadding = false) {
   const { main } = selection;
   if (!main.empty) return null;
   const table = liveTableAt(state, main.head);
   if (!table || isRawBlock(state, table.from)) return null;
-  const snapped = snapToCell(gridOf(state, table), main.head);
+  const grid = gridOf(state, table);
+  const at = keepPadding && cellAt(grid, main.head);
+  if (at && main.head >= grid.rows[at.row].cells[at.col].to) return null;
+  const snapped = snapToCell(grid, main.head);
   return snapped === main.head ? null : selection.replaceRange(EditorSelection.cursor(snapped), selection.mainIndex);
 }
 
@@ -235,7 +243,7 @@ const rectSelectionFilter = EditorState.transactionFilter.of(tr => {
 
 const cellSnapFilter = EditorState.transactionFilter.of(tr => {
   if (!tr.selection || !isLive(tr.startState)) return tr;
-  const selection = snappedSelection(tr.state, tr.selection);
+  const selection = snappedSelection(tr.state, tr.selection, tr.docChanged);
   return selection ? [tr, { selection, sequential: true }] : tr;
 });
 
