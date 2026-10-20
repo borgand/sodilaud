@@ -274,9 +274,22 @@ export function pressPencil(view, from) {
   view.focus();
 }
 
+// A caret cannot rest in a rendered diagram, so the shortcut also takes the
+// diagram on the line below, else the one above.
+function diagramNextTo(state, head) {
+  const { doc } = state;
+  const number = doc.lineAt(head).number;
+  const below = number < doc.lines ? mermaidFenceAt(state, doc.line(number + 1).from) : null;
+  if (below && below.from === doc.line(number + 1).from) return below;
+  const above = number > 1 ? mermaidFenceAt(state, doc.line(number - 1).to) : null;
+  return above && above.to === doc.line(number - 1).to ? above : null;
+}
+
 export function toggleRawCommand(view) {
   if (!isLive(view.state)) return false;
-  const block = pencilBlockAt(view.state, view.state.selection.main.head);
+  const { state } = view;
+  const head = state.selection.main.head;
+  const block = pencilBlockAt(state, head) ?? diagramNextTo(state, head);
   if (!block) return false;
   pressPencil(view, block.from);
   return true;

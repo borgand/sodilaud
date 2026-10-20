@@ -586,6 +586,7 @@ test("a syntax error shows Mermaid's message in place of the diagram", async () 
     const [diagram] = t.diagrams();
     assert.ok(diagram.classList.contains("mermaid-error"));
     assert.equal(diagram.querySelector("pre").textContent, "Parse error on line 1");
+    assert.ok(diagram.querySelector(".cm-lp-pencil"));
   } finally { t.done(); }
 });
 
@@ -626,7 +627,7 @@ test("the diagram keeps its pencil after a re-render", async () => {
     await t.caret(t.editor.getText().length);
     await settle();
     assert.ok(t.diagrams()[0].querySelector(".cm-lp-pencil"));
-    t.renderer().setTheme?.({});
+    t.renderer().setTheme({});
     await settle();
     assert.ok(t.diagrams()[0].querySelector(".cm-lp-pencil"));
   } finally { t.done(); }
@@ -642,6 +643,29 @@ test("arrowing onto a diagram goes past it", async () => {
     assert.equal(t.view.state.selection.main.head, t.editor.getText().indexOf("b"));
     t.view.dispatch({ selection: { anchor: t.editor.getText().indexOf("b") - 1 }, userEvent: "select" });
     assert.equal(t.view.state.selection.main.head, 1);
+  } finally { t.done(); }
+});
+
+test("Mod-Alt-e on the line next to a diagram toggles its pencil", async () => {
+  const F = "```";
+  const t = await mermaidSetup(`a\n${F}mermaid\ngraph TD\n${F}\nb`);
+  try {
+    for (const from of [1, t.editor.getText().length]) {
+      await t.caret(from);
+      await settle();
+      const press = () => t.view.contentDOM.dispatchEvent(new t.env.window.KeyboardEvent("keydown", {
+        key: "e", code: "KeyE", keyCode: 69, ctrlKey: true, altKey: true, bubbles: true, cancelable: true
+      }));
+      press();
+      await settle();
+      assert.ok(t.lineTexts().includes("graph TD"));
+      assert.ok(t.diagrams()[0].classList.contains("cm-lp-mermaid-preview"));
+      assert.ok(t.view.contentDOM.querySelector('.cm-lp-pencil[aria-pressed="true"]'));
+      assert.equal(t.view.state.selection.main.head, t.editor.getText().indexOf("graph TD"));
+      press();
+      await settle();
+      assert.ok(t.diagrams()[0].classList.contains("cm-lp-mermaid-block"));
+    }
   } finally { t.done(); }
 });
 

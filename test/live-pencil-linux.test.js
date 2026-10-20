@@ -41,3 +41,22 @@ test("Live: Ctrl-Alt-E toggles the raw fence on Linux, Cmd-Alt-E does not", asyn
   await app.settle(50);
   assert.ok(isRawBlock(view.state, FENCE_FROM));
 });
+
+test("Live: Ctrl-Alt-E on the line above a rendered diagram toggles its pencil", async () => {
+  const text = `a\n${F}mermaid\ngraph TD\n${F}\nb`;
+  const app = await bootMainWindow({
+    platform: "Linux x86_64",
+    instance: 2,
+    disk: { [PATH]: text },
+    handlers: handlers(),
+    beforeBoot: dom => { dom.window.marked = marked; }
+  });
+  const view = app.editor();
+  await app.settle();
+  view.focus();
+  view.dispatch({ selection: { anchor: 1 } });
+  const { isRawBlock } = await import("../src/editor-live-blocks.js");
+  view.contentDOM.dispatchEvent(new app.dom.window.KeyboardEvent("keydown", { key: "e", code: "KeyE", keyCode: 69, altKey: true, ctrlKey: true, bubbles: true, cancelable: true }));
+  await app.settle(50);
+  assert.ok(isRawBlock(view.state, 2));
+});
