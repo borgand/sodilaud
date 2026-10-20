@@ -31,7 +31,7 @@ function parseTableRow(line) {
   };
 }
 
-function isSeparatorRow(line) {
+export function isSeparatorRow(line) {
   const row = parseTableRow(line);
   return Boolean(row && row.cells.every(({ start, end }) => (
     /^:?-{3,}:?$/.test(line.slice(start, end).trim())
