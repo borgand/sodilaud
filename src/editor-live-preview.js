@@ -549,6 +549,13 @@ const bulletWidget = Decoration.replace({ widget: new BulletWidget() });
 const ruleWidget = Decoration.replace({ widget: new RuleWidget() });
 const hidden = Decoration.replace({});
 const codeMark = Decoration.mark({ class: "cm-lp-code" });
+// Prose in Live keeps one style for all emphasis; a grid cell matches the
+// rendered table instead.
+const cellEmphasis = {
+  StrongEmphasis: Decoration.mark({ class: "cm-lp-strong" }),
+  Emphasis: Decoration.mark({ class: "cm-lp-em" }),
+  Strikethrough: Decoration.mark({ class: "cm-lp-del" })
+};
 const blockedImageMark = Decoration.mark({ class: "cm-lp-image-blocked" });
 const lineClasses = {};
 for (const name of ["h1", "h2", "h3", "h4", "h5", "h6", "quote", "codeblock", "hr", "gap"]) {
@@ -622,10 +629,10 @@ function headingLevel(name) {
   return match ? Number(match[1]) : 0;
 }
 
-function buildInline(view, focused) {
+function buildInline(view) {
   const { state } = view;
   const { doc } = state;
-  const revealed = revealedLines(state, focused);
+  const revealed = revealedLines(state, state.field(liveFocusField));
   const ranges = [];
   const lineDecorations = new Map();
   const handled = new Set();
@@ -801,6 +808,13 @@ function buildInline(view, focused) {
             }
             return false;
           }
+          case "StrongEmphasis":
+          case "Emphasis":
+          case "Strikethrough":
+            if (gridded && from >= gridded.from && to <= gridded.to && !isRevealed(from, to)) {
+              ranges.push(cellEmphasis[name].range(from, to));
+            }
+            return true;
           case "Link":
             handleLink(ref.node);
             return true;
@@ -863,7 +877,7 @@ function buildInline(view, focused) {
 
 const inlinePreview = ViewPlugin.fromClass(class {
   constructor(view) {
-    this.decorations = isLive(view.state) ? buildInline(view, view.hasFocus) : Decoration.none;
+    this.decorations = isLive(view.state) ? buildInline(view) : Decoration.none;
   }
 
   update(update) {
@@ -872,14 +886,14 @@ const inlinePreview = ViewPlugin.fromClass(class {
     const highlightingChanged = update.startState.facet(syntaxHighlightingFacet) !== update.state.facet(syntaxHighlightingFacet);
     if (
       !modeChanged && !treeChanged && !highlightingChanged && !update.docChanged && !update.selectionSet &&
-      !update.viewportChanged && !update.focusChanged &&
+      !update.viewportChanged &&
       update.startState.field(rawBlocksField) === update.state.field(rawBlocksField) &&
       update.startState.field(liveFocusField) === update.state.field(liveFocusField) &&
       commentComposer(update.startState) === commentComposer(update.state)
     ) {
       return;
     }
-    this.decorations = isLive(update.state) ? buildInline(update.view, update.view.hasFocus) : Decoration.none;
+    this.decorations = isLive(update.state) ? buildInline(update.view) : Decoration.none;
   }
 }, { decorations: plugin => plugin.decorations });
 

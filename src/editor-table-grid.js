@@ -2,6 +2,7 @@
 
 import {
   Annotation,
+  ChangeSet,
   Decoration,
   EditorSelection,
   EditorState,
@@ -53,9 +54,10 @@ const focusedCellMark = Decoration.mark({ class: "cm-lp-tcell cm-lp-tcell-focus"
 
 /**
  * The decorations that draw the table at `gridded` (from gridTable) as a grid.
- * Each cell's mark also covers the hidden pipe before it (and the last one the
- * rest of the line), so even an empty cell has a mark and a row holds nothing
- * but cells: anything left between them would become an extra table cell.
+ * Each cell's mark also covers the hidden pipe and padding around its text
+ * (the last one up to the line end), so even an empty cell has a mark and a
+ * row holds nothing but cells: anything left between them would become an
+ * extra table cell.
  */
 export function gridDecorations(state, gridded) {
   const { doc } = state;
@@ -73,8 +75,8 @@ export function gridDecorations(state, gridded) {
       const end = last ? line.to : cell.segTo;
       const focused = index === gridded.cell?.row && col === gridded.cell?.col;
       ranges.push((focused ? focusedCellMark : cellMark).range(start, end));
-      hide(start, cell.segFrom);
-      if (last) hide(cell.segTo, line.to);
+      hide(start, cell.from);
+      hide(cell.to, end);
       start = end;
     });
     if (index === 0) {
@@ -105,29 +107,93 @@ function gridSet(state) {
   return gridded ? Decoration.set(gridDecorations(state, gridded), true) : Decoration.none;
 }
 
-// A caret that lands in a rendered table goes into the nearest cell's text.
+// The selection with its main cursor moved into the nearest cell's text, when
+// it rests in a rendered table outside every cell; otherwise null.
+function snappedSelection(state, selection) {
+  const { main } = selection;
+  if (!main.empty) return null;
+  const table = liveTableAt(state, main.head);
+  if (!table || isRawBlock(state, table.from)) return null;
+  const snapped = snapToCell(gridOf(state, table), main.head);
+  return snapped === main.head ? null : selection.replaceRange(EditorSelection.cursor(snapped), selection.mainIndex);
+}
+
 const cellSnapFilter = EditorState.transactionFilter.of(tr => {
   if (!tr.selection || !isLive(tr.startState)) return tr;
-  const { main } = tr.selection;
-  if (!main.empty) return tr;
-  const { state } = tr;
-  const table = liveTableAt(state, main.head);
-  if (!table || isRawBlock(state, table.from)) return tr;
-  const snapped = snapToCell(gridOf(state, table), main.head);
-  if (snapped === main.head) return tr;
-  const selection = tr.selection.replaceRange(EditorSelection.cursor(snapped), tr.selection.mainIndex);
-  return [tr, { selection, sequential: true }];
+  const selection = snappedSelection(tr.state, tr.selection);
+  return selection ? [tr, { selection, sequential: true }] : tr;
 });
 
-// Typing, pasting and deleting in a grid cell stay inside that cell, and a
-// pipe typed there is stored escaped so it cannot split the cell.
+// Remote changes skip transaction filters, so a caret they leave on a pipe is
+// moved into its cell right after, before the browser paints the raw row.
+const remoteSnap = EditorView.updateListener.of(update => {
+  if (!isLive(update.state) || !update.transactions.some(tr => tr.annotation(Transaction.remote))) return;
+  if (!snappedSelection(update.state, update.state.selection)) return;
+  const { view } = update;
+  queueMicrotask(() => {
+    const selection = isLive(view.state) ? snappedSelection(view.state, view.state.selection) : null;
+    if (selection) view.dispatch({ selection });
+  });
+});
+
+// Where each escaped pipe (`\|`) in the cell's source starts.
+function escapedPipes(doc, cell) {
+  const text = doc.sliceString(cell.segFrom, cell.segTo);
+  const starts = [];
+  let backslashes = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === "\\") {
+      backslashes++;
+      continue;
+    }
+    if (text[i] === "|" && backslashes % 2 === 1) starts.push(cell.segFrom + i - 1);
+    backslashes = 0;
+  }
+  return starts;
+}
+
+// A deletion that takes one character of a `\|` pair takes both.
+function widenOverPairs(starts, from, to) {
+  for (const at of starts) {
+    if (from < at + 2 && to > at) {
+      from = Math.min(from, at);
+      to = Math.max(to, at + 2);
+    }
+  }
+  return [from, to];
+}
+
+// What keeps the cell at from..to one cell: a backslash before each pipe the
+// edit left unescaped, and a space after a trailing odd run of backslashes
+// that would otherwise escape the closing pipe.
+function cellRepairs(doc, from, to) {
+  const text = doc.sliceString(from, to);
+  const repairs = [];
+  let backslashes = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === "\\") {
+      backslashes++;
+      continue;
+    }
+    if (text[i] === "|" && backslashes % 2 === 0) repairs.push({ from: from + i, insert: "\\" });
+    backslashes = 0;
+  }
+  if (backslashes % 2 === 1 && doc.sliceString(to, to + 1) === "|") repairs.push({ from: to, insert: " " });
+  return repairs;
+}
+
+// Typing, pasting and deleting in a grid cell stay inside that cell, and the
+// cell's source stays one cell: pipes are stored escaped, an escaped pipe is
+// deleted whole, and a trailing backslash never escapes the closing pipe.
 const gridEditFilter = EditorState.transactionFilter.of(tr => {
   if (!tr.docChanged || tr.annotation(Transaction.remote) || tr.annotation(gridEdit)) return tr;
   if (!tr.isUserEvent("input") && !tr.isUserEvent("delete")) return tr;
   const gridded = gridTable(tr.startState);
   if (!gridded?.cell) return tr;
+  const start = tr.startState;
   const cell = focusedCell(gridded);
   const compose = tr.isUserEvent("input.type.compose");
+  const pairs = tr.isUserEvent("delete") ? escapedPipes(start.doc, cell) : [];
   const specs = [];
   let rewritten = false;
   tr.changes.iterChanges((fromA, toA, _fromB, _toB, inserted) => {
@@ -136,21 +202,25 @@ const gridEditFilter = EditorState.transactionFilter.of(tr => {
       rewritten = true;
       return;
     }
-    const from = Math.max(fromA, cell.segFrom);
-    const to = Math.min(toA, cell.segTo);
+    let from = Math.max(fromA, cell.segFrom);
+    let to = Math.min(toA, cell.segTo);
+    if (to > from) [from, to] = widenOverPairs(pairs, from, to);
     const insert = compose ? text : escapeCellText(text);
     if (from !== fromA || to !== toA || insert !== text) rewritten = true;
     if (to > from || insert) specs.push({ from, to, insert });
   });
-  if (!rewritten) return tr;
   if (!specs.length) return [];
-  const changes = tr.startState.changes(specs);
+  const changes = start.changes(specs);
+  const doc = changes.apply(start.doc);
+  const repairs = compose ? [] : cellRepairs(doc, changes.mapPos(cell.segFrom, -1), changes.mapPos(cell.segTo, 1));
+  if (!rewritten && !repairs.length) return tr;
+  const repaired = ChangeSet.of(repairs, doc.length);
   const selection = EditorSelection.create(
-    tr.startState.selection.ranges.map(range => range.map(changes, 1)),
-    tr.startState.selection.mainIndex
+    start.selection.ranges.map(range => range.map(changes, 1).map(repaired, -1)),
+    start.selection.mainIndex
   );
   return {
-    changes,
+    changes: changes.compose(repaired),
     selection,
     scrollIntoView: tr.scrollIntoView,
     annotations: Transaction.userEvent.of(tr.annotation(Transaction.userEvent))
@@ -168,7 +238,7 @@ const gridKeys = Prec.highest(EditorView.domEventHandlers({
 }));
 
 export function gridExtension() {
-  return [gridField, cellSnapFilter, gridEditFilter, gridKeys];
+  return [gridField, cellSnapFilter, gridEditFilter, gridKeys, remoteSnap];
 }
 
 function caretPoint(doc, x, y) {

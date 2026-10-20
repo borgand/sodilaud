@@ -224,3 +224,82 @@ test("a grid row holds only its cells, even with a comment over part of a cell",
     assert.ok(header.querySelector(".cm-lp-tcell:last-child .cm-lp-pencil"), "the pencil sits in the last header cell");
   } finally { t.done(); }
 });
+
+const cellCount = async (t, needle) => {
+  const { tableGrid } = await import("../src/table-cells.js");
+  const { liveTableAt } = await import("../src/editor-live-blocks.js");
+  const table = liveTableAt(t.view.state, posOf(t, needle));
+  assert.ok(table, "still a table");
+  const grid = tableGrid(t.view.state.doc.sliceString(table.from, table.to), table.from);
+  const row = grid.rows.find(r => r.from <= posOf(t, needle) && posOf(t, needle) <= r.to);
+  return row.cells.length;
+};
+
+test("a backslash typed before a pipe keeps the cell whole", async () => {
+  const t = await setupLive(T);
+  try {
+    await t.caret(posOf(t, "1 |") + 1);
+    type(t, "\\");
+    type(t, "|");
+    assert.ok(text(t).includes("| 1\\\\\\| |"), text(t));
+    assert.equal(await cellCount(t, "1\\"), 2);
+    assert.equal(head(t), posOf(t, "1\\") + 5);
+    assert.ok(await gridded(t));
+  } finally { t.done(); }
+});
+
+test("a backslash at the end of an unpadded cell does not escape the closing pipe", async () => {
+  const t = await setupLive("x\n\n|a|b|\n|-|-|\n|1|2|\n\ny");
+  try {
+    await t.caret(posOf(t, "a|") + 1);
+    type(t, "\\");
+    assert.ok(text(t).includes("|a\\ |b|"), text(t));
+    assert.equal(await cellCount(t, "a\\"), 2);
+    assert.equal(head(t), posOf(t, "a\\") + 2);
+    assert.ok(await gridded(t));
+    assert.equal(rowLines(t).length, 3);
+  } finally { t.done(); }
+});
+
+test("Backspace or Delete on either half of an escaped pipe removes the pair", async () => {
+  const source = "x\n\n| a | b |\n|---|---|\n| 1\\|2 | c |\n\ny";
+  const t = await setupLive(source);
+  try {
+    const pipe = posOf(t, "\\|2") + 1;
+    await t.caret(pipe);
+    t.view.dispatch({ changes: { from: pipe - 1, to: pipe }, userEvent: "delete.backward" });
+    assert.ok(text(t).includes("| 12 | c |"), text(t));
+    assert.equal(await cellCount(t, "12"), 2);
+    assert.equal(head(t), posOf(t, "12") + 1);
+    assert.ok(await gridded(t));
+
+    t.editor.loadText(source);
+    await t.caret(pipe);
+    t.view.dispatch({ changes: { from: pipe, to: pipe + 1 }, userEvent: "delete.forward" });
+    assert.ok(text(t).includes("| 12 | c |"), text(t));
+    assert.equal(head(t), posOf(t, "12") + 1);
+  } finally { t.done(); }
+});
+
+test("a remote edit that leaves the caret on a pipe puts it back in a cell", async () => {
+  const t = await setupLive(T);
+  try {
+    const { Transaction } = await import("../src/vendor/codemirror.js");
+    const one = posOf(t, "1 |");
+    await t.caret(one);
+    t.view.dispatch({ changes: { from: one - 2, to: one + 1 }, annotations: Transaction.remote.of(true) });
+    await settle();
+    assert.ok(text(t).includes("\n | [l]"), text(t));
+    assert.ok(await gridded(t));
+    assert.equal(rowLines(t).length, 3);
+  } finally { t.done(); }
+});
+
+test("emphasis in a rendered cell is bold or italic like the widget's", async () => {
+  const t = await setupLive("x\n\n| **a** | *b* |\n|---|---|\n| 1 | 2 |\n\ny");
+  try {
+    await t.caret(posOf(t, "1 |"));
+    assert.equal(t.view.contentDOM.querySelector(".cm-lp-tcell .cm-lp-strong")?.textContent, "a");
+    assert.equal(t.view.contentDOM.querySelector(".cm-lp-tcell .cm-lp-em")?.textContent, "b");
+  } finally { t.done(); }
+});

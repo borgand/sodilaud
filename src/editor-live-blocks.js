@@ -256,7 +256,7 @@ export function toggleRawCommand(view) {
 
 export const rawBlockKeymap = Prec.high(keymap.of([{ key: "Mod-Alt-e", run: toggleRawCommand, preventDefault: true }]));
 
-const SVG_NS = "http://www.w3.org/2000/svg";
+const PENCIL_ICON = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M11.5 2.5l2 2L5 13l-2.8.8L3 11z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>';
 
 export function pencilButton(document, pressed, onPress) {
   const button = document.createElement("button");
@@ -265,19 +265,7 @@ export function pencilButton(document, pressed, onPress) {
   button.title = pressed ? "Show rendered" : "Edit Markdown";
   button.setAttribute("aria-label", "Edit Markdown");
   button.setAttribute("aria-pressed", String(pressed));
-  const svg = document.createElementNS(SVG_NS, "svg");
-  svg.setAttribute("viewBox", "0 0 16 16");
-  svg.setAttribute("width", "14");
-  svg.setAttribute("height", "14");
-  svg.setAttribute("aria-hidden", "true");
-  const path = document.createElementNS(SVG_NS, "path");
-  path.setAttribute("d", "M11.5 2.5l2 2L5 13l-2.8.8L3 11z");
-  path.setAttribute("fill", "none");
-  path.setAttribute("stroke", "currentColor");
-  path.setAttribute("stroke-width", "1.3");
-  path.setAttribute("stroke-linejoin", "round");
-  svg.append(path);
-  button.append(svg);
+  button.innerHTML = PENCIL_ICON;
   button.addEventListener("mousedown", event => {
     event.preventDefault();
     event.stopPropagation();
