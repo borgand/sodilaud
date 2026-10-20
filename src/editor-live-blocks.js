@@ -66,7 +66,12 @@ export const fenceCaretFilter = EditorState.transactionFilter.of(tr => {
 
   if (tr.isUserEvent("delete") && tr.docChanged && tr.startState.selection.main.empty) {
     let touches = false;
+    let move = null;
     tr.changes.iterChangedRanges((fromA, toA) => {
+      const before = headedFenceAt(tr.startState, fromA, options);
+      if (before?.close && fromA === before.close.to && toA === fromA + 1) move = before.last.to;
+      const after = headedFenceAt(tr.startState, toA, options);
+      if (after && toA === after.open.from && fromA === toA - 1) move = after.first.from;
       for (const pos of [fromA, toA]) {
         const fence = headedFenceAt(tr.startState, pos, options);
         if (!fence) continue;
@@ -74,6 +79,7 @@ export const fenceCaretFilter = EditorState.transactionFilter.of(tr => {
         if (fence.close && fromA < fence.close.to && toA > fence.last.to) touches = true;
       }
     });
+    if (move !== null) return [{ selection: EditorSelection.cursor(move), userEvent: "select" }];
     if (touches) return [];
   }
 

@@ -735,6 +735,23 @@ test("Backspace at the first code line and Delete at the last leave the fences i
   } finally { t.done(); }
 });
 
+test("Backspace after the closing fence and Delete before the header move the caret instead of joining", async () => {
+  const F = "```";
+  const text = `intro\n${F}js\nlet a;\nlet b;\n${F}\nafter`;
+  const t = await setup(text);
+  try {
+    const { doc } = t.view.state;
+    await t.caret(doc.line(6).from);
+    t.view.dispatch({ changes: { from: doc.line(6).from - 1, to: doc.line(6).from }, userEvent: "delete.backward" });
+    assert.equal(t.view.state.doc.toString(), text);
+    assert.equal(t.view.state.selection.main.head, doc.line(4).to);
+    await t.caret(doc.line(1).to);
+    t.view.dispatch({ changes: { from: doc.line(1).to, to: doc.line(2).from }, userEvent: "delete.forward" });
+    assert.equal(t.view.state.doc.toString(), text);
+    assert.equal(t.view.state.selection.main.head, doc.line(3).from);
+  } finally { t.done(); }
+});
+
 test("an empty fenced block shows its fences when the caret is on them", async () => {
   const F = "```";
   const text = `a\n${F}\n${F}\nb`;
