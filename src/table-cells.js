@@ -135,17 +135,19 @@ export function newRowText(headerLineText, columns) {
   return `${indent}|${"  |".repeat(columns)}`;
 }
 
-function tableLine(doc, line) {
+function tableLine(line) {
   if (isSeparatorRow(line.text)) return null;
   const { cells, piped } = splitLine(line.text, line.from);
   return piped ? cells : null;
 }
 
-function rectWalk(doc, from, to) {
+function rectWalk(doc, a, b) {
+  const from = Math.min(a, b);
+  const to = Math.max(a, b);
   const start = doc.lineAt(from);
   const end = doc.lineAt(to);
-  const fromCells = tableLine(doc, start);
-  const toCells = tableLine(doc, end);
+  const fromCells = tableLine(start);
+  const toCells = tableLine(end);
   if (!fromCells || !toCells) return [];
   const fromCol = cellIndexAt(fromCells, from);
   const toCol = cellIndexAt(toCells, to);
@@ -154,7 +156,7 @@ function rectWalk(doc, from, to) {
   const colMax = Math.max(fromCol, toCol);
   const rows = [];
   for (let n = start.number; n <= end.number; n++) {
-    const cells = tableLine(doc, doc.line(n));
+    const cells = tableLine(doc.line(n));
     if (!cells) continue;
     const picked = cells.slice(colMin, colMax + 1);
     if (picked.length) rows.push(picked);

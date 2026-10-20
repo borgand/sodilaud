@@ -100,4 +100,7 @@ test("rectRanges and cellQuote follow the rectangle, not the source span", () =>
   assert.equal(cellQuote(doc, from, to), "b\tc\ne | f\tg\ni\tj");
   assert.deepEqual(rectRanges(doc, 0, to), []);
   assert.equal(cellQuote(doc, 0, to), "");
+
+  assert.deepEqual(rectRanges(doc, to, from), rectRanges(doc, from, to));
+  assert.equal(cellQuote(doc, to, from), cellQuote(doc, from, to));
 });
