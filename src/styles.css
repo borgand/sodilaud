@@ -3819,10 +3819,11 @@ kbd {
   opacity: 1;
 }
 
+/* Just outside the table's top-right corner, clear of the header text. */
 .cm-lp-table .cm-lp-pencil {
   position: absolute;
   top: 6px;
-  right: 4px;
+  left: calc(100% + 1px);
 }
 
 .cm-line .cm-lp-pencil,
@@ -3882,6 +3883,7 @@ kbd {
 
 .cm-mode-live .cm-lp-table.markdown-preview {
   position: relative;
+  width: fit-content;
   flex: none;
   overflow: visible;
   min-width: 0;
@@ -3967,7 +3969,7 @@ kbd {
 .cm-mode-live .cm-lp-tcell .cm-lp-pencil {
   position: absolute;
   top: 6px;
-  right: 4px;
+  left: calc(100% + 1px);
   float: none;
   opacity: 1;
 }
