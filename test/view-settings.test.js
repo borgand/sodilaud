@@ -37,7 +37,7 @@ test("the main window's appearance settings are adjustable, persistent and share
   assert.equal(document.getElementById("actions-btn").getAttribute("aria-label"), "Open Sodilaud menu");
   assert.deepEqual(
     [...document.querySelectorAll("#view-settings .view-setting-label")].map(label => label.textContent),
-    ["Editor zoom", "Line spacing", "Syntax highlighting", "Line numbers"]
+    ["Editor zoom", "Line spacing", "Paragraph spacing", "Readable width", "Body font", "Heading font", "Code font", "Syntax highlighting", "Line numbers"]
   );
   assert.equal(root.style.getPropertyValue("zoom"), "", "the application UI is not scaled");
   assert.equal(root.style.getPropertyValue("--editor-font-size"), "1.2rem");
@@ -76,11 +76,85 @@ test("the main window's appearance settings are adjustable, persistent and share
   document.getElementById("zoom-reset-btn").click();
   assert.equal(app.storage.getItem("sodilaud_editor_zoom"), "1");
   document.getElementById("line-spacing-value").click();
-  assert.equal(app.storage.getItem("sodilaud_editor_line_spacing"), "1.6");
+  assert.equal(app.storage.getItem("sodilaud_editor_line_spacing"), "1.7");
 
   document.getElementById("theme-picker-btn").click();
   document.querySelector('[aria-label="Use Default Light theme"]').click();
   assert.equal(document.getElementById("active-theme-menu-value").textContent, "Default Light");
+});
+
+test("paragraph spacing is adjustable, persistent and shared", async () => {
+  const app = await bootMainWindow({ storage, instance: 3 });
+  const root = document.documentElement;
+  const value = document.getElementById("paragraph-spacing-value");
+  assert.equal(root.style.getPropertyValue("--paragraph-spacing"), "1");
+  assert.equal(value.textContent, "1.0×");
+
+  document.getElementById("actions-btn").click();
+  document.getElementById("paragraph-spacing-increase-btn").click();
+  assert.equal(root.style.getPropertyValue("--paragraph-spacing"), "1.1");
+  assert.equal(value.textContent, "1.1×");
+  assert.equal(app.storage.getItem("sodilaud_paragraph_spacing"), "1.1");
+  await app.settle();
+  assert.ok(app.emitted.some(event => event.name === "prefs-changed" && event.payload.key === "sodilaud_paragraph_spacing"));
+
+  value.click();
+  assert.equal(value.textContent, "1.0×");
+  assert.equal(app.storage.getItem("sodilaud_paragraph_spacing"), "1");
+
+  for (let index = 0; index < 8; index += 1) document.getElementById("paragraph-spacing-decrease-btn").click();
+  assert.equal(value.textContent, "0.5×");
+  assert.equal(document.getElementById("paragraph-spacing-decrease-btn").disabled, true);
+});
+
+test("readable width is on by default and can be turned off and resized", async () => {
+  const app = await bootMainWindow({ storage, instance: 5 });
+  const root = document.documentElement;
+  const value = document.getElementById("content-width-value");
+  const toggle = document.getElementById("readable-width-toggle");
+  assert.equal(root.classList.contains("readable-width"), true);
+  assert.equal(root.style.getPropertyValue("--content-width"), "80ch");
+  assert.equal(value.textContent, "80ch");
+  assert.equal(toggle.textContent, "On");
+  assert.equal(toggle.getAttribute("aria-pressed"), "true");
+
+  document.getElementById("actions-btn").click();
+  document.getElementById("content-width-increase-btn").click();
+  assert.equal(value.textContent, "85ch");
+  assert.equal(root.style.getPropertyValue("--content-width"), "85ch");
+  assert.equal(app.storage.getItem("sodilaud_content_width"), "85");
+  await app.settle();
+  assert.ok(app.emitted.some(event => event.name === "prefs-changed" && event.payload.key === "sodilaud_content_width"));
+
+  toggle.click();
+  assert.equal(root.classList.contains("readable-width"), false);
+  assert.equal(toggle.textContent, "Off");
+  assert.equal(document.getElementById("content-width-decrease-btn").disabled, true);
+  assert.equal(document.getElementById("content-width-increase-btn").disabled, true);
+  assert.equal(app.storage.getItem("sodilaud_readable_width"), "false");
+  await app.settle();
+  assert.ok(app.emitted.some(event => event.name === "prefs-changed" && event.payload.key === "sodilaud_readable_width"));
+});
+
+test("Quick Notes follows readable width changed in the main window", async () => {
+  const app = await bootApp({ storage, instance: 6 });
+  const root = document.documentElement;
+  assert.equal(root.classList.contains("readable-width"), true);
+  app.storage.setItem("sodilaud_content_width", "100");
+  await app.emit("prefs-changed", { key: "sodilaud_content_width", source: "main" });
+  assert.equal(root.style.getPropertyValue("--content-width"), "100ch");
+  app.storage.setItem("sodilaud_readable_width", "false");
+  await app.emit("prefs-changed", { key: "sodilaud_readable_width", source: "main" });
+  assert.equal(root.classList.contains("readable-width"), false);
+});
+
+test("Quick Notes follows paragraph spacing changed in the main window", async () => {
+  const app = await bootApp({ storage, instance: 4 });
+  const root = document.documentElement;
+  assert.equal(root.style.getPropertyValue("--paragraph-spacing"), "1");
+  app.storage.setItem("sodilaud_paragraph_spacing", "1.4");
+  await app.emit("prefs-changed", { key: "sodilaud_paragraph_spacing", source: "main" });
+  assert.equal(root.style.getPropertyValue("--paragraph-spacing"), "1.4");
 });
 
 test("Quick Notes applies the shared settings and keeps its own preview lines", async () => {

@@ -524,3 +524,41 @@ test("code blocks draw their background under the selection, not on their lines"
     assert.ok(Number(layer.style.zIndex) < Number(selection.style.zIndex), "the backgrounds sit under the selection");
   } finally { t.done(); }
 });
+
+test("H1 and H2 carry a rule on their last text line, H3 does not", async () => {
+  const t = await setup("# One\n\n## Two\n\n### Three\n\nSetext\nheading\n===\n\nbody", { focused: false });
+  const ruled = t.lines().filter(l => l.classList.contains("cm-lp-heading-rule")).map(l => l.textContent);
+  assert.deepEqual(ruled, ["One", "Two", "heading"]);
+});
+
+test("a heading inside a quote keeps the quote line class", async () => {
+  const t = await setup("> # Title\n\nbody", { focused: false });
+  const line = t.lines().find(l => l.textContent === "Title");
+  for (const name of ["cm-lp-quote", "cm-lp-h1", "cm-lp-heading-rule"]) assert.ok(line.classList.contains(name), name);
+});
+
+test("only setext continuation lines are marked as continuations", async () => {
+  const t = await setup("# A\n# B\n\nSetext\nheading\n===\n\nbody", { focused: false });
+  const by = text => t.lines().find(l => l.textContent === text).classList;
+  assert.ok(!by("A").contains("cm-lp-heading-cont") && !by("B").contains("cm-lp-heading-cont"));
+  assert.ok(!by("A").contains("cm-lp-heading-more"));
+  assert.ok(by("Setext").contains("cm-lp-heading-more") && !by("Setext").contains("cm-lp-heading-cont"));
+  assert.ok(by("heading").contains("cm-lp-heading-cont") && by("heading").contains("cm-lp-heading-rule"));
+});
+
+test("a setext heading inside a quote keeps quote and heading classes", async () => {
+  const t = await setup("> Setext\n> heading\n> ===\n\nbody", { focused: false });
+  const line = t.lines().find(l => l.textContent.includes("heading") && !l.textContent.includes("==="));
+  for (const name of ["cm-lp-quote", "cm-lp-h1", "cm-lp-heading-rule", "cm-lp-heading-cont"]) assert.ok(line.classList.contains(name), name);
+});
+
+test("blank lines between blocks are gaps, blank lines in code are not", async () => {
+  const t = await setup("para\n\npara\n\n```\na\n\nb\n```", { focused: false });
+  try {
+    const gaps = t.lines().map(line => line.classList.contains("cm-lp-gap"));
+    assert.deepEqual(gaps, [false, true, false, true, false, false, false, false, false]);
+  } finally {
+    t.done();
+  }
+}
+);

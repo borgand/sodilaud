@@ -5,10 +5,21 @@ export const MIN_EDITOR_ZOOM = 0.5;
 export const MAX_EDITOR_ZOOM = 2;
 export const EDITOR_ZOOM_STEP = 0.1;
 
-export const DEFAULT_EDITOR_LINE_SPACING = 1.6;
+export const DEFAULT_EDITOR_LINE_SPACING = 1.7;
 export const MIN_EDITOR_LINE_SPACING = 1.2;
 export const MAX_EDITOR_LINE_SPACING = 2.4;
 export const EDITOR_LINE_SPACING_STEP = 0.1;
+
+export const DEFAULT_PARAGRAPH_SPACING = 1;
+export const MIN_PARAGRAPH_SPACING = 0.5;
+export const MAX_PARAGRAPH_SPACING = 2;
+export const PARAGRAPH_SPACING_STEP = 0.1;
+
+export const DEFAULT_READABLE_WIDTH = true;
+export const DEFAULT_CONTENT_WIDTH = 80;
+export const MIN_CONTENT_WIDTH = 60;
+export const MAX_CONTENT_WIDTH = 120;
+export const CONTENT_WIDTH_STEP = 5;
 
 export const DEFAULT_NOTE_PREVIEW_LINES = 2;
 export const MIN_NOTE_PREVIEW_LINES = 1;
@@ -36,6 +47,26 @@ export function normalizeEditorLineSpacing(value) {
   );
 }
 
+export function normalizeParagraphSpacing(value) {
+  return normalizeSteppedValue(
+    value,
+    DEFAULT_PARAGRAPH_SPACING,
+    MIN_PARAGRAPH_SPACING,
+    MAX_PARAGRAPH_SPACING
+  );
+}
+
+export function normalizeContentWidth(value) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return DEFAULT_CONTENT_WIDTH;
+  const stepped = Math.round(numericValue / CONTENT_WIDTH_STEP) * CONTENT_WIDTH_STEP;
+  return Math.min(MAX_CONTENT_WIDTH, Math.max(MIN_CONTENT_WIDTH, stepped));
+}
+
+export function stepContentWidth(value, direction) {
+  return normalizeContentWidth(normalizeContentWidth(value) + direction * CONTENT_WIDTH_STEP);
+}
+
 export function stepEditorZoom(value, direction) {
   return normalizeEditorZoom(normalizeEditorZoom(value) + direction * EDITOR_ZOOM_STEP);
 }
@@ -43,6 +74,12 @@ export function stepEditorZoom(value, direction) {
 export function stepEditorLineSpacing(value, direction) {
   return normalizeEditorLineSpacing(
     normalizeEditorLineSpacing(value) + direction * EDITOR_LINE_SPACING_STEP
+  );
+}
+
+export function stepParagraphSpacing(value, direction) {
+  return normalizeParagraphSpacing(
+    normalizeParagraphSpacing(value) + direction * PARAGRAPH_SPACING_STEP
   );
 }
 
@@ -69,6 +106,12 @@ export function normalizeEditorLineNumbers(value) {
   if (value === true || value === "true" || value === "1") return true;
   if (value === false || value === "false" || value === "0") return false;
   return DEFAULT_EDITOR_LINE_NUMBERS;
+}
+
+export function normalizeReadableWidth(value) {
+  if (value === true || value === "true" || value === "1") return true;
+  if (value === false || value === "false" || value === "0") return false;
+  return DEFAULT_READABLE_WIDTH;
 }
 
 export const LAYOUT_MODES = ["live", "source", "reading"];

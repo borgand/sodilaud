@@ -15,6 +15,7 @@ import { scrollToReadingAnchor } from "./anchors.js";
 import { getNotePreview } from "./note-preview.js";
 import { createThemes } from "./themes.js";
 import { createAppearance } from "./appearance.js";
+import { createDocumentFonts } from "./document-fonts.js";
 import { broadcastPreference, onPreferenceChange } from "./preferences.js";
 import { createAgentAccess } from "./agent-access.js";
 import { applyPlatformShortcutLabels, isMacLikePlatform } from "./platform-labels.js";
@@ -232,6 +233,13 @@ const appearance = createAppearance({
   }
 });
 const mermaid = createMermaidRenderer({ document });
+const fonts = createDocumentFonts({
+  document,
+  storage: localStorage,
+  broadcast: shareAppearance,
+  themeFonts: () => themes.activeTheme(),
+  onApplied: () => mermaid.setTheme(themeVariablesFrom(document))
+});
 mermaid.onChange(() => {
   updateMarkdownPreview();
   updateSecondaryMarkdownPreview();
@@ -241,7 +249,10 @@ const themes = createThemes({
   document,
   storage: localStorage,
   invoke,
-  onApplied: () => mermaid.setTheme(themeVariablesFrom(document))
+  onApplied: () => {
+    fonts.apply();
+    mermaid.setTheme(themeVariablesFrom(document));
+  }
 });
 
 // ----------------------------------------------------
@@ -728,6 +739,7 @@ async function init() {
   // 2. Load the saved theme (Executive on first launch) and layout mode
   themes.load();
   appearance.load();
+  fonts.load();
   const savedLayoutMode = localStorage.getItem("sodilaud_layout_mode");
   setLayoutMode(normalizeLayoutMode(savedLayoutMode), { persist: savedLayoutMode !== null });
   loadCollapsedFolders();
@@ -1626,6 +1638,7 @@ const setFormatControlsEnabled = (enabled) => formatToolbar.setEnabled(enabled);
 // Another window changed a shared preference: re-read and apply it here.
 function followPreferenceChange(key) {
   if (appearance.reload(key)) return;
+  if (fonts.reload(key)) return;
   if (key === "sodilaud_active_theme" || key === "sodilaud_custom_themes" || key === "color-scheme") {
     themes.load();
   } else if (key === "sodilaud_layout_mode") {

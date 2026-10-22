@@ -83,7 +83,8 @@ Clipboard history is off by default. Turn it on in **Sodilaud menu → Clipboard
 - Copy as Markdown or sanitized rendered HTML
 - Optional portable workspace files that reopen automatically
 - Recoverable note deletion with persistent trash, Restore actions, and user-confirmed Empty Trash
-- Built-in and importable color themes with contrast-aware sidebar and active-note tones
+- Built-in and importable color themes; the whole document (code, tables, rules, quotes, headings, links) takes its colors from the theme
+- Configurable document fonts (Inter, IBM Plex Serif, JetBrains Mono, IBM Plex Mono, or any installed font), heading scale with section rules, paragraph spacing and a readable column width
 - Persistent editor zoom and adjustable editor line spacing
 - A sectioned Sodilaud menu, About panel, keyboard shortcut reference, and Markdown cheatsheet
 
@@ -207,6 +208,8 @@ Syntax highlighting is enabled by default. Open **Sodilaud menu → Appearance �
 
 Source line numbers are off by default. Open **Sodilaud menu → Appearance → Line numbers** to show a subtle, theme-aware gutter in both editor panes; the preference is remembered between launches.
 
+Open **Sodilaud menu → Appearance → Paragraph spacing** to adjust the space between blocks. **Readable width** is on by default and limits the text column to 80 characters; code blocks and tables share the column's edges, and wide tables scroll inside it. **Body font**, **Heading font** and **Code font** each offer Theme default, the bundled fonts, or **System font…**, where you type an installed font's name. A system font that is not installed falls back to the bundled default font (Inter, or JetBrains Mono for code). All of these are remembered between launches.
+
 Open two notes side by side, then choose **Compare** in the toolbar to highlight source differences without changing either note. Removed text is marked on the left, added text on the right, and related words receive contiguous substring detail. The toolbar reports the total number of changed lines across both notes. Comparison refreshes after a brief pause in typing, showing **Updating comparison…** while pending, and turns off when split view closes.
 
 ## Themes
@@ -228,6 +231,29 @@ A custom JSON theme requires `background` and `foreground`. Other colors receive
 ```
 
 Simple TOML/key-value theme files using the same names are also accepted. Imported colors are validated before they are stored or rendered. Opaque hex, RGB, HSL, named, and `color(srgb …)` values are measured against the theme's own surfaces so secondary text remains readable; translucent or wider-gamut values are preserved without being flattened into guessed colors.
+
+Themes can also set optional document colors and fonts. Unset color slots are derived from the base colors, so a theme only lists the ones it wants to change:
+
+```json
+{
+  "name": "My Theme",
+  "background": "#181e21",
+  "foreground": "#fdc78e",
+  "heading": "#f2946c",
+  "codeBackground": "#1f2629",
+  "codeBorder": "#2f383b",
+  "tableHeaderBackground": "#222a2d",
+  "tableBorder": "#353e42",
+  "rule": "#3a4346",
+  "mutedText": "#9a8f84",
+  "link": "#1e959d",
+  "fontBody": "ibm-plex-serif",
+  "fontHeading": "inter",
+  "fontCode": "system:Menlo"
+}
+```
+
+`fontBody`, `fontHeading` and `fontCode` are suggestions: a bundled font id (`inter`, `ibm-plex-serif`, `jetbrains-mono`, `ibm-plex-mono`) or `system:<name>`. TOML files accept the same names in lowercase or snake_case (`code_background`, `font_body`). TOML slot values currently need `rgb()` or named colors, not hex, because of a known limitation in the TOML parser.
 
 ## Development
 

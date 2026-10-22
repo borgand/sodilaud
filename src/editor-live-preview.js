@@ -417,9 +417,14 @@ const hidden = Decoration.replace({});
 const codeMark = Decoration.mark({ class: "cm-lp-code" });
 const blockedImageMark = Decoration.mark({ class: "cm-lp-image-blocked" });
 const lineClasses = {};
-for (const name of ["h1", "h2", "h3", "h4", "h5", "h6", "quote", "codeblock", "hr"]) {
+for (const name of ["h1", "h2", "h3", "h4", "h5", "h6", "quote", "codeblock", "hr", "gap"]) {
   lineClasses[name] = Decoration.line({ class: `cm-lp-${name}` });
 }
+const headingLines = new Map();
+const headingLine = classes => {
+  if (!headingLines.has(classes)) headingLines.set(classes, Decoration.line({ class: classes }));
+  return headingLines.get(classes);
+};
 for (const name of ["head", "foot", "highlighted"]) {
   lineClasses[`codeblock-${name}`] = Decoration.line({ class: `cm-lp-codeblock cm-lp-codeblock-${name}` });
 }
@@ -583,6 +588,20 @@ function buildInline(view, focused) {
           const underline = name.startsWith("Setext") ? ref.node.getChild("HeaderMark") : null;
           const textEnd = underline ? doc.lineAt(underline.from).from - 1 : to;
           markLines(from, textEnd, `h${level}`, rangeFrom, rangeTo);
+          const first = doc.lineAt(from).number;
+          const last = doc.lineAt(textEnd).number;
+          for (let n = Math.max(first, doc.lineAt(rangeFrom).number); n <= Math.min(last, doc.lineAt(rangeTo).number); n++) {
+            const line = doc.line(n);
+            const existing = lineDecorations.get(line.from);
+            const quoted = existing === lineClasses.quote;
+            if (existing !== lineClasses[`h${level}`] && !quoted) continue;
+            const classes = [`cm-lp-h${level}`];
+            if (quoted) classes.push("cm-lp-quote");
+            if (level <= 2 && n === last) classes.push("cm-lp-heading-rule");
+            if (n > first) classes.push("cm-lp-heading-cont");
+            if (n < last) classes.push("cm-lp-heading-more");
+            if (classes.length > 1) lineDecorations.set(line.from, headingLine(classes.join(" ")));
+          }
           return true;
         }
 
@@ -678,6 +697,19 @@ function buildInline(view, focused) {
         return true;
       }
     });
+  }
+
+  const verbatim = new Set(["FencedCode", "CodeBlock", "HTMLBlock", "Table"]);
+  for (const { from: rangeFrom, to: rangeTo } of view.visibleRanges) {
+    for (let n = doc.lineAt(rangeFrom).number; n <= doc.lineAt(rangeTo).number; n++) {
+      const line = doc.line(n);
+      if (lineDecorations.has(line.from) || line.text.trim() !== "") continue;
+      let inside = false;
+      for (let node = syntaxTree(state).resolveInner(line.from, 1); node; node = node.parent) {
+        if (verbatim.has(node.name)) { inside = true; break; }
+      }
+      if (!inside) lineDecorations.set(line.from, lineClasses.gap);
+    }
   }
 
   for (const [pos, decoration] of lineDecorations) ranges.push(decoration.range(pos));

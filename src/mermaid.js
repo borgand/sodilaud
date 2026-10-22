@@ -187,7 +187,10 @@ export function themeVariablesFrom(document) {
   const text = readColor(style, "--preview-text", resolve);
   const accent = readColor(style, "--accent-color", resolve);
   const border = readColor(style, "--border-color", resolve);
-  const fontFamily = view.getComputedStyle(document.body ?? root).fontFamily;
+  const documentFont = style.getPropertyValue("--doc-font-body").trim();
+  const fontFamily = documentFont && !documentFont.includes("var(")
+    ? documentFont
+    : view.getComputedStyle(document.body ?? root).fontFamily;
 
   const variables = { darkMode: root.classList.contains("theme-dark") };
   if (fontFamily) variables.fontFamily = fontFamily;
