@@ -51,7 +51,7 @@ export function isSafeMarkdownUrl(value, isImage = false) {
     parseSiblingHref(value) !== null;
 }
 
-const SIBLING_EXTENSION = /\.(md|markdown|txt)$/i;
+const SIBLING_EXTENSION = /\.(md|markdown|txt|csv|tsv)$/i;
 
 // A link to another document next to this one, such as `02-merge.md#engine`:
 // relative, no scheme, query or `..`, ending in a text extension. Returns the

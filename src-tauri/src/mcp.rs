@@ -117,7 +117,7 @@ const READ_TOOLS: [&str; 8] = [
     "read_document",
     "get_pending_comments",
 ];
-const WRITE_TOOLS: [&str; 14] = [
+const WRITE_TOOLS: [&str; 15] = [
     "create_note",
     "create_folder",
     "append_to_note",
@@ -128,6 +128,7 @@ const WRITE_TOOLS: [&str; 14] = [
     "delete_folder",
     "push_quick_note",
     "open_document",
+    "push_draft",
     "apply_edit",
     "add_comment",
     "reply_comment",
@@ -980,10 +981,22 @@ struct PushQuickNoteArgs {
     show: Option<bool>,
 }
 
+#[derive(Debug, Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct PushDraftArgs {
+    /// Unique retry key (1-128 characters). Reuse with identical arguments on retry.
+    request_id: String,
+    /// Title, used as the draft's file name (1-200 characters after trimming).
+    title: String,
+    /// Markdown content, at most 100000 UTF-8 bytes. Defaults to empty.
+    #[serde(default)]
+    content: String,
+}
+
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct OpenDocumentArgs {
-    /// Absolute path to an existing .md, .markdown or .txt file (UTF-8, at most 10 MB).
+    /// Absolute path to an existing .md, .markdown, .txt, .csv or .tsv file (UTF-8, at most 10 MB).
     path: String,
 }
 
@@ -1679,7 +1692,7 @@ impl SodilaudServer {
         successful_result(result)
     }
 
-    /// Open a Markdown or text file in Sodilaud's main window so the user can read it there, or switch to it if it is already open. Takes an absolute path to an existing .md, .markdown or .txt file. Returns the path, name and size, not the content. The returned path is the file's real path (symbolic links resolved, e.g. /tmp becomes /private/tmp on macOS); use it in later calls. Safe to repeat.
+    /// Open a Markdown or text file in Sodilaud's main window so the user can read it there, or switch to it if it is already open. Takes an absolute path to an existing .md, .markdown, .txt, .csv or .tsv file. Returns the path, name and size, not the content. The returned path is the file's real path (symbolic links resolved, e.g. /tmp becomes /private/tmp on macOS); use it in later calls. Safe to repeat.
     #[tool(annotations(
         title = "Open document",
         read_only_hint = false,
@@ -1702,6 +1715,51 @@ impl SodilaudServer {
                 .and_then(|_| Err(crate::files::FileError::not_granted(Path::new(&args.path)))),
         };
         match opened {
+            Ok(opened) => {
+                self.registry
+                    .coedit_mark_file(std::path::Path::new(&opened.path));
+                successful_result(opened)
+            }
+            Err(error) => Ok(tool_error(error.message)),
+        }
+    }
+
+    /// Put a Markdown draft in front of the user for review: it opens in Sodilaud's main window (the one used last) and is kept in Sodilaud until the user saves it as a file or to Quick Notes, or discards it. Use it for a document the user should read and maybe keep, when there is no file to write to. The draft is co-edited: follow up with read_document and apply_edit using the returned path. Retry identical arguments after a failure; a requestId is never applied twice.
+    #[tool(annotations(
+        title = "Push draft",
+        read_only_hint = false,
+        destructive_hint = false,
+        idempotent_hint = true,
+        open_world_hint = false
+    ))]
+    async fn push_draft(
+        &self,
+        Parameters(args): Parameters<PushDraftArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        if let Some(denied) = self.denied("push_draft")? {
+            return Ok(denied);
+        }
+        if args.request_id.trim().is_empty() || args.request_id.chars().count() > 128 {
+            return Err(McpError::invalid_params(
+                "requestId must contain 1-128 characters",
+                None,
+            ));
+        }
+        let title = args.title.trim();
+        if title.is_empty()
+            || title.chars().count() > crate::files::drafts::TITLE_LIMIT
+            || args.content.len() > crate::files::drafts::CONTENT_LIMIT
+        {
+            return Err(McpError::invalid_params(
+                "title must contain 1-200 characters and content at most 100000 UTF-8 bytes",
+                None,
+            ));
+        }
+        let Some(app) = &self.app else {
+            return Ok(tool_error("Drafts need the Sodilaud app.".into()));
+        };
+        match crate::files::open_draft_for_agent(app, &args.request_id, &args.title, &args.content)
+        {
             Ok(opened) => {
                 self.registry
                     .coedit_mark_file(std::path::Path::new(&opened.path));
@@ -2231,7 +2289,7 @@ impl ServerHandler for SodilaudServer {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new("sodilaud-mcp", env!("CARGO_PKG_VERSION")))
             .with_instructions(
-                "Access to the notes collection currently open in Sodilaud, as the editor shows it. Each function requires its permission enabled in MCP Configuration. Read functions start enabled and write functions disabled until the user selects them; choices are remembered across restarts. push_quick_note puts a note into the user's Quick Notes (the From agents folder) and needs no collectionId. open_document opens an absolute .md, .markdown or .txt path in the main window and returns no content. Co-editing: read_document returns a file's or note's live text and version and makes it co-edited; change it only with apply_edit (oldText/newText against that version; the user's typing wins conflicts), never with native file tools. get_pending_comments (with waitSeconds to wait) returns the user's comments anchored to text; address each, then resolve_comment with a one-line note, which closes the whole thread. reply_comment answers in a thread without resolving it, for discussion. add_comment asks the user a question on a passage; their answers arrive through get_pending_comments with the thread so far. delete_note moves a note to persistent trash and requires expectedRevision from get_note. delete_folder requires expectedRevision from list_folders and rejects nonempty folders. list_trash lists recovery metadata; only the user can restore or empty trash through the UI. rename_note and move_note require expectedRevision from get_note. rename_folder requires expectedRevision from list_folders. All edits preserve content except append_to_note, which requires the expectedRevision from get_note, appends exact text, and never adds separators; line breaks are stored as \\n. A revision conflict requires rereading; after a failure or timeout, retry identical arguments with the same requestId, which never applies a write twice. Get collectionId from a read result and supply a unique requestId for each write; reuse identical arguments on retries. Retry keys last for this collection session; a switch or app restart invalidates collectionId. Results are paginated; follow nextOffset until it is null. get_note offsets count Unicode characters, not bytes.",
+                "Access to the notes collection currently open in Sodilaud, as the editor shows it. Each function requires its permission enabled in MCP Configuration. Read functions start enabled and write functions disabled until the user selects them; choices are remembered across restarts. push_quick_note puts a note into the user's Quick Notes (the From agents folder) and needs no collectionId. open_document opens an absolute .md, .markdown, .txt, .csv or .tsv path in the main window and returns no content. push_draft puts new Markdown in front of the user as a draft in the main window, kept in Sodilaud until they save it as a file or to Quick Notes; use its returned path with read_document and apply_edit. Co-editing: read_document returns a file's or note's live text and version and makes it co-edited; change it only with apply_edit (oldText/newText against that version; the user's typing wins conflicts), never with native file tools. get_pending_comments (with waitSeconds to wait) returns the user's comments anchored to text; address each, then resolve_comment with a one-line note, which closes the whole thread. reply_comment answers in a thread without resolving it, for discussion. add_comment asks the user a question on a passage; their answers arrive through get_pending_comments with the thread so far. delete_note moves a note to persistent trash and requires expectedRevision from get_note. delete_folder requires expectedRevision from list_folders and rejects nonempty folders. list_trash lists recovery metadata; only the user can restore or empty trash through the UI. rename_note and move_note require expectedRevision from get_note. rename_folder requires expectedRevision from list_folders. All edits preserve content except append_to_note, which requires the expectedRevision from get_note, appends exact text, and never adds separators; line breaks are stored as \\n. A revision conflict requires rereading; after a failure or timeout, retry identical arguments with the same requestId, which never applies a write twice. Get collectionId from a read result and supply a unique requestId for each write; reuse identical arguments on retries. Retry keys last for this collection session; a switch or app restart invalidates collectionId. Results are paginated; follow nextOffset until it is null. get_note offsets count Unicode characters, not bytes.",
             )
     }
 
@@ -2706,6 +2764,31 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
+    async fn push_draft_is_off_until_selected_and_validates() {
+        let (server, permissions, path) = server();
+        let push = |value: serde_json::Value| server.push_draft(args(value));
+        let off = push(serde_json::json!({"requestId": "d", "title": "Plan"}))
+            .await
+            .unwrap();
+        assert!(error_text(off).contains("Permission for push_draft is disabled"));
+        permissions.write().unwrap().insert("push_draft".into());
+        for invalid in [
+            serde_json::json!({"requestId": "d", "title": "  "}),
+            serde_json::json!({"requestId": "d", "title": "t".repeat(201)}),
+            serde_json::json!({"requestId": "d", "title": "T", "content": "x".repeat(100_001)}),
+            serde_json::json!({"requestId": "x".repeat(129), "title": "T"}),
+            serde_json::json!({"requestId": "", "title": "T"}),
+        ] {
+            assert!(push(invalid).await.is_err());
+        }
+        let valid = push(serde_json::json!({"requestId": "d", "title": "t".repeat(200), "content": "x".repeat(100_000)}))
+            .await
+            .unwrap();
+        assert_eq!(error_text(valid), "Drafts need the Sodilaud app.");
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[tokio::test]
     async fn co_editing_tools_read_merge_comment_and_resolve() {
         let (server, permissions, path) = server();
         let read = structured(
@@ -3064,7 +3147,7 @@ pub(crate) mod tests {
         .await;
         let tools = receive_json(&mut client).await;
         let tools = tools["result"]["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 22);
+        assert_eq!(tools.len(), 23);
         for forbidden in ["empty_trash", "purge_trash", "restore_note"] {
             assert!(!tools.iter().any(|tool| tool["name"] == forbidden));
         }
@@ -3163,6 +3246,11 @@ pub(crate) mod tests {
                 14,
                 "open_document",
                 serde_json::json!({"path":"/tmp/notes.md"}),
+            ),
+            (
+                15,
+                "push_draft",
+                serde_json::json!({"requestId":"d1", "title":"Plan"}),
             ),
         ] {
             send_json(
@@ -3304,7 +3392,7 @@ pub(crate) mod tests {
         )
         .await;
         let tools = receive_json(&mut client).await;
-        assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 22);
+        assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 23);
         cancellation.cancel();
         server.await.unwrap();
     }

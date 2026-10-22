@@ -1,8 +1,8 @@
 # Editing files
 
-Main Sodilaud windows edit Markdown and plain-text files on disk: `.md`, `.markdown` and
-`.txt`. They use the same editor as Quick Notes (Live, Source and Reading modes, the formatting
-toolbar, and the smart editing keys), but files and notes never mix: files do not appear in
+Main Sodilaud windows edit Markdown and plain-text files on disk: `.md`, `.markdown`, `.txt`,
+`.csv` and `.tsv`. They use the same editor as Quick Notes (Live, Source and Reading modes, the
+formatting toolbar, and the smart editing keys), but files and notes never mix: files do not appear in
 Quick Notes, in search or in trash, and notes do not appear here. An agent can read or edit
 a file only while it is open here, and only with the co-editing permissions on (see
 [co-editing with an agent](coedit.md)).
@@ -28,6 +28,10 @@ default app for Markdown, by double-clicking it. On Windows and Linux, opening a
 Sodilaud while it is already running hands the file to the running app instead of starting a
 second one.
 
+`.txt`, `.csv` and `.tsv` files open as plain text: no live preview and no Markdown keys (Enter
+does not continue a list, Tab types a tab), and Reading shows the text as it is. `.md` and
+`.markdown` files keep the full editor.
+
 ## Open from a terminal
 
 On macOS and Linux, the `sodilaud` command opens files from a terminal:
@@ -39,8 +43,8 @@ sodilaud README.md docs/plan.md
 
 It starts Sodilaud if it is not running, opens the files in the window you used last, and returns at
 once. Relative paths are taken from the terminal's current folder. A file that does not exist
-yet is created empty, but only in a folder that exists. Only `.md`, `.markdown` and `.txt`
-files are accepted; anything else is refused with a message and nothing is opened.
+yet is created empty, but only in a folder that exists. Only `.md`, `.markdown`, `.txt`, `.csv`
+and `.tsv` files are accepted; anything else is refused with a message and nothing is opened.
 
 To install it, choose **Command Line Tool…** in the **Sodilaud menu** (on macOS also in the
 application menu, under **About Sodilaud**). It writes a small script to
@@ -57,6 +61,52 @@ Each file keeps its own undo history while it is open. The files that were open 
 reopen at the next launch.
 
 The status bar shows the save state ("Saved" fades after a moment) and, on hover, the file's path.
+
+## Folders
+
+**File → Open Folder…** (`Cmd+Shift+O`, `Ctrl+Shift+O` on Windows and Linux), the start page's
+**Open Folder…**, and **Show Folder in Sidebar** (File menu, for the shown file) add a folder to the **Folders** section of the sidebar. Each window has its own folders;
+they come back after a restart with the folders you had expanded. Remove a folder with its
+**×** button ("Remove <name> from the sidebar"); nothing on disk changes.
+
+A folder loads one level at a time, when you expand it. Click a file to open it. The tree shows
+the five file types above and hides:
+
+- names that start with a dot,
+- `node_modules`,
+- anything matched by a `.gitignore`, read from the top of the repository down to the folder.
+  Matching covers the common patterns and is case-sensitive, so it is a subset of what Git
+  itself understands.
+
+Expanded folders update while they are open, so a file created or removed in a terminal shows
+within about a second. At most 128 folders update live in all windows together. A folder with
+more than 2,000 items lists the first 2,000 and shows "Some items are not shown." A folder that
+was moved or deleted shows "Folder not found".
+
+## Drafts
+
+An agent can put a draft in front of you with `push_draft` (see [MCP](mcp.md)). It opens in the
+window you used last with a **Draft** tag and a bar: "Draft from an agent. It stays in Sodilaud
+until you save it." Edit it like any file, then choose:
+
+- **Save As…** to give it a place on disk,
+- **Save to Quick Notes** to move it into the **From agents** folder,
+- **Discard** to delete it, after a confirmation.
+
+Closing a draft does not lose it: it stays under **Drafts** on the start page until you save or
+discard it. Drafts are kept in the app's data folder, readable only by you, and survive a
+restart.
+
+## Find, split view and compare
+
+- **Find**: `Cmd/Ctrl+F`. **Find and replace**: `Cmd+Alt+F` on macOS, `Ctrl+H` on Windows and
+  Linux.
+- **Split view**: `Cmd/Ctrl+\` (or the toolbar button) opens a second file in a right pane. The
+  same file may be open in both panes. Split view is not available in Reading mode.
+- **Compare**: with two different files side by side, choose **Compare** in the toolbar to
+  highlight removed text on the left and added text on the right.
+
+In split view, Save, Save As and Close act on the pane that has focus.
 
 ## Windows
 
@@ -121,9 +171,7 @@ Sodilaud's own saves are recognized and never reported as outside changes.
 - Text must be UTF-8. A file in another encoding is refused with a message, not opened as
   garbled text.
 - Files larger than 10 MB are not opened.
-- Find and replace, split view and compare are Quick Notes features for now; they do not work
-  on files yet.
-- Folders cannot be opened yet; open files one at a time.
+- A folder lists at most 2,000 items, and at most 128 folders update live.
 
 ## Access and privacy
 
@@ -133,3 +181,6 @@ in `files.json` in the app's config directory, readable only by you). Every file
 checks the path, after resolving `..` and symbolic links, against those choices, so the page
 cannot name an arbitrary path. The Quick Notes window cannot use the file commands at all,
 and MCP agents cannot see files.
+
+A window may list the folders in its own sidebar. No MCP function lists folders. A file in a
+folder is granted when you open it from the tree, with the same checks as any other file.

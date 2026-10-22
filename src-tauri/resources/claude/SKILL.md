@@ -14,6 +14,7 @@ needs its permission in Sodilaud's MCP Configuration (write functions start off)
 |---|---|
 | Show the user a file you wrote or changed | `open_document` with its absolute path |
 | Hand over throw-away output (commands to run, a summary with no project to save into) | `push_quick_note` |
+| Put new Markdown in front of the user to review before it is saved anywhere | `push_draft`, then `read_document`/`apply_edit` on its returned path |
 | Start a review of a document with your open questions | `add_comment` on each passage, then the `/sodilaud` loop |
 | Work on a document together, comment by comment | the `/sodilaud` command (`/sodilaud <path>`) |
 | See which documents are open and have waiting comments | `list_documents` |

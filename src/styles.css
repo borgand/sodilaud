@@ -3711,6 +3711,7 @@ kbd {
 /* Editor: live preview */
 .cm-editor.cm-mode-live .cm-content { font-family: var(--doc-font-body); }
 .cm-editor.cm-mode-source .cm-content { font-family: var(--doc-font-code); }
+.cm-editor.cm-plain .cm-content { font-family: var(--doc-font-code); }
 
 .cm-mode-live .cm-lp-gap {
   line-height: var(--doc-gap);

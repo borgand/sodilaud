@@ -7,7 +7,7 @@ test("Quick Notes builds the MCP Configuration and follows changes made in the m
   const app = await bootApp();
   const $ = id => document.getElementById(id);
   assert.equal($("mcp-config-modal").getAttribute("role"), "dialog");
-  assert.equal($("mcp-status").closest(".statusbar-right"), document.querySelector(".statusbar-right"));
+  assert.ok($("mcp-status").closest(".statusbar-right") === document.querySelector(".statusbar-right"), "the status sits in the status bar");
   assert.equal($("mcp-status").hidden, true);
 
   app.emit("mcp-state-changed", { enabled: true, tools: ["get_note", "apply_edit"], error: null, integration: null });

@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createFilesModel, isDirty, needsPrompt } from "../src/files.js";
+import { createFilesModel, fileKind, isDirty, needsPrompt } from "../src/files.js";
 
 let counter = 0;
 const model = () => createFilesModel({ newId: () => `id-${(counter += 1)}` });
@@ -97,4 +97,27 @@ test("Save As adopts the new file and a reload replaces the text", () => {
   assert.equal(buffer.text, "fresh");
   assert.equal(buffer.version, 9);
   assert.equal(buffer.latest, 9);
+});
+
+test("fileKind marks .txt, .csv and .tsv as plain and the rest as Markdown", () => {
+  assert.equal(fileKind("A.TXT"), "plain");
+  assert.equal(fileKind("x.csv"), "plain");
+  assert.equal(fileKind("y.tsv"), "plain");
+  assert.equal(fileKind("n.md"), "markdown");
+  assert.equal(fileKind("n.markdown"), "markdown");
+});
+
+test("the confirmed text follows the registry's updates and stops at a gap", () => {
+  const files = model();
+  const buffer = files.openFile(opened("/a/c.md", "ab\n", { version: 2 }));
+  const event = { docId: "doc:/a/c.md", path: "/a/c.md" };
+  const insert = (at, length, text) => ({ clientID: "x", changes: [at, [0, text], length - at] });
+  files.edit(buffer.id, "typed ab\n");
+  assert.deepEqual(buffer.confirmed, { text: "ab\n", version: 2 }, "typing is not confirmed");
+  files.docUpdated({ ...event, from: 1, updates: [insert(0, 3, "z"), insert(0, 3, "x")], version: 3 });
+  assert.deepEqual(buffer.confirmed, { text: "xab\n", version: 3 }, "updates it already has are skipped");
+  files.docUpdated({ ...event, from: 5, updates: [insert(0, 4, "y")], version: 6 });
+  assert.deepEqual(buffer.confirmed, { text: "xab\n", version: 3 }, "after a gap it waits");
+  files.reload(buffer.id, "new\n", 9);
+  assert.deepEqual(buffer.confirmed, { text: "new\n", version: 9 });
 });

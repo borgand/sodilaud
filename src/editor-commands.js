@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+import { plainTextFacet } from "./editor-view.js";
 import { EditorSelection, EditorView, Prec, isolateHistory, keymap } from "./vendor/codemirror.js";
 import { getChangedRange } from "./editor-edit.js";
 import { getIndentEdit } from "./editor-indent.js";
@@ -57,8 +58,22 @@ function getKeydownEdit(event, view) {
   return getSmartKeyEdit(text, from, to, event.key);
 }
 
+function plainKeydown(event, view) {
+  if (event.key !== "Tab" || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return false;
+  event.preventDefault();
+  const { from, to } = view.state.selection.main;
+  view.dispatch({
+    changes: { from, to, insert: "\t" },
+    selection: EditorSelection.cursor(from + 1),
+    userEvent: "input",
+    scrollIntoView: true
+  });
+  return true;
+}
+
 function keydown(event, view) {
   if (isGuarded(event, view)) return false;
+  if (view.state.facet(plainTextFacet)) return plainKeydown(event, view);
   const edit = getKeydownEdit(event, view);
   if (!edit) return false;
   if (event.altKey && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
@@ -69,7 +84,7 @@ function keydown(event, view) {
 }
 
 function paste(event, view) {
-  if (isGuarded(event, view)) return false;
+  if (view.state.facet(plainTextFacet) || isGuarded(event, view)) return false;
   const text = event.clipboardData?.getData("text/plain");
   if (!text) return false;
   const { from, to } = view.state.selection.main;
@@ -102,7 +117,7 @@ export function applyPureEdit(view, edit, { isolate = false } = {}) {
 }
 
 export function runFormatAction(view, actionId) {
-  if (view.composing || view.state.selection.ranges.length > 1) return false;
+  if (view.composing || view.state.selection.ranges.length > 1 || view.state.facet(plainTextFacet)) return false;
   const { from, to } = view.state.selection.main;
   const edit = getFormatEdit(view.state.doc.toString(), from, to, actionId);
   return applyPureEdit(view, edit, { isolate: true });

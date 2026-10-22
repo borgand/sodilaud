@@ -105,6 +105,7 @@ impl FileDoc {
             bom: self.bom,
             saved_version: self.save.saved_version,
             external: self.external,
+            draft: false,
         }
     }
 
@@ -142,6 +143,9 @@ pub(crate) struct FileOpened {
     pub(crate) bom: bool,
     pub(crate) saved_version: u64,
     pub(crate) external: Option<External>,
+    /// An agent's draft, kept in app data until it is saved.
+    #[serde(default)]
+    pub(crate) draft: bool,
 }
 
 #[derive(Serialize, Clone, Debug, PartialEq)]
@@ -488,6 +492,16 @@ impl Registry {
     pub(crate) fn file_discard(&self, path: &Path) {
         self.file_docs().remove(path);
         self.coedit_forget_file(path);
+    }
+
+    /// Deletes the comments stored for `path`, which is gone for good.
+    pub(crate) fn file_remove_comments(&self, path: &Path) {
+        let Some(directory) = self.comment_dir() else {
+            return;
+        };
+        if let Err(error) = crate::store::comments::save(&directory, path, &[]) {
+            eprintln!("{error}");
+        }
     }
 
     fn emit_external(&self, path: &Path, doc: &FileDoc, kind: ExternalKind) {

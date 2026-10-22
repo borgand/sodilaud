@@ -43,6 +43,9 @@ export const externalChange = Annotation.define();
 
 export const modeFacet = Facet.define({ combine: values => values[0] ?? "live" });
 
+// Whether the document is plain text: no live preview, no Markdown keys or folds.
+export const plainTextFacet = Facet.define({ combine: values => values.some(Boolean) });
+
 // Whether syntax highlighting is on, for extensions that color code themselves.
 export const syntaxHighlightingFacet = Facet.define({ combine: values => values.some(Boolean) });
 
@@ -236,6 +239,7 @@ function selectionDirection(range) {
  * @param {string} [options.placeholder]
  * @param {"live"|"source"} [options.mode="live"]
  * @param {boolean} [options.syntaxHighlighting=true]
+ * @param {boolean} [options.plainText=false]
  * @param {boolean} [options.lineNumbers=false]
  * @param {(text: string) => void} [options.onChange] user edits only, never setText/loadText or a remote update
  * @param {() => void} [options.onSelectionChange] selection or doc changed, from any source
@@ -254,15 +258,20 @@ export function createMarkdownEditor(options) {
 
   let mode = options.mode === "source" ? "source" : "live";
   let highlighting = options.syntaxHighlighting !== false;
+  let plain = options.plainText === true;
   let showLineNumbers = options.lineNumbers === true;
   let diff = null;
 
   const modeCompartment = new Compartment();
   const highlightCompartment = new Compartment();
+  const plainCompartment = new Compartment();
   const gutterCompartment = new Compartment();
   const extraCompartment = new Compartment();
 
-  const highlightExtension = () => highlighting
+  const plainExtension = () => plain
+    ? [plainTextFacet.of(true), EditorView.editorAttributes.of({ class: "cm-plain" })]
+    : [];
+  const highlightExtension = () => highlighting && !plain
     ? [syntaxHighlighting(markdownHighlightStyle), syntaxHighlightingFacet.of(true)]
     : [];
   const gutterExtension = () => showLineNumbers || diff !== null ? lineNumbers() : [];
@@ -295,6 +304,7 @@ export function createMarkdownEditor(options) {
         autocapitalize: "off"
       }),
       modeCompartment.of(modeExtension(mode)),
+      plainCompartment.of(plainExtension()),
       highlightCompartment.of(highlightExtension()),
       gutterCompartment.of(gutterExtension()),
       findField,
@@ -323,6 +333,7 @@ export function createMarkdownEditor(options) {
     view.dispatch({
       effects: [
         modeCompartment.reconfigure(modeExtension(mode)),
+        plainCompartment.reconfigure(plainExtension()),
         highlightCompartment.reconfigure(highlightExtension()),
         gutterCompartment.reconfigure(gutterExtension())
       ]
@@ -390,6 +401,16 @@ export function createMarkdownEditor(options) {
     view.dispatch({ effects: highlightCompartment.reconfigure(highlightExtension()) });
   }
 
+  function setPlainText(enabled) {
+    plain = Boolean(enabled);
+    view.dispatch({
+      effects: [
+        plainCompartment.reconfigure(plainExtension()),
+        highlightCompartment.reconfigure(highlightExtension())
+      ]
+    });
+  }
+
   function setLineNumbers(enabled) {
     showLineNumbers = Boolean(enabled);
     view.dispatch({ effects: gutterCompartment.reconfigure(gutterExtension()) });
@@ -432,6 +453,8 @@ export function createMarkdownEditor(options) {
     hasFocus: () => view.hasFocus,
     setMode,
     setSyntaxHighlighting,
+    setPlainText,
+    isPlainText: () => plain,
     setLineNumbers,
     setFindMatches,
     setDiff,

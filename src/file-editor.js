@@ -32,12 +32,17 @@ import {
   reviewProgressText
 } from "./outline.js";
 import { normalizeLayoutMode } from "./view-preferences.js";
-import { createDocSync } from "./doc-sync.js";
+import { applyUpdatesToText, createDocSync } from "./doc-sync.js";
 import { createFilesModel, isDirty, needsPrompt } from "./files.js";
 import { commentsExtension, startComment } from "./editor-comments.js";
 import { createComments } from "./comments-panel.js";
-import { createReadingComments, dropStrayComposer } from "./reading-comments.js";
 import { createOpenFileMenu } from "./open-file-menu.js";
+import { createFolderSidebar } from "./folder-sidebar.js";
+import { createFindBar } from "./find-bar.js";
+import { createFileSplit } from "./file-split.js";
+import { createPaneCompare } from "./pane-compare.js";
+import { isMacLikePlatform } from "./platform-labels.js";
+import { createReadingComments, dropStrayComposer } from "./reading-comments.js";
 import { EditorState, EditorView, Transaction } from "./vendor/codemirror.js";
 
 const LAYOUT_KEY = "sodilaud_layout_mode";
@@ -80,6 +85,7 @@ export function createFileEditor({
   const bannerText = $("file-banner-text");
   const bannerPrimary = $("file-banner-primary-btn");
   const bannerSecondary = $("file-banner-secondary-btn");
+  const draftBar = $("draft-bar");
   const layoutButtons = {
     live: $("mode-live"),
     source: $("mode-source"),
@@ -91,10 +97,11 @@ export function createFileEditor({
   let showingStartPage = true;
   let sidebarHidden = false;
   let shownId = null;
-  // The document being handed to another window: typing into it now would be
-  // dropped when the editor lets go of it.
-  let movingDocId = null;
+  // The buffer being handed to another window or to Quick Notes, or saved
+  // under a new name: typing into it now would go to a document about to close.
+  let lockedId = null;
   let recent = [];
+  let drafts = [];
   let outlineTimer = null;
   let outlineShown = [];
   let currentOutlineId = null;
@@ -105,22 +112,23 @@ export function createFileEditor({
   const reading = createReadingComments({
     preview,
     view: () => editor.view,
-    enabled: () => layoutMode === "reading" && Boolean(model.active()),
+    enabled: () => layoutMode === "reading" && Boolean(model.active()) && model.active().kind !== "plain",
     onShortcut: () => comments.start()
   });
-  const editor = createMarkdownEditor({
-    parent: $("editor-host"),
-    ariaLabel: "File content",
+  // Both panes edit with the same extensions; `pane` names the one they serve.
+  const editorOptions = (pane) => ({
     placeholder: "Type something here... Supports Markdown formatting.",
     mode: editorModeFor(layoutMode),
     syntaxHighlighting: appearance.syntaxHighlighting,
     lineNumbers: appearance.lineNumbers,
     extensions: [
       markdownEditingCommands(),
-      livePreview({ onOpenLink: followLink, onFollowAnchor: jumpTo, mermaid }),
+      pane === "primary"
+        ? livePreview({ onOpenLink: followLink, onFollowAnchor: jumpTo, mermaid })
+        : livePreview({ onOpenLink: (href) => followLink(href, "secondary"), onFollowAnchor: scrollRightPane, mermaid }),
       sectionFolding(),
       EditorState.changeFilter.of((tr) =>
-        movingDocId === null || movingDocId !== shownDoc()?.docId || tr.annotation(Transaction.userEvent) === undefined),
+        lockedId === null || lockedId !== paneBufferId(pane) || tr.annotation(Transaction.userEvent) === undefined),
       commentsExtension({
         onSubmit: (view, comment) => comments.submit(view, comment),
         onSelect: id => comments.select(id)
@@ -130,10 +138,24 @@ export function createFileEditor({
       EditorView.updateListener.of(update => {
         if (update.docChanged) renderPreview();
       })
-    ],
+    ]
+  });
+
+  const editor = createMarkdownEditor({
+    ...editorOptions("primary"),
+    parent: $("editor-host"),
+    ariaLabel: "File content",
     onChange: handleEditorChange
   });
   mermaid?.onChange(renderPreview);
+
+  const findBar = createFindBar({
+    document,
+    editor: () => activeEditor(),
+    preview: () => preview,
+    isReading: () => layoutMode === "reading",
+    notify
+  });
 
   const sync = createDocSync({
     push: ({ path, docId }, version, updates) => invoke("file_doc_push", { path, docId, version, updates }),
@@ -150,29 +172,61 @@ export function createFileEditor({
       if (!buffer || buffer.docId !== docId) return;
       model.reload(buffer.id, text, version);
       if (shownId === buffer.id) loadBuffer(buffer);
+      split.reload(buffer.id);
       render();
     },
     onRemote: remote => comments.remote(remote),
     label: "main"
   });
 
+  const split = createFileSplit({
+    document,
+    createEditor: (host, { onChange }) => createMarkdownEditor({
+      ...editorOptions("secondary"),
+      parent: host,
+      ariaLabel: "File content in the right pane",
+      onChange
+    }),
+    sync,
+    model,
+    onFocusPane: paneFocused,
+    onChange: rightPaneChanged
+  });
+
+  const activeEditor = () => (split.activePane() === "secondary" ? split.editor() : editor);
+
+  const compareButton = $("compare-files-btn");
+  const compareCount = $("compare-files-count");
+  const diffApi = () => document.defaultView?.Diff;
+  const fileCompare = createPaneCompare({
+    left: () => editor,
+    right: () => split.editor(),
+    diffApi,
+    onResult: renderCompare
+  });
+  // The two files compare showed last, so a render that changes neither pane
+  // does not redraw the marks.
+  let comparedPanes = null;
+
   // Comments need a file Rust holds: an untitled buffer has none yet.
-  const shownDoc = () => {
-    const buffer = showingStartPage ? null : model.get(shownId);
-    return buffer?.path ? { path: buffer.path, docId: buffer.docId } : null;
-  };
+  const docOf = (buffer) => (buffer?.path ? { path: buffer.path, docId: buffer.docId } : null);
+  const shownDoc = () => docOf(showingStartPage ? null : model.get(shownId));
+  const paneBufferId = (pane) => (pane === "primary" ? (showingStartPage ? null : shownId) : split.shownId());
+  const paneDoc = (pane) => docOf(model.get(paneBufferId(pane)));
+  // The file the focused pane shows: Save, Save As and Close act on it.
+  const focusedId = () => paneBufferId(split.activePane()) ?? model.active()?.id;
   const comments = createComments({
     document,
     invoke,
     root: $("comments-panel"),
     countButton: $("comments-count-btn"),
-    editors: () => {
-      const doc = shownDoc();
-      return doc ? [{ view: editor.view, doc }] : [];
-    },
+    editors: () => [
+      { view: editor.view, doc: shownDoc() },
+      { view: split.editor().view, doc: paneDoc("secondary") }
+    ].filter(({ doc }) => doc),
     active: () => {
-      const doc = shownDoc();
-      return doc ? { view: editor.view, doc } : null;
+      const doc = paneDoc(split.activePane());
+      return doc ? { view: activeEditor().view, doc } : null;
     },
     flush: () => sync.flush(),
     notify,
@@ -186,6 +240,8 @@ export function createFileEditor({
     onMove: (id, to) => keepFocus(id, () => moveFile(id, to)),
     onClose: (id) => keepFocus(id, () => closeFile(id))
   });
+
+  const folders = createFolderSidebar({ document, invoke, openPath, notify, onChange: renderSidebar });
 
   // The file's button disappears with the file, which would drop keyboard
   // focus onto the page; it goes to the neighbouring file or the start page.
@@ -213,14 +269,112 @@ export function createFileEditor({
   function loadBuffer(buffer) {
     const extensions = buffer.path === null ? [] : sync.extension({ path: buffer.path, docId: buffer.docId }, buffer.version);
     editor.loadText(buffer.text, { extensions });
+    applyKind(buffer);
+    refreshFind();
+    fileCompare.refresh();
   }
+
+  // ----------------------------------------------------
+  // Compare
+  // ----------------------------------------------------
+  const canCompare = () => {
+    const left = paneBufferId("primary");
+    const right = split.shownId();
+    const api = diffApi();
+    return Boolean(left && right && left !== right &&
+      typeof api?.diffLines === "function" && typeof api?.diffWordsWithSpace === "function");
+  };
+
+  function renderCompare({ changedLineCount, pending }) {
+    const on = fileCompare.isEnabled();
+    editorSection.classList.toggle("compare-mode", on);
+    compareButton.classList.toggle("active", on);
+    compareButton.setAttribute("aria-pressed", String(on));
+    compareCount.hidden = !on;
+    let summary = "";
+    if (on && pending) summary = "Updating comparison…";
+    else if (on) summary = changedLineCount === 0 ? "No differences" : `${changedLineCount} changed line${changedLineCount === 1 ? "" : "s"}`;
+    compareCount.textContent = summary;
+    compareButton.title = on ? `Stop comparing the files (${summary.toLowerCase()})` : "Compare the two files";
+  }
+
+  // Compare is offered for two different files side by side. Showing the same
+  // file on both sides turns it off; another file on either side compares again.
+  function syncCompare() {
+    const available = canCompare();
+    compareButton.hidden = !available;
+    if (!available && fileCompare.isEnabled()) fileCompare.setEnabled(false);
+    const panes = `${paneBufferId("primary")}|${split.shownId()}`;
+    if (panes === comparedPanes) return;
+    comparedPanes = panes;
+    // A file's editor state comes back with the marks it had: redraw them.
+    fileCompare.refresh();
+  }
+
+  function toggleCompare() {
+    if (canCompare()) fileCompare.setEnabled(!fileCompare.isEnabled());
+  }
+
+  // An edit in either pane, or one from outside reaching a shown file.
+  function compareEdited(id) {
+    if (!fileCompare.isEnabled()) return;
+    if (id !== undefined && id !== paneBufferId("primary") && id !== split.shownId()) return;
+    // A pending run reads both panes when it fires; an echo leaves the texts as compared.
+    if (id !== undefined && (fileCompare.isPending() || fileCompare.isCurrent())) return;
+    fileCompare.schedule();
+  }
+
+  // The editor's matches belong to the text it showed before.
+  function refreshFind() {
+    if (findBar.isOpen()) findBar.run({ preserveActive: true, selectActive: false });
+    else findBar.refreshHighlights();
+  }
+
+  // Find, formatting and comments follow the pane focused last.
+  function paneFocused(pane) {
+    (pane === "primary" ? split.editor() : editor).setFindMatches([], -1);
+    if (findBar.isOpen()) findBar.run({ selectActive: false });
+    else findBar.refreshHighlights();
+    syncFormatting();
+    comments.render();
+  }
+
+  function rightPaneChanged(what) {
+    if (what === "file") {
+      comparedPanes = null;
+      syncCompare();
+      comments.shown();
+      if (split.activePane() === "secondary") {
+        refreshFind();
+        syncFormatting();
+      }
+    } else {
+      compareEdited();
+      if (findBar.isOpen() && split.activePane() === "secondary") findBar.run({ preserveActive: true, selectActive: false });
+    }
+  }
+
+  // An anchor link in the right pane scrolls that pane.
+  function scrollRightPane(fragment) {
+    const { view } = split.editor();
+    revealAnchor(view, fragment);
+    scrollToAnchor(view, fragment);
+  }
+
+  function applyKind(buffer) {
+    editor.setPlainText(buffer.kind === "plain");
+    syncFormatting();
+  }
+
+  const syncFormatting = () => formatToolbar.setEnabled(layoutMode !== "reading" && !activeEditor().isPlainText());
 
   const formatToolbar = createFormatToolbar({
     document,
     applyFormat: (actionId) => {
       if (layoutMode === "reading" || !model.active()) return;
-      runFormatAction(editor.view, actionId);
-      editor.focus();
+      const target = activeEditor();
+      runFormatAction(target.view, actionId);
+      target.focus();
     },
     onMenuOpen: closeMenus,
     observe: [".main-topbar", ".layout-controls"]
@@ -256,9 +410,13 @@ export function createFileEditor({
 
   function renderSidebar() {
     const buffers = model.list();
-    sidebar.hidden = buffers.length === 0 || sidebarHidden;
-    sidebarToggle.hidden = buffers.length === 0;
+    const hasRoots = folders.hasRoots();
+    const content = buffers.length > 0 || hasRoots;
+    sidebar.hidden = !content || sidebarHidden;
+    sidebarToggle.hidden = !content;
     sidebarToggle.setAttribute("aria-expanded", String(!sidebar.hidden));
+    $("files-sidebar-title").hidden = buffers.length === 0 && hasRoots;
+    $("folders-section").hidden = !hasRoots;
     const active = showingStartPage ? null : model.active();
     openList.replaceChildren(...buffers.map((buffer) => {
       const item = document.createElement("li");
@@ -292,7 +450,14 @@ export function createFileEditor({
         const rect = open.getBoundingClientRect();
         fileMenu.open(buffer, { x: rect.left, y: rect.bottom }, open);
       });
-      item.append(open, close);
+      item.append(open);
+      if (buffer.draft) {
+        const tag = document.createElement("span");
+        tag.className = "open-file-tag";
+        tag.textContent = "Draft";
+        item.append(tag);
+      }
+      item.append(close);
       return item;
     }));
   }
@@ -316,6 +481,21 @@ export function createFileEditor({
     }));
   }
 
+  function renderDrafts() {
+    $("drafts-section").hidden = drafts.length === 0;
+    $("drafts-list").replaceChildren(...drafts.map((draft) => {
+      const item = document.createElement("li");
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "start-link";
+      button.textContent = draft.name;
+      button.title = draft.path;
+      button.addEventListener("click", () => openPath(draft.path));
+      item.append(button);
+      return item;
+    }));
+  }
+
   function renderBanner() {
     const buffer = showingStartPage ? null : model.active();
     const error = buffer?.error;
@@ -327,6 +507,7 @@ export function createFileEditor({
     } else if (error) {
       content = [`Could not save ${buffer.name}: ${error}`, "Try again", () => saveNow(buffer.id), "Save As…", () => saveAs(buffer.id)];
     }
+    draftBar.hidden = buffer?.draft !== true;
     banner.hidden = content === null;
     if (!content) return;
     const [text, primary, onPrimary, secondary, onSecondary] = content;
@@ -339,6 +520,14 @@ export function createFileEditor({
 
   function renderPreview() {
     if (layoutMode !== "reading" || !model.active()) return;
+    if (model.active().kind === "plain") {
+      const pre = document.createElement("pre");
+      pre.className = "plain-text-preview";
+      pre.textContent = editor.getText();
+      preview.replaceChildren(pre);
+      findBar.refreshPreview();
+      return;
+    }
     reading.renderWith(() => {
       try {
         preview.innerHTML = renderMarkdown(editor.getText(), "*Empty file*", undefined, { positions: true });
@@ -356,6 +545,7 @@ export function createFileEditor({
         preview.textContent = editor.getText();
       }
     });
+    findBar.refreshPreview();
   }
 
   // Reading mode shows the folds Live mode keeps in the editor state.
@@ -392,8 +582,9 @@ export function createFileEditor({
     outlineTimer = null;
     const buffer = showingStartPage ? null : model.active();
     const { state } = editor.view;
-    const hunks = buffer ? reviewHunkFences(state) : [];
-    const entries = buffer ? outlineEntries(documentAnchors(state), hunks, state.doc.length) : [];
+    const markdown = Boolean(buffer) && buffer.kind !== "plain";
+    const hunks = markdown ? reviewHunkFences(state) : [];
+    const entries = markdown ? outlineEntries(documentAnchors(state), hunks, state.doc.length) : [];
     outlineShown = entries;
     outlineSection.hidden = entries.length === 0;
     if (entries.length) {
@@ -453,6 +644,7 @@ export function createFileEditor({
     $("menu-save-file-btn").disabled = !buffer;
     $("menu-save-as-btn").disabled = !buffer;
     $("menu-close-file-btn").disabled = !buffer;
+    $("menu-browse-folder-btn").disabled = !browsable(buffer);
     $("menu-start-page-btn").disabled = showingStartPage;
   }
 
@@ -474,6 +666,8 @@ export function createFileEditor({
       }
       if (buffer.editorState) {
         editor.restoreState(buffer.editorState);
+        applyKind(buffer);
+        refreshFind();
         dropStrayComposer(editor.view, layoutMode === "reading" ? "reading" : "editor");
       } else loadBuffer(buffer);
       shownId = buffer.id;
@@ -483,6 +677,9 @@ export function createFileEditor({
       preview.scrollTop = buffer.previewTop ?? 0;
     }
     if (showEditor) formatToolbar.layout();
+    if (split.isOpen()) split.refreshChoices();
+    syncCompare();
+    folders.setActivePath(showEditor ? buffer.path : null);
     comments.shown();
     renderTitle();
     renderSidebar();
@@ -499,6 +696,9 @@ export function createFileEditor({
     const buffer = model.get(shownId);
     if (!buffer) return;
     model.edit(buffer.id, text);
+    compareEdited();
+    // Replace reads the new matches straight after its edit.
+    if (findBar.isOpen()) findBar.run({ preserveActive: true, selectActive: false });
     renderTitle();
     renderSidebar();
     scheduleOutline();
@@ -522,14 +722,40 @@ export function createFileEditor({
     return ok;
   }
 
-  async function saveAs(id = model.active()?.id) {
+  // The document's text in the registry, which has every pane's changes
+  // even before their update events reach the other pane.
+  async function registryText(buffer) {
+    const { text, version } = buffer.confirmed;
+    const result = await invoke("file_doc_pull", { path: buffer.path, docId: buffer.docId, since: version });
+    if (result?.reload) return result.reload.text;
+    return applyUpdatesToText(text, Array.isArray(result?.updates) ? result.updates : []);
+  }
+
+  async function saveAs(id = focusedId()) {
     const buffer = model.get(id);
-    if (!buffer) return false;
-    // Rust drops the document if the new path is this file, so nothing may
-    // still be on its way to it.
-    if (buffer.path !== null) await sync.flush();
+    if (!buffer || lockedId !== null) return false;
+    lockedId = id;
+    try {
+      return await saveAsLocked(buffer);
+    } finally {
+      lockedId = null;
+    }
+  }
+
+  async function saveAsLocked(buffer) {
+    const { id } = buffer;
     const shown = buffer.id === shownId;
-    const text = shown ? editor.getText() : buffer.editorState?.doc.toString() ?? buffer.text;
+    let text;
+    try {
+      // Rust drops the document if the new path is this file, so nothing may
+      // still be on its way to it.
+      if (buffer.path === null) text = shown ? editor.getText() : buffer.editorState?.doc.toString() ?? buffer.text;
+      else if (await sync.flush((doc) => doc.docId === buffer.docId)) text = await registryText(buffer);
+      else throw new Error("unsaved changes could not be sent");
+    } catch (error) {
+      notify(`Could not save ${buffer.name}: ${errorMessage(error)}`);
+      return false;
+    }
     let saved;
     try {
       saved = await invoke("file_save_as_dialog", {
@@ -546,8 +772,12 @@ export function createFileEditor({
     if (!saved) return false;
     // Rust dropped any document open at the chosen path before writing it.
     const existing = model.byPath(saved.path);
-    if (existing && existing.id !== id) model.close(existing.id, { force: true });
+    if (existing && existing.id !== id) {
+      model.close(existing.id, { force: true });
+      split.bufferClosed(existing.id);
+    }
     const previousPath = buffer.path;
+    const wasDraft = buffer.draft;
     if (previousPath !== null && previousPath !== saved.path) {
       await invoke("file_doc_close", { path: previousPath }).catch((error) => console.error("Could not close the old file", error));
     }
@@ -565,17 +795,56 @@ export function createFileEditor({
       loadBuffer(buffer);
       editor.setSelection(selection.start, selection.end, { scroll: false });
     }
+    split.reload(id);
+    if (wasDraft && previousPath !== saved.path) {
+      await invoke("draft_discard", { path: previousPath, ask: false })
+        .catch((error) => console.error("Could not discard the saved draft", error));
+    }
     await syncOpenList();
     await refreshRecent();
     render();
     return true;
   }
 
-  // Cmd+S: a new file asks where to go; a saved one is written at once.
-  function save(id = model.active()?.id) {
+  // Cmd+S: a new file or a draft asks where to go; a saved one is written at once.
+  function save(id = focusedId()) {
     const buffer = model.get(id);
     if (!buffer) return Promise.resolve(false);
-    return buffer.path === null ? saveAs(id) : saveNow(id);
+    return buffer.path === null || buffer.draft ? saveAs(id) : saveNow(id);
+  }
+
+  async function saveDraftToNotes(id = model.active()?.id) {
+    const buffer = model.get(id);
+    if (!buffer?.draft || lockedId !== null) return false;
+    lockedId = buffer.id;
+    try {
+      if (!(await sync.flush((doc) => doc.docId === buffer.docId))) {
+        notify(`Could not save ${buffer.name}: unsaved changes could not be sent.`);
+        return false;
+      }
+      await invoke("draft_save_to_notes", { path: buffer.path });
+    } catch (error) {
+      notify(errorMessage(error));
+      return false;
+    } finally {
+      lockedId = null;
+    }
+    // Rust discarded the draft's document, so there is nothing to close.
+    await forget(id, { detach: true });
+    return true;
+  }
+
+  async function discardDraft(id = model.active()?.id) {
+    const buffer = model.get(id);
+    if (!buffer?.draft || lockedId !== null) return false;
+    try {
+      if (!(await invoke("draft_discard", { path: buffer.path, ask: true }))) return false;
+    } catch (error) {
+      notify(errorMessage(error));
+      return false;
+    }
+    await forget(id, { detach: true });
+    return true;
   }
 
   // ----------------------------------------------------
@@ -597,15 +866,21 @@ export function createFileEditor({
     }
   }
 
+  function takeLists(lists) {
+    recent = Array.isArray(lists?.recent) ? lists.recent : [];
+    drafts = Array.isArray(lists?.drafts) ? lists.drafts : [];
+    renderRecent();
+    renderDrafts();
+  }
+
   async function refreshRecent() {
+    let lists = null;
     try {
-      const lists = await invoke("file_lists");
-      recent = Array.isArray(lists?.recent) ? lists.recent : [];
+      lists = await invoke("file_lists");
     } catch (error) {
       console.error("Could not read the recent files", error);
-      recent = [];
     }
-    renderRecent();
+    takeLists(lists);
     return recent;
   }
 
@@ -662,17 +937,19 @@ export function createFileEditor({
 
   // A link to `chapter.md#heading` opens a file next to the shown one; Rust
   // refuses anything outside its folder, and then the click does nothing.
-  async function followLink(href) {
+  // A sibling link in the right pane opens on the left.
+  async function followLink(href, pane = "primary") {
     const action = resolveLinkAction(href);
     if (action.kind === "external") {
       openExternal(href);
       return;
     }
     if (action.kind === "anchor") {
-      await jumpTo(action.fragment);
+      if (pane === "secondary") scrollRightPane(action.fragment);
+      else await jumpTo(action.fragment);
       return;
     }
-    const fromPath = showingStartPage ? null : model.active()?.path;
+    const fromPath = pane === "secondary" ? paneDoc("secondary")?.path : showingStartPage ? null : model.active()?.path;
     if (action.kind !== "sibling" || !fromPath) return;
     let target;
     try {
@@ -771,7 +1048,8 @@ export function createFileEditor({
     if (!buffer) return false;
     if (!force) {
       if (!(await resolveUnsavedNew(buffer))) return false;
-      if (buffer.path !== null && !(await save(id))) return false;
+      // Not save(), which asks where to save a draft: a closed draft stays in app data.
+      if (buffer.path !== null && !(await saveNow(id))) return false;
     }
     if (buffer.path !== null) {
       try {
@@ -784,13 +1062,23 @@ export function createFileEditor({
         }
       }
     }
+    await forget(id);
+    return true;
+  }
+
+  // Drops a buffer this window no longer edits. `detach` lets go of a
+  // document that is gone or belongs to another window now.
+  async function forget(id, { detach = false } = {}) {
     model.close(id, { force: true });
-    if (shownId === id) shownId = null;
+    split.bufferClosed(id);
+    if (shownId === id) {
+      shownId = null;
+      if (detach) editor.loadText("");
+    }
     if (!model.active()) showingStartPage = true;
     await syncOpenList();
     await refreshRecent();
     render();
-    return true;
   }
 
   // ----------------------------------------------------
@@ -840,7 +1128,8 @@ export function createFileEditor({
       notify(`Save ${buffer.name} first to move it.`);
       return false;
     }
-    movingDocId = buffer.docId;
+    if (lockedId !== null) return false;
+    lockedId = buffer.id;
     try {
       if (!(await sync.flush((doc) => doc.docId === buffer.docId))) {
         notify(`Could not move ${buffer.name}: unsaved changes could not be sent.`);
@@ -851,17 +1140,9 @@ export function createFileEditor({
       notify(errorMessage(error));
       return false;
     } finally {
-      movingDocId = null;
+      lockedId = null;
     }
-    model.close(id, { force: true });
-    if (shownId === id) {
-      shownId = null;
-      // Detaches the editor from the document, which now belongs to the other window.
-      editor.loadText("");
-    }
-    if (!model.active()) showingStartPage = true;
-    await syncOpenList();
-    render();
+    await forget(id, { detach: true });
     return true;
   }
 
@@ -906,6 +1187,9 @@ export function createFileEditor({
     if (!event?.path) return;
     sync.receive(event);
     const buffer = model.docUpdated(event);
+    if (buffer) compareEdited(buffer.id);
+    const inActivePane = buffer && buffer.id === (split.activePane() === "secondary" ? split.shownId() : shownId);
+    if (inActivePane && findBar.isOpen()) findBar.run({ preserveActive: true, selectActive: false });
     if (buffer && buffer.id === shownId) scheduleOutline();
     renderTitle();
     renderSidebar();
@@ -938,18 +1222,35 @@ export function createFileEditor({
       button.setAttribute("aria-pressed", String(mode === layoutMode));
     }
     editor.setMode(editorModeFor(layoutMode));
-    formatToolbar.setEnabled(layoutMode !== "reading");
+    split.editor().setMode(editorModeFor(layoutMode));
+    if (layoutMode === "reading") split.close();
+    renderSplitButton();
+    syncFormatting();
     comments.render();
     renderPreview();
     updateCurrentOutline();
+    // Leaving Reading mode keeps the old preview, highlights and all.
+    findBar.refreshPreview();
     if (persist) {
       storage.setItem(LAYOUT_KEY, layoutMode);
       broadcast(LAYOUT_KEY);
     }
   }
 
+  const splitAvailable = () => layoutMode !== "reading";
+
+  function renderSplitButton() {
+    const button = $("split-file-btn");
+    button.disabled = !splitAvailable();
+    button.title = splitAvailable() ? `Split View (${isMac() ? "Cmd" : "Ctrl"}+\\)` : "Split view works in Live and Source";
+  }
+
+  function toggleSplit() {
+    if (splitAvailable()) split.toggle();
+  }
+
   function toggleSidebar() {
-    if (model.list().length === 0) return;
+    if (model.list().length === 0 && !folders.hasRoots()) return;
     sidebarHidden = !sidebarHidden;
     renderSidebar();
   }
@@ -1001,8 +1302,7 @@ export function createFileEditor({
     } catch (error) {
       console.error("Could not read the file lists", error);
     }
-    recent = Array.isArray(lists?.recent) ? lists.recent : [];
-    renderRecent();
+    takeLists(lists);
     for (const path of Array.isArray(lists?.open) ? lists.open : []) {
       try {
         model.openFile(await invoke("file_doc_open", { path }));
@@ -1014,10 +1314,15 @@ export function createFileEditor({
     // A file handed over at launch wins; otherwise the last file reopened shows.
     if (!(await takePending())) showingStartPage = model.list().length === 0;
     render();
+    // Listing the folders is not waited for: the window is usable before it is done.
+    folders.restore(lists).catch((error) => console.error("Could not restore the folders", error));
   }
 
   function attach() {
     formatToolbar.attach();
+    findBar.attach();
+    // The markup names the macOS chord, which is not Cmd+H turned into Ctrl+H.
+    if (!isMac()) $("find-toggle-replace").title = "Toggle Replace (Ctrl+H)";
     for (const [mode, button] of Object.entries(layoutButtons)) {
       button.addEventListener("click", () => setLayoutMode(mode));
     }
@@ -1047,30 +1352,85 @@ export function createFileEditor({
     $("menu-open-file-btn").addEventListener("click", () => { closeMenus(); openDialog(); });
     $("menu-save-file-btn").addEventListener("click", () => { closeMenus(); save(); });
     $("menu-save-as-btn").addEventListener("click", () => { closeMenus(); saveAs(); });
-    $("menu-close-file-btn").addEventListener("click", () => { closeMenus(); closeFile(); });
+    $("menu-close-file-btn").addEventListener("click", () => { closeMenus(); closeFile(focusedId()); });
     $("menu-start-page-btn").addEventListener("click", () => { closeMenus(); showStartPage(); });
     $("comment-btn").addEventListener("click", () => comments.start());
     $("comments-count-btn").addEventListener("click", () => comments.toggle());
+    $("split-file-btn").addEventListener("click", toggleSplit);
+    compareButton.addEventListener("click", toggleCompare);
+    $("draft-save-as-btn").addEventListener("click", () => saveAs(model.active()?.id));
+    for (const [button, action] of [["draft-save-notes-btn", saveDraftToNotes], ["draft-discard-btn", discardDraft]]) {
+      $(button).addEventListener("click", () => {
+        const id = model.active()?.id;
+        if (id) keepFocus(id, () => action(id));
+      });
+    }
     $("start-actions").hidden = false;
     $("recent-files").hidden = false;
     setLayoutMode(layoutMode, { persist: false });
   }
 
+  // A draft lives in app data, so its folder cannot be shown.
+  const browsable = (buffer) => Boolean(buffer?.path) && buffer.draft !== true;
+
+  const openFolderDialog = () => folders.openFolderDialog();
+
+  function browseFolder() {
+    const buffer = showingStartPage ? null : model.active();
+    return browsable(buffer) ? folders.browseFolder(buffer.path) : Promise.resolve();
+  }
+
+  const isMac = () => isMacLikePlatform(document.defaultView?.navigator);
+
+  // Cmd on macOS, Ctrl elsewhere.
+  const isCommandChord = (event) => (isMac()
+    ? event.metaKey && !event.ctrlKey
+    : event.ctrlKey && !event.metaKey);
+
+  // Cmd+Alt+F on macOS, where Option+F is a dead key, so the physical key is
+  // matched. Ctrl+H elsewhere, but not AltGr+H.
+  const isReplaceShortcut = (event) => (isMac()
+    ? event.metaKey && event.altKey && !event.ctrlKey && !event.shiftKey && event.code === "KeyF"
+    : event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey &&
+      event.key.toLowerCase() === "h" && !event.getModifierState?.("AltGraph"));
+
+  function handleFindShortcut(event) {
+    if (showingStartPage || !model.active()) return false;
+    let replace;
+    if (isCommandChord(event) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "f") replace = false;
+    else if (isReplaceShortcut(event)) replace = true;
+    else return findBar.handleKeydown(event);
+    event.preventDefault();
+    findBar.open({ replace });
+    return true;
+  }
+
+  // Escape closes the find bar first. Returns whether it did.
+  function closeFind() {
+    if (showingStartPage || !findBar.isOpen()) return false;
+    findBar.close();
+    return true;
+  }
+
   // File shortcuts. Returns whether the event was one.
   function handleShortcut(event) {
+    if (handleFindShortcut(event)) return true;
     const isMeta = event.metaKey || event.ctrlKey;
     if (!isMeta || event.altKey) return false;
     const key = event.key.toLowerCase();
     let action = null;
     if (key === "n" && !event.shiftKey) action = newFile;
     else if (key === "o" && !event.shiftKey) action = openDialog;
+    else if (key === "o" && event.shiftKey && isCommandChord(event)) action = openFolderDialog;
     else if (key === "s" && event.shiftKey && model.active()) action = () => saveAs();
     // Ctrl+Cmd+S toggles the sidebar on macOS.
     else if (key === "s" && !event.shiftKey && !(event.ctrlKey && event.metaKey) && model.active()) action = () => save();
-    else if (key === "w" && !event.shiftKey && model.active() && !showingStartPage) action = () => closeFile();
+    else if (key === "w" && !event.shiftKey && model.active() && !showingStartPage) action = () => closeFile(focusedId());
     // Cmd+[ and Cmd+] go Back and Forward, as in a browser.
     else if (event.key === "[" && !event.shiftKey && model.list().length) action = goBack;
     else if (event.key === "]" && !event.shiftKey && model.list().length) action = goForward;
+    // Cmd+\ (Ctrl+\ off macOS); Shift turns the key into | on some layouts.
+    else if ((event.key === "\\" || event.key === "|") && isCommandChord(event) && splitAvailable() && model.active() && !showingStartPage) action = toggleSplit;
     if (!action) return false;
     event.preventDefault();
     action();
@@ -1088,22 +1448,32 @@ export function createFileEditor({
     receiveComments: event => comments.receive(event),
     setCoeditState: state => comments.setState(state),
     handleShortcut,
+    closeFind,
     toggleSidebar,
     setLayoutMode,
     flushForQuit,
     flushForClose,
     newFile,
     openDialog,
+    openFolderDialog,
+    browseFolder,
+    folderChanged: (payload) => folders.folderChanged(payload),
     openPath,
     save,
     saveAs,
     closeFile,
     moveFile,
+    saveDraftToNotes,
+    discardDraft,
     showStartPage,
     closeFormatMenus: () => formatToolbar.closeMenus(),
-    setLineNumbers: (enabled) => editor.setLineNumbers(enabled),
+    setLineNumbers: (enabled) => {
+      editor.setLineNumbers(enabled);
+      split.editor().setLineNumbers(enabled);
+    },
     setSyntaxHighlighting: (enabled) => {
       editor.setSyntaxHighlighting(enabled);
+      split.editor().setSyntaxHighlighting(enabled);
       renderPreview();
     },
     model,

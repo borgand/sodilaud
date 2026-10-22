@@ -14,7 +14,7 @@ test("the native About menu opens the existing in-app About panel", async () => 
 
   assert.equal(backdrop.style.display, "flex");
   assert.match(backdrop.textContent, /open-source, local-first Markdown editor/);
-  assert.equal(document.activeElement, document.getElementById("close-about-btn"));
+  assert.ok(document.activeElement === document.getElementById("close-about-btn"), "the close button has focus");
 
   // Re-selecting About while it is already open must not replace the element
   // that receives focus when the panel closes.

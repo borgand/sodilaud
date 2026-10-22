@@ -86,19 +86,21 @@ are now remembered across restarts (see
 
 ## 4. External files and folders
 
-Status: files done in 0.10; files joined the document registry with 3-way merge of outside
-edits (design: [`docs/superpowers/specs/2026-10-05-files-in-registry-design.md`](docs/superpowers/specs/2026-10-05-files-in-registry-design.md));
-folders and the rest not started
+Status: done. Files in 0.10; folders, .csv/.tsv, drafts and find/split/compare for files on
+feat/files-folders, to ship in the next release (spec
+[docs/superpowers/specs/2026-10-18-files-folders-design.md](docs/superpowers/specs/2026-10-18-files-folders-design.md)).
+Files joined the document registry with 3-way merge of outside edits (design:
+[`docs/superpowers/specs/2026-10-05-files-in-registry-design.md`](docs/superpowers/specs/2026-10-05-files-in-registry-design.md))
 
 Shipped: New, Open, Save As, autosave, open and recent lists across restarts, outside-edit
 detection, `.md`, `.markdown` and `.txt`, and Finder "Open With". The file list lives in the
 main window's sidebar, not in `doc-*` windows. Open files are registry documents: Rust owns
 the text, autosaves it, and merges outside edits (Reload / Keep mine only when both sides
-changed the same lines). Still to do, in this order:
+changed the same lines). Shipped later:
 
 - Open Folder and the Folders section below
 - `.csv` and `.tsv`
-- MCP drafts (`open_document` for files is built on `feat/mcp-push-open`)
+- MCP drafts (`push_draft`; `open_document` for files was built on `feat/mcp-push-open`)
 - Find and replace, split view and compare for files
 
 The original plan follows.
@@ -123,7 +125,7 @@ Sidebar model (decided 2026-09-27): file first, folder on demand, like Typora.
 - **Folders** section: a root is added only by an explicit action, "Browse folder" on an open
   file or "Open Folder…". The tree loads one level at a time and watches only expanded
   folders. It hides hidden folders, `.gitignore` matches and `node_modules`, and shows only the
-  four file types above.
+  five file types above. Folders are per window (decided 2026-10-18).
 - Workspace notes stay a separate section. External files never appear in the note list, so
   delete, trash, search, pins and `list_notes` each keep one meaning.
 - Rejected: automatic project mode, where opening a file roots its parent folder. Parents such
@@ -223,7 +225,8 @@ Open files in Sodilaud from a terminal: `sodilaud notes.md`. The command starts 
 is not running, opens the file (or files) in the main window, and returns at once.
 
 - Relative paths resolve against the terminal's working directory. A missing file is created
-  empty, like New, only for `.md`, `.markdown` and `.txt`, and only in a folder that exists.
+  empty, like New, only for `.md`, `.markdown`, `.txt`, `.csv` and `.tsv`, and only in a
+  folder that exists.
 - Opens through the same path as Finder "Open With", so recents, the document registry and
   outside-edit merging all apply.
 - Installed from a menu item (**Command Line Tool...**) as a script in `~/.local/bin`, with no

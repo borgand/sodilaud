@@ -4,7 +4,12 @@
 // stands against the Rust registry and the disk, and what happened to it on
 // disk. The editor and Rust calls live in file-editor.js.
 
+import { applyUpdatesToText } from "./doc-sync.js";
+
 export const UNTITLED_BASE = "Untitled";
+
+// Text, CSV and TSV files open as plain text: no live preview, no Markdown keys.
+export const fileKind = (name) => (/\.(txt|csv|tsv)$/i.test(name ?? "") ? "plain" : "markdown");
 
 // `docId` names this opening of the file in the registry; events from an
 // earlier opening of the same path are ignored. `text` and `version` are what
@@ -12,8 +17,11 @@ export const UNTITLED_BASE = "Untitled";
 // keeps its text here). `latest` is the newest version the registry reported
 // and `savedVersion` the newest one on disk. `external` is null, "conflict"
 // (changed on disk while edited here) or "removed" (deleted or moved away).
+// `draft` marks an agent's draft kept in app data until the owner saves it.
+// `confirmed` is the registry's text at a version, kept up to date from its
+// update events, so a second editor can start on the file at any time.
 function createBuffer(id, fields) {
-  return {
+  const buffer = {
     id,
     path: null,
     docId: null,
@@ -27,8 +35,12 @@ function createBuffer(id, fields) {
     external: null,
     error: null,
     editorState: null,
+    draft: false,
+    confirmed: null,
     ...fields
   };
+  buffer.kind = fileKind(buffer.name);
+  return buffer;
 }
 
 const fromOpened = (opened) => ({
@@ -41,7 +53,9 @@ const fromOpened = (opened) => ({
   savedVersion: opened.savedVersion,
   lineEnding: opened.lineEnding,
   bom: opened.bom,
-  external: opened.external ?? null
+  external: opened.external ?? null,
+  draft: opened.draft === true,
+  confirmed: { text: opened.text, version: opened.version }
 });
 
 // `unsent`: the editor holds changes the registry has not confirmed yet.
@@ -129,13 +143,26 @@ export function createFilesModel({ newId = () => globalThis.crypto.randomUUID() 
     adopt(id, opened) {
       const buffer = find(id);
       if (!buffer) return null;
-      return Object.assign(buffer, fromOpened(opened), { editorState: null, error: null });
+      const fields = fromOpened(opened);
+      return Object.assign(buffer, fields, { kind: fileKind(fields.name), editorState: null, error: null });
     },
 
-    // Events from the registry: `{ docId, path, version }`.
+    // Events from the registry: `{ docId, path, from, updates, version }`.
+    // An event after a gap leaves `confirmed` where it was: an editor
+    // starting from there pulls what it missed.
     docUpdated(event) {
       const buffer = forEvent(event);
-      if (buffer) buffer.latest = Math.max(buffer.latest, event.version);
+      if (!buffer) return null;
+      buffer.latest = Math.max(buffer.latest, event.version);
+      const { confirmed } = buffer;
+      const updates = Array.isArray(event.updates) ? event.updates : [];
+      const skip = confirmed ? confirmed.version - event.from : -1;
+      if (skip >= 0 && skip < updates.length) {
+        buffer.confirmed = {
+          text: applyUpdatesToText(confirmed.text, updates.slice(skip)),
+          version: event.from + updates.length
+        };
+      }
       return buffer;
     },
 
@@ -160,7 +187,7 @@ export function createFilesModel({ newId = () => globalThis.crypto.randomUUID() 
     reload(id, text, version) {
       const buffer = find(id);
       if (!buffer) return null;
-      return Object.assign(buffer, { text, version, latest: Math.max(buffer.latest, version), editorState: null });
+      return Object.assign(buffer, { text, version, latest: Math.max(buffer.latest, version), editorState: null, confirmed: { text, version } });
     }
   };
 }

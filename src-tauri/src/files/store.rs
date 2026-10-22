@@ -23,6 +23,10 @@ pub struct SavedWindow {
     pub active: Option<String>,
     #[serde(default)]
     pub frame: Option<Frame>,
+    #[serde(default)]
+    pub folders: Vec<String>,
+    #[serde(default)]
+    pub expanded: Vec<String>,
 }
 
 /// `open` is the union of the windows' open files. Releases before multiple
@@ -129,5 +133,14 @@ mod tests {
         save(&path, &lists).unwrap();
         let raw: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
         assert_eq!(raw["open"], serde_json::json!(["/a.md", "/b.md", "/c.md"]));
+    }
+
+    #[test]
+    fn a_window_without_folders_loads_with_none() {
+        let path = scratch("nofolders");
+        fs::write(&path, br#"{"windows":[{"open":["/a.md"]}]}"#).unwrap();
+        let windows = load(&path).windows;
+        assert!(windows[0].folders.is_empty());
+        assert!(windows[0].expanded.is_empty());
     }
 }

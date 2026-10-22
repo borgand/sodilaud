@@ -22,7 +22,8 @@
 .start-page[hidden],
 .file-editor[hidden],
 .files-sidebar[hidden],
-.file-banner[hidden] {
+.file-banner[hidden],
+.draft-bar[hidden] {
   display: none;
 }
 
@@ -296,6 +297,15 @@
   cursor: pointer;
 }
 
+.open-file-tag {
+  flex: none;
+  padding: 1px 6px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
 .open-file-close {
   width: 22px;
   height: 22px;
@@ -311,6 +321,114 @@
 .open-file-item:hover .open-file-close,
 .open-file-item.active .open-file-close,
 .open-file-close:focus-visible {
+  opacity: 1;
+}
+
+.folders-section {
+  margin-top: 16px;
+}
+
+.folders-section[hidden] {
+  display: none;
+}
+
+.folder-tree {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.folder-row {
+  display: flex;
+  align-items: center;
+  padding-inline-start: calc(var(--level) * 12px);
+  border-radius: 6px;
+  outline: none;
+}
+
+.folder-row.active {
+  background: var(--bg-note-active);
+}
+
+.folder-row:hover:not(.active) {
+  background: var(--bg-note-hover);
+}
+
+.folder-row:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--accent-color);
+}
+
+.folder-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px 4px 0;
+  border: 0;
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.folder-row-file .folder-name {
+  padding-inline-start: 10px;
+}
+
+.folder-row[aria-expanded] > .folder-name::before {
+  content: "";
+  flex-shrink: 0;
+  border-left: 4px solid var(--text-muted);
+  border-top: 3.5px solid transparent;
+  border-bottom: 3.5px solid transparent;
+  transition: transform 0.12s;
+}
+
+.folder-row[aria-expanded="true"] > .folder-name::before {
+  transform: rotate(90deg);
+}
+
+.folder-row-root > .folder-name {
+  font-weight: 600;
+}
+
+.folder-missing,
+.folder-row-note {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.folder-missing {
+  flex-shrink: 0;
+  margin-right: 4px;
+}
+
+.folder-row-note {
+  padding-block: 4px;
+  padding-inline-start: calc(var(--level) * 12px + 10px);
+}
+
+.folder-remove {
+  width: 22px;
+  height: 22px;
+  margin-right: 4px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.folder-row:hover .folder-remove,
+.folder-row:focus-within .folder-remove,
+.folder-row-root:has(.folder-missing) .folder-remove {
   opacity: 1;
 }
 
@@ -335,7 +453,71 @@
   border-left: none;
 }
 
-.file-banner {
+.split-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.split-controls .layout-btn[hidden],
+.secondary-editor-wrapper[hidden] {
+  display: none;
+}
+
+#split-file-btn[aria-pressed="true"] {
+  background-color: var(--accent-color);
+  color: #ffffff;
+}
+
+#file-editor.split-mode .editor-wrapper {
+  flex: 1 1 50%;
+  min-width: 0;
+}
+
+#file-editor.split-mode .secondary-editor-wrapper {
+  border-left: 1px solid var(--border-color);
+}
+
+#file-editor.split-mode .preview-wrapper {
+  display: none;
+}
+
+/* As in Quick Notes: compare keeps a narrow change rail while line numbers are off. */
+html:not(.editor-line-numbers-enabled) #file-editor.compare-mode .editor-host .cm-editor .cm-lineNumbers .cm-gutterElement {
+  min-width: 0;
+  padding: 0 0 0 4px;
+  font-size: 0;
+  color: transparent;
+  width: 20px;
+  height: 20px;
+}
+
+.secondary-editor-wrapper .editor-host {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.secondary-pane-header .icon-btn {
+  margin-left: auto;
+  width: 28px;
+  height: 28px;
+}
+
+#secondary-file-select {
+  min-width: 0;
+  max-width: 60%;
+  padding: 4px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background-color: var(--editor-bg);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.8rem;
+}
+
+.file-banner,
+.draft-bar {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -345,7 +527,8 @@
   font-size: 0.88rem;
 }
 
-.file-banner-text {
+.file-banner-text,
+.draft-bar-text {
   flex: 1;
 }
 
@@ -540,4 +723,23 @@
 .outline-progress.complete,
 .review-progress.complete {
   color: #22a559;
+}
+
+.plain-text-preview {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  font-size: 0.95rem;
+}
+
+/* The pane find, formatting and comments act on. */
+#file-editor.split-mode .editor-wrapper.active-pane::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 2;
+  height: 2px;
+  background: var(--accent-color);
+  pointer-events: none;
 }

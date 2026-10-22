@@ -13,6 +13,7 @@ import {
   ViewPlugin,
   WidgetType
 } from "./vendor/codemirror.js";
+import { plainTextFacet } from "./editor-view.js";
 import { documentAnchors, findAnchor } from "./editor-anchors.js";
 import { sectionEnds } from "./outline.js";
 
@@ -60,7 +61,7 @@ class FoldedWidget extends WidgetType {
 }
 
 function buildFolds(state, ids) {
-  if (!ids.size) return Decoration.none;
+  if (!ids.size || state.facet(plainTextFacet)) return Decoration.none;
   const ranges = [];
   let coveredTo = -1;
   for (const range of sectionFoldRanges(state)) {
@@ -150,6 +151,7 @@ class ChevronWidget extends WidgetType {
 function chevrons(view) {
   const ids = foldedSections(view.state);
   const ranges = [];
+  if (view.state.facet(plainTextFacet)) return Decoration.none;
   for (const anchor of documentAnchors(view.state, { full: false })) {
     if (anchor.kind !== "heading") continue;
     const line = view.state.doc.lineAt(anchor.from);
@@ -167,7 +169,10 @@ const chevronPlugin = ViewPlugin.fromClass(class {
   update(update) {
     const before = foldedSections(update.startState);
     const after = foldedSections(update.state);
-    if (update.docChanged || update.viewportChanged || before !== after) this.decorations = chevrons(update.view);
+    if (
+      update.docChanged || update.viewportChanged || before !== after ||
+      update.startState.facet(plainTextFacet) !== update.state.facet(plainTextFacet)
+    ) this.decorations = chevrons(update.view);
   }
 }, { decorations: plugin => plugin.decorations });
 

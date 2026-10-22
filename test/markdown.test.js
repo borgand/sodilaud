@@ -106,6 +106,9 @@ test("preview links open sibling documents by relative path", () => {
   assert.deepEqual(resolveLinkAction("./b.markdown#x"), {
     kind: "sibling", path: "./b.markdown", fragment: "x"
   });
+  assert.deepEqual(resolveLinkAction("data.csv"), {
+    kind: "sibling", path: "data.csv", fragment: ""
+  });
 });
 
 test("sibling links reject anything that could leave the folder or is not text", () => {

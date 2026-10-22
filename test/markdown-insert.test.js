@@ -64,7 +64,7 @@ test("the editor context menu inserts a table through the normal input path", as
   assert.equal(contextMenu.style.display, "none");
   assert.match(text(), /^Intro\n\| Column 1 \| Column 2 \| Column 3 \|/);
   assert.equal(text().slice(view.state.selection.main.from, view.state.selection.main.to), "Column 1");
-  assert.equal(document.activeElement, editor);
+  assert.ok(document.activeElement === editor, "the editor keeps focus");
 
   const title = document.getElementById("note-title");
   title.dispatchEvent(new app.dom.window.MouseEvent("contextmenu", {

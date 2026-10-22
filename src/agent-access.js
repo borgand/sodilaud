@@ -29,6 +29,7 @@ const WRITE_FUNCTIONS = [
   ["delete_folder", "Delete empty folder", "Delete a folder only when it has no notes."],
   ["push_quick_note", "Push quick note", "Add a note to From agents and show the panel without taking focus."],
   ["open_document", "Open document", "Open a Markdown or text file in the main window. Returns no content."],
+  ["push_draft", "Push draft", "Put Markdown into a main window for review, kept in Sodilaud until you save it."],
   ["apply_edit", "Apply edit", "Merge edits into a co-edited file or note around your typing."],
   ["add_comment", "Add comment", "Leave a question on a passage for you to answer."],
   ["reply_comment", "Reply to comment", "Answer in a comment thread without resolving it."],

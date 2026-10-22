@@ -68,6 +68,22 @@
         "name": "Plain text document",
         "role": "Editor",
         "mimeType": "text/plain"
+      },
+      {
+        "ext": [
+          "csv"
+        ],
+        "name": "CSV document",
+        "role": "Editor",
+        "mimeType": "text/csv"
+      },
+      {
+        "ext": [
+          "tsv"
+        ],
+        "name": "TSV document",
+        "role": "Editor",
+        "mimeType": "text/tab-separated-values"
       }
     ]
   }

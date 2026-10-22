@@ -11,6 +11,8 @@
   <script src="vendor/marked.umd.js"></script>
   <!-- Offline-ready fenced-code syntax highlighter -->
   <script src="vendor/highlight.min.js"></script>
+  <!-- Offline-ready file comparison engine -->
+  <script src="vendor/diff.min.js"></script>
   <script type="module" src="app.js" defer></script>
 </head>
 <body>
@@ -59,6 +61,10 @@
         <div class="comment-controls">
           <button class="layout-btn" id="comment-btn" type="button" title="Comment on the selection (Cmd+Alt+M)" aria-label="Comment on the selection"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /><path d="M12 7v6M9 10h6" /></svg></button>
         </div>
+        <div class="split-controls">
+          <button class="layout-btn" id="split-file-btn" type="button" title="Split View (Cmd+\)" aria-label="Split view" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M12 3v18" /></svg></button>
+          <button class="layout-btn compare-notes-btn" id="compare-files-btn" type="button" title="Compare the two files" aria-pressed="false" hidden>Compare <span class="compare-notes-count" id="compare-files-count" hidden></span></button>
+        </div>
         <div class="format-menu format-heading-menu" id="format-heading-menu" role="menu" aria-label="Heading level" hidden>
           <button class="dropdown-item format-heading-item" id="format-heading-1" data-format="heading-1" type="button" role="menuitem" tabindex="-1" title="Heading 1 (Cmd+Alt+1)"><span class="format-heading-sample format-heading-sample-1">Heading 1</span></button>
           <button class="dropdown-item format-heading-item" id="format-heading-2" data-format="heading-2" type="button" role="menuitem" tabindex="-1" title="Heading 2 (Cmd+Alt+2)"><span class="format-heading-sample format-heading-sample-2">Heading 2</span></button>
@@ -93,6 +99,8 @@
                 <button class="dropdown-item" id="menu-new-file-btn" title="New File (Cmd+N)">New File</button>
                 <button class="dropdown-item" id="menu-new-window-btn" title="New Window (Cmd+Alt+N)">New Window</button>
                 <button class="dropdown-item" id="menu-open-file-btn" title="Open File (Cmd+O)">Open File…</button>
+                <button class="dropdown-item" id="menu-open-folder-btn" title="Open Folder (Cmd+Shift+O)">Open Folder…</button>
+                <button class="dropdown-item" id="menu-browse-folder-btn" disabled>Show Folder in Sidebar</button>
                 <button class="dropdown-item" id="menu-save-file-btn" title="Save (Cmd+S)" disabled>Save</button>
                 <button class="dropdown-item" id="menu-save-as-btn" title="Save As (Cmd+Shift+S)" disabled>Save As…</button>
                 <button class="dropdown-item" id="menu-close-file-btn" title="Close File (Cmd+W)" disabled>Close File</button>
@@ -209,6 +217,10 @@
     <aside class="files-sidebar" id="files-sidebar" aria-labelledby="files-sidebar-title" hidden>
       <h2 class="files-sidebar-title" id="files-sidebar-title">Open files</h2>
       <ul class="open-files-list" id="open-files-list"></ul>
+      <section class="folders-section" id="folders-section" aria-labelledby="folders-title" hidden>
+        <h2 class="files-sidebar-title" id="folders-title">Folders</h2>
+        <ul class="folder-tree" id="folder-tree" role="tree" aria-labelledby="folders-title"></ul>
+      </section>
       <section class="outline-section" id="outline-section" aria-label="Outline" hidden>
         <button class="files-sidebar-title outline-toggle" id="outline-toggle-btn" type="button" aria-expanded="true" aria-controls="outline-list">Outline</button>
         <ul class="outline-list" id="outline-list"></ul>
@@ -230,12 +242,18 @@
         <h2 class="start-section-title" id="start-actions-title">Start</h2>
         <button class="start-link" id="start-new-file-btn" type="button">New File…</button>
         <button class="start-link" id="start-open-file-btn" type="button">Open File…</button>
+        <button class="start-link" id="start-open-folder-btn" type="button">Open Folder…</button>
       </section>
 
       <section class="start-section" id="recent-files" aria-labelledby="recent-files-title" hidden>
         <h2 class="start-section-title" id="recent-files-title">Recent</h2>
         <ul class="recent-list" id="recent-files-list"></ul>
         <p class="start-muted" id="recent-files-empty">No recent files.</p>
+      </section>
+
+      <section class="start-section" id="drafts-section" aria-labelledby="drafts-title" hidden>
+        <h2 class="start-section-title" id="drafts-title">Drafts</h2>
+        <ul class="recent-list" id="drafts-list"></ul>
       </section>
 
       <section class="start-section" id="quicknotes-card" aria-labelledby="quicknotes-card-title">
@@ -255,10 +273,57 @@
         <button class="file-banner-btn" id="file-banner-primary-btn" type="button">Reload</button>
         <button class="file-banner-btn" id="file-banner-secondary-btn" type="button">Keep mine</button>
       </div>
+      <div class="draft-bar" id="draft-bar" role="status" hidden>
+        <span class="draft-bar-text">Draft from an agent. It stays in Sodilaud until you save it.</span>
+        <button class="file-banner-btn" id="draft-save-as-btn" type="button">Save As…</button>
+        <button class="file-banner-btn" id="draft-save-notes-btn" type="button">Save to Quick Notes</button>
+        <button class="file-banner-btn" id="draft-discard-btn" type="button">Discard</button>
+      </div>
       <div class="editor-pane" id="editor-pane">
+        <!-- Find & Replace Bar -->
+        <div class="find-bar" id="find-bar">
+          <div class="find-row">
+            <button class="find-btn find-toggle-replace" id="find-toggle-replace" title="Toggle Replace (Cmd+Alt+F)" aria-label="Toggle replace controls" aria-expanded="false">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+            </button>
+            <div class="find-input-wrapper">
+              <input type="text" id="find-input" aria-label="Find in document" placeholder="Find in document..." autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" />
+              <button class="find-option-btn find-case-toggle" id="find-case-toggle" title="Match Case (Alt+C)" aria-label="Toggle case-sensitive matching" aria-pressed="false">Aa</button>
+              <button class="find-option-btn find-exact-toggle" id="find-exact-toggle" title="Exact Match (Alt+W)" aria-label="Toggle exact whole-word matching" aria-pressed="false">ab</button>
+              <button class="find-option-btn" id="find-regex-toggle" title="Use Regular Expression (Alt+R)" aria-pressed="false">.*</button>
+            </div>
+            <span class="find-count" id="find-count">0 of 0</span>
+            <button class="find-btn" id="find-prev" title="Previous Match (Shift+Enter)" aria-label="Previous match">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="18 15 12 9 6 15" />
+              </svg>
+            </button>
+            <button class="find-btn" id="find-next" title="Next Match (Enter)" aria-label="Next match">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </button>
+            <button class="find-btn find-close" id="find-close" title="Close (Esc)" aria-label="Close find controls">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+          <div class="replace-row" id="replace-row" style="display: none;">
+            <div class="find-input-wrapper replace-input-wrapper">
+              <input type="text" id="replace-input" aria-label="Replacement text" placeholder="Replace with..." autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" />
+            </div>
+            <button class="find-action-btn" id="replace-one-btn" title="Replace Current Match">Replace</button>
+            <button class="find-action-btn" id="replace-all-btn" title="Replace All Matches">Replace All</button>
+          </div>
+        </div>
         <div class="editor-wrapper" id="editor-wrapper">
           <div class="editor-host" id="editor-host"></div>
         </div>
+        <div class="editor-wrapper secondary-editor-wrapper" id="secondary-editor-wrapper" hidden><div class="secondary-pane-header"><select id="secondary-file-select" aria-label="File in the right pane"></select><button class="icon-btn" id="close-secondary-btn" type="button" aria-label="Close the right pane" title="Close split view">×</button></div><div class="editor-host" id="secondary-editor-host"></div></div>
         <div class="preview-wrapper" id="preview-wrapper">
           <div class="markdown-preview" id="markdown-preview"></div>
         </div>
@@ -362,12 +427,28 @@
               <div class="shortcut-keys"><kbd>Cmd</kbd><span class="key-plus">+</span><kbd>O</kbd></div>
             </div>
             <div class="shortcut-row">
+              <span class="shortcut-desc">Open Folder</span>
+              <div class="shortcut-keys"><kbd>Cmd</kbd><span class="key-plus">+</span><kbd>Shift</kbd><span class="key-plus">+</span><kbd>O</kbd></div>
+            </div>
+            <div class="shortcut-row">
               <span class="shortcut-desc">Save / Save As</span>
               <div class="shortcut-keys"><kbd>Cmd</kbd><span class="key-plus">+</span><kbd>S</kbd><span class="key-plus">/</span><kbd>Cmd</kbd><span class="key-plus">+</span><kbd>Shift</kbd><span class="key-plus">+</span><kbd>S</kbd></div>
             </div>
             <div class="shortcut-row">
               <span class="shortcut-desc">Close File</span>
               <div class="shortcut-keys"><kbd>Cmd</kbd><span class="key-plus">+</span><kbd>W</kbd></div>
+            </div>
+            <div class="shortcut-row">
+              <span class="shortcut-desc">Find</span>
+              <div class="shortcut-keys"><kbd>Cmd</kbd><span class="key-plus">+</span><kbd>F</kbd></div>
+            </div>
+            <div class="shortcut-row">
+              <span class="shortcut-desc">Find and Replace</span>
+              <div class="shortcut-keys"><kbd data-shortcut-off-mac="Ctrl+H">Cmd+Alt+F</kbd></div>
+            </div>
+            <div class="shortcut-row">
+              <span class="shortcut-desc">Split View (two files)</span>
+              <div class="shortcut-keys"><kbd>Cmd</kbd><span class="key-plus">+</span><kbd>\</kbd></div>
             </div>
           </div>
 
@@ -707,8 +788,13 @@ function hello() {
                 <p class="mcp-function-parameters"><strong>Required:</strong> <code>requestId</code>, <code>title</code><br><strong>Optional:</strong> <code>content</code>, <code>show</code> (default true)</p>
               </div>
               <div class="cheatsheet-card">
+                <div class="cheatsheet-card-title"><code>push_draft</code></div>
+                <p class="mcp-function-description">Opens Markdown in the main window as a draft that stays in Sodilaud until you save it as a file or to Quick Notes, or discard it. Returns the path, name and size.</p>
+                <p class="mcp-function-parameters"><strong>Required:</strong> <code>requestId</code>, <code>title</code><br><strong>Optional:</strong> <code>content</code></p>
+              </div>
+              <div class="cheatsheet-card">
                 <div class="cheatsheet-card-title"><code>open_document</code></div>
-                <p class="mcp-function-description">Opens an existing <code>.md</code>, <code>.markdown</code> or <code>.txt</code> file in this window, or switches to it. Returns the path, name and size, never the content.</p>
+                <p class="mcp-function-description">Opens an existing <code>.md</code>, <code>.markdown</code>, <code>.txt</code>, <code>.csv</code> or <code>.tsv</code> file in this window, or switches to it. Returns the path, name and size, never the content.</p>
                 <p class="mcp-function-parameters"><strong>Required:</strong> <code>path</code> (absolute)</p>
               </div>
             </div>

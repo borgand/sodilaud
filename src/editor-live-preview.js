@@ -13,7 +13,7 @@ import {
   layer,
   syntaxTree
 } from "./vendor/codemirror.js";
-import { modeFacet, syntaxHighlightingFacet } from "./editor-view.js";
+import { modeFacet, plainTextFacet, syntaxHighlightingFacet } from "./editor-view.js";
 import { isSafeMarkdownUrl, renderMarkdown, resolveLinkAction } from "./markdown.js";
 import { scrollToAnchor } from "./editor-anchors.js";
 import { buildHunkElement, languageForPath, reviewHunkMeta } from "./diff-hunk.js";
@@ -59,7 +59,7 @@ function tableHtml(source) {
   return html;
 }
 
-const isLive = state => state.facet(modeFacet) === "live";
+const isLive = state => state.facet(modeFacet) === "live" && !state.facet(plainTextFacet);
 
 function revealedLines(state, focused) {
   if (!focused) return [];
@@ -790,7 +790,7 @@ const inlinePreview = ViewPlugin.fromClass(class {
   }
 
   update(update) {
-    const modeChanged = update.startState.facet(modeFacet) !== update.state.facet(modeFacet);
+    const modeChanged = isLive(update.startState) !== isLive(update.state);
     const treeChanged = syntaxTree(update.startState) !== syntaxTree(update.state);
     const highlightingChanged = update.startState.facet(syntaxHighlightingFacet) !== update.state.facet(syntaxHighlightingFacet);
     if (
@@ -911,7 +911,7 @@ const blockField = StateField.define({
       tr.docChanged ||
       tr.selection !== undefined ||
       commentsDiffer(tr.startState, tr.state) ||
-      tr.startState.facet(modeFacet) !== tr.state.facet(modeFacet) ||
+      isLive(tr.startState) !== isLive(tr.state) ||
       syntaxTree(tr.startState) !== syntaxTree(tr.state);
     if (!changed) return value;
     return { focused, decorations: buildBlocks(tr.state, focused) };
@@ -927,7 +927,7 @@ const codeBlockLayer = layer({
   class: "cm-lp-codeblock-layer",
   update: update =>
     update.docChanged || update.viewportChanged || update.focusChanged ||
-    update.startState.facet(modeFacet) !== update.state.facet(modeFacet) ||
+    isLive(update.startState) !== isLive(update.state) ||
     update.startState.field(blockField) !== update.state.field(blockField),
   markers(view) {
     if (!isLive(view.state)) return [];
