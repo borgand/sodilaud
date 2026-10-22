@@ -70,7 +70,7 @@ Clipboard history is off by default. Turn it on in **Sodilaud menu → Clipboard
 - Multiple notes with automatic saving, titles derived from the first line, and quick creation by double-clicking empty sidebar space
 - Live, Source, and Reading editing modes, with inline Markdown rendering and per-line raw source in Live mode
 - Optional Markdown editor coloring and language-aware fenced-code highlighting in Live and Reading modes
-- Review books: diff hunks with line numbers and highlighting, a Reviewed toggle, folding by heading, an outline with review progress, and links between files with Back and Forward
+- Review books: diff hunks with line numbers and highlighting, a Reviewed toggle, folding by heading, an outline that wraps long headings, marks the section you are reading and shows review progress; links between files with Back and Forward
 - Mermaid diagrams from ` ```mermaid ` blocks in Live and Reading modes and in copied HTML, in the active theme's colors, rendered offline
 - Optional, theme-aware source line numbers in either editor pane
 - Markdown-aware continuation for lists, task lists, blockquotes, code fences, and tables
@@ -206,7 +206,7 @@ Sodilaud keeps its Markdown assistance lightweight and works directly in the nat
 
 Syntax highlighting is enabled by default. Open **Sodilaud menu → Appearance → Syntax highlighting** to toggle both the editor’s Markdown coloring and language-aware code highlighting. Code highlighting requires a supported language after the opening fence, such as <code>```javascript</code>, or in Live mode a file name with a known extension, such as <code>```path=src/app.js</code>; unknown and unlabeled fences remain plain code. In Live mode each fenced block shows a header with its file name (<code>path=</code>, <code>file=</code>, <code>filename=</code> or <code>title=</code>), else its language, else “code”.
 
-Source line numbers are off by default. Open **Sodilaud menu → Appearance → Line numbers** to show a subtle, theme-aware gutter in both editor panes; the preference is remembered between launches.
+Source line numbers are off by default. Open **Sodilaud menu → Appearance → Line numbers** to show a subtle, theme-aware gutter, on the page background, in both editor panes; the preference is remembered between launches.
 
 Open **Sodilaud menu → Appearance → Paragraph spacing** to adjust the space between blocks. **Readable width** is on by default and limits the text column to 80 characters; code blocks and tables share the column's edges, and wide tables scroll inside it. **Body font**, **Heading font** and **Code font** each offer Theme default, the bundled fonts, or **System font…**, where you type an installed font's name. A system font that is not installed falls back to the bundled default font (Inter, or JetBrains Mono for code). All of these are remembered between launches.
 

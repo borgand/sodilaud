@@ -364,7 +364,7 @@
   --syntax-number: #934710;
   --syntax-danger: #9b1338;
   
-  --statusbar-bg: #ffffff;
+  --statusbar-bg: #f8fafc;
   --topbar-bg: #ffffff;
   --dropdown-bg: #ffffff;
   --dropdown-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.02), 0 0 0 1px rgba(0, 0, 0, 0.05);
@@ -418,7 +418,7 @@
     --syntax-number: #f9ca4e;
     --syntax-danger: #f98b9c;
     
-    --statusbar-bg: #111625;
+    --statusbar-bg: #090d16;
     --topbar-bg: #111625;
     --dropdown-bg: #111625;
     --dropdown-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -2px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(255, 255, 255, 0.05);
@@ -470,7 +470,7 @@ html.theme-light {
   --syntax-number: #934710;
   --syntax-danger: #9b1338;
   
-  --statusbar-bg: #ffffff;
+  --statusbar-bg: #f8fafc;
   --topbar-bg: #ffffff;
   --dropdown-bg: #ffffff;
   --dropdown-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.02), 0 0 0 1px rgba(0, 0, 0, 0.05);
@@ -523,7 +523,7 @@ html.theme-dark {
   --syntax-number: #f9ca4e;
   --syntax-danger: #f98b9c;
   
-  --statusbar-bg: #111625;
+  --statusbar-bg: #090d16;
   --topbar-bg: #111625;
   --dropdown-bg: #111625;
   --dropdown-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -2px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(255, 255, 255, 0.05);
@@ -1786,8 +1786,8 @@ html.readable-width .editor-host .cm-editor .cm-content {
   font-family: var(--font-mono);
   font-size: var(--editor-font-size);
   line-height: var(--editor-line-height);
-  background-color: var(--preview-code-bg);
-  border-right: 1px solid color-mix(in srgb, var(--border-color) 65%, transparent);
+  background-color: var(--editor-bg);
+  border-right: none;
   color: var(--text-muted);
 }
 

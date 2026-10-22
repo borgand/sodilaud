@@ -344,7 +344,9 @@ export function createComments({ document, invoke, root, countButton, editors, a
     const editor = active();
     const event = editor ? latest.get(docKey(editor.doc)) : null;
     const all = event?.comments ?? [];
-    countButton.hidden = !editor;
+    const hideCount = !editor || (all.length === 0 && !open && !coedit.listening);
+    if (hideCount && document.activeElement === countButton) editor?.view.focus();
+    countButton.hidden = hideCount;
     countButton.textContent = countLabel(all);
     countButton.classList.toggle("listening", coedit.listening);
     countButton.title = coedit.listening ? "Comments. An agent is listening for them." : "Comments";
