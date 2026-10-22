@@ -3789,6 +3789,60 @@ kbd {
   font-weight: 600;
 }
 
+.cm-lp-pencil {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 4px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.85em;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.cm-lp-pencil:hover,
+.cm-lp-pencil:focus-visible {
+  color: var(--text-secondary);
+  background-color: var(--preview-code-bg);
+}
+
+.cm-lp-pencil[aria-pressed="true"],
+.cm-lp-table:hover .cm-lp-pencil,
+.cm-lp-mermaid-block:hover .cm-lp-pencil,
+.cm-lp-codeblock-head:hover .cm-lp-pencil,
+.cm-lp-codeblock-caret .cm-lp-pencil,
+.cm-lp-pencil:focus-visible {
+  opacity: 1;
+}
+
+/* Just outside the table's top-right corner, clear of the header text. */
+.cm-lp-table .cm-lp-pencil {
+  position: absolute;
+  top: 6px;
+  left: calc(100% + 1px);
+}
+
+/* Inside the diagram's top-right corner. */
+.cm-lp-mermaid-block {
+  position: relative;
+}
+
+.cm-lp-mermaid-block .cm-lp-pencil {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+}
+
+.cm-line .cm-lp-pencil,
+.cm-lp-fence-head .cm-lp-pencil {
+  float: right;
+}
+
 /* Highlighted code takes its colors from the tokens, as in Reading mode. */
 .cm-mode-live .cm-lp-codeblock-highlighted .syntax-code {
   color: inherit;
@@ -3798,37 +3852,6 @@ kbd {
   color: var(--preview-link);
   text-decoration: underline;
   text-decoration-thickness: 1px;
-}
-
-.cm-lp-follow {
-  position: absolute;
-  z-index: 5;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  padding: 0;
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  background-color: var(--preview-code-bg);
-  color: var(--accent-color);
-  cursor: pointer;
-}
-
-.cm-lp-follow[hidden] {
-  display: none;
-}
-
-.cm-lp-follow:hover,
-.cm-lp-follow:focus-visible {
-  background-color: var(--accent-color);
-  color: var(--bg-app);
-}
-
-.cm-lp-follow svg {
-  width: 12px;
-  height: 12px;
 }
 
 .cm-editor.cm-mode-live .cm-lp-quote {
@@ -3871,12 +3894,14 @@ kbd {
 }
 
 .cm-mode-live .cm-lp-table.markdown-preview {
+  position: relative;
+  width: fit-content;
   flex: none;
   overflow: visible;
   min-width: 0;
   max-width: 100%;
   margin-inline: 0;
-  padding: 4px 0;
+  padding: 0;
   font-family: var(--doc-font-body);
   font-size: inherit;
   cursor: text;
@@ -3887,6 +3912,89 @@ kbd {
 
 .cm-mode-live .cm-lp-table.markdown-preview .table-scroll {
   margin-bottom: 0;
+}
+
+/* As wide as its content, like the grid it turns into with the caret inside. */
+.cm-mode-live .cm-lp-table.markdown-preview table {
+  width: auto;
+  max-width: 100%;
+}
+
+/* Grid mode: the table's own lines, drawn as one anonymous CSS table. */
+.cm-mode-live .cm-content {
+  border-collapse: collapse;
+}
+
+.cm-mode-live .cm-lp-trow {
+  display: table-row;
+}
+
+.cm-mode-live .cm-lp-tcell {
+  display: table-cell;
+  position: relative;
+  border: 1px solid var(--preview-table-border);
+  padding: 8px 12px;
+  text-align: left;
+  vertical-align: middle;
+  line-height: var(--editor-line-height);
+  word-break: normal;
+  overflow-wrap: normal;
+}
+
+.cm-mode-live .cm-lp-ttoken {
+  white-space: nowrap;
+}
+
+.cm-mode-live .cm-lp-trow-head .cm-lp-tcell {
+  background-color: var(--preview-table-head-bg);
+  font-weight: 600;
+}
+
+/* Cells take the rendered table's look, not the Markdown highlighter's: the
+   header row parses as a heading and emphasis has its own color. */
+.cm-mode-live .cm-lp-tcell .syntax-heading,
+.cm-mode-live .cm-lp-tcell .syntax-emphasis,
+.cm-mode-live .cm-lp-tcell .syntax-code {
+  color: inherit;
+}
+
+.cm-mode-live .cm-lp-tcell .cm-lp-strong {
+  font-weight: bold;
+}
+
+.cm-mode-live .cm-lp-tcell .cm-lp-em {
+  font-style: italic;
+}
+
+.cm-mode-live .cm-lp-tcell .cm-lp-del {
+  text-decoration: line-through;
+}
+
+.cm-mode-live .cm-lp-tcell .cm-lp-code {
+  padding: 2px 6px;
+  font-size: 0.9rem;
+}
+
+.cm-mode-live .cm-lp-trow-sep {
+  font-size: 0;
+  line-height: 0;
+}
+
+.cm-mode-live .cm-lp-tcell-focus {
+  outline: 1px solid var(--accent-color);
+  outline-offset: -1px;
+}
+
+.cm-mode-live .cm-lp-tcell.cm-lp-tcell-selected {
+  background-color: color-mix(in srgb, var(--accent-color) 35%, transparent);
+}
+
+.cm-mode-live .cm-lp-tcell .cm-lp-pencil {
+  position: absolute;
+  top: 6px;
+  left: calc(100% + 1px);
+  float: none;
+  opacity: 1;
 }
 
 .cm-mode-live .cm-lp-table-composer {
@@ -3901,7 +4009,6 @@ kbd {
   margin-inline: 0;
   padding: 4px 0;
   margin-bottom: 0;
-  cursor: text;
 }
 
 .cm-mode-live .cm-lp-mermaid-preview {

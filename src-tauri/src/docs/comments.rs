@@ -44,6 +44,11 @@ pub(crate) struct Comment {
     pub(crate) from: usize,
     pub(crate) to: usize,
     pub(crate) anchored_text: String,
+    /// A comment on a rectangle of table cells holds the cells' text, tabs
+    /// between cells and newlines between rows; `from..to` runs from the
+    /// top-left cell to the bottom-right one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) cell_text: Option<String>,
     #[serde(default)]
     pub(crate) heading_path: Vec<String>,
     pub(crate) body: String,
@@ -78,6 +83,7 @@ impl Comment {
             from,
             to,
             anchored_text: slice(text, from, to),
+            cell_text: None,
             heading_path: heading_path(text, from),
             body,
             note: None,
@@ -103,6 +109,21 @@ impl Comment {
 
     pub(crate) fn is_resolved(&self) -> bool {
         self.state == State::Resolved
+    }
+
+    /// The text the comment quotes: its cells' text for a cell rectangle.
+    pub(crate) fn quote(&self) -> &str {
+        self.cell_text.as_deref().unwrap_or(&self.anchored_text)
+    }
+
+    /// Takes `from..to` of `text` as the anchored text, and its cells' text
+    /// for a cell rectangle. One whose ends left the table's cells becomes an
+    /// ordinary range comment.
+    fn set_anchor(&mut self, text: &str, anchored: String) {
+        self.anchored_text = anchored;
+        if self.cell_text.is_some() {
+            self.cell_text = rect_quote(text, self.from, self.to);
+        }
     }
 
     /// The ID of the thread's root: its own for a root.
@@ -158,6 +179,142 @@ pub(crate) fn slice(text: &str, from: usize, to: usize) -> String {
         (Some(start), Some(end)) if start <= end => text[start..end].to_string(),
         _ => String::new(),
     }
+}
+
+struct Cell {
+    seg_from: usize,
+    seg_to: usize,
+    text: String,
+}
+
+// The trimmed cells of a line holding an unescaped pipe, with UTF-16 offsets
+// into the line; None for any other line.
+fn row_cells(line: &str) -> Option<Vec<Cell>> {
+    let chars: Vec<char> = line.chars().collect();
+    let mut units = Vec::with_capacity(chars.len() + 1);
+    units.push(0);
+    for character in &chars {
+        units.push(units.last().unwrap() + character.len_utf16());
+    }
+    let mut segments = Vec::new();
+    let mut start = 0;
+    let mut backslashes = 0;
+    for (index, &character) in chars.iter().enumerate() {
+        if character == '\\' {
+            backslashes += 1;
+            continue;
+        }
+        if character == '|' && backslashes % 2 == 0 {
+            segments.push((start, index));
+            start = index + 1;
+        }
+        backslashes = 0;
+    }
+    if segments.is_empty() {
+        return None;
+    }
+    segments.push((start, chars.len()));
+    let blank = |(from, to): (usize, usize)| chars[from..to].iter().all(|c| c.is_whitespace());
+    if segments.len() > 1 && blank(segments[0]) {
+        segments.remove(0);
+    }
+    if segments.len() > 1 && blank(segments[segments.len() - 1]) {
+        segments.pop();
+    }
+    let padding = |c: char| c == ' ' || c == '\t';
+    Some(
+        segments
+            .into_iter()
+            .map(|(seg_from, seg_to)| {
+                let (mut from, mut to) = (seg_from, seg_to);
+                while from < to && padding(chars[from]) {
+                    from += 1;
+                }
+                while to > from && padding(chars[to - 1]) {
+                    to -= 1;
+                }
+                Cell {
+                    seg_from: units[seg_from],
+                    seg_to: units[seg_to],
+                    text: chars[from..to].iter().collect(),
+                }
+            })
+            .collect(),
+    )
+}
+
+// The cells of line `index` when it is a table row: it holds a pipe and is
+// not the second line of its run of such lines, which is the table's
+// separator whatever its dashes look like. Matches tableLine in
+// src/table-cells.js.
+fn table_row(lines: &[(usize, &str)], index: usize) -> Option<Vec<Cell>> {
+    let piped = |index: usize| row_cells(lines[index].1).is_some();
+    let separator = index >= 1 && piped(index - 1) && (index < 2 || !piped(index - 2));
+    if separator {
+        None
+    } else {
+        row_cells(lines[index].1)
+    }
+}
+
+/// The cells of the rectangle from the cell holding `from` to the cell
+/// holding `to` (UTF-16 offsets), trimmed and with `\|` turned back into `|`:
+/// tabs between cells, newlines between rows, separator rows skipped. The
+/// same as cellQuote in src/table-cells.js.
+pub(crate) fn cell_text(text: &str, from: usize, to: usize) -> String {
+    let (from, to) = (from.min(to), from.max(to));
+    let mut lines = Vec::new();
+    let mut start = 0;
+    for line in text.split('\n') {
+        // CodeMirror counts a CRLF break as one, so keep `\r` out of the cells.
+        lines.push((start, line.strip_suffix('\r').unwrap_or(line)));
+        start += changes::utf16_len(line) + 1;
+    }
+    let line_of = |pos: usize| {
+        lines
+            .iter()
+            .rposition(|(start, _)| *start <= pos)
+            .unwrap_or(0)
+    };
+    let column = |cells: &[Cell], line_start: usize, pos: usize| {
+        cells
+            .iter()
+            .position(|cell| pos >= line_start + cell.seg_from && pos <= line_start + cell.seg_to)
+    };
+    let (first, last) = (line_of(from), line_of(to));
+    let (Some(first_cells), Some(last_cells)) = (table_row(&lines, first), table_row(&lines, last))
+    else {
+        return String::new();
+    };
+    let (Some(from_col), Some(to_col)) = (
+        column(&first_cells, lines[first].0, from),
+        column(&last_cells, lines[last].0, to),
+    ) else {
+        return String::new();
+    };
+    let (col_min, col_max) = (from_col.min(to_col), from_col.max(to_col));
+    let mut rows = Vec::new();
+    for index in first..=last {
+        let Some(cells) = table_row(&lines, index) else {
+            continue;
+        };
+        let picked: Vec<String> = cells
+            .iter()
+            .skip(col_min)
+            .take(col_max - col_min + 1)
+            .map(|cell| cell.text.replace("\\|", "|"))
+            .collect();
+        if !picked.is_empty() {
+            rows.push(picked.join("\t"));
+        }
+    }
+    rows.join("\n")
+}
+
+/// The cells' text for a rectangle comment on `from..to`, or None when its
+/// ends no longer fall in table cells and it is an ordinary range comment.
+pub(crate) fn rect_quote(text: &str, from: usize, to: usize) -> Option<String> {
+    Some(cell_text(text, from, to)).filter(|quote| !quote.is_empty())
 }
 
 fn is_fence(line: &str) -> bool {
@@ -307,7 +464,7 @@ pub(crate) fn reanchor(comment: &mut Comment, text: &str) {
         Some((start, end)) => {
             comment.from = changes::utf16_of_byte(text, start);
             comment.to = changes::utf16_of_byte(text, end);
-            comment.anchored_text = text[start..end].to_string();
+            comment.set_anchor(text, text[start..end].to_string());
             comment.orphaned = false;
         }
         None => {
@@ -340,7 +497,7 @@ pub(crate) fn map_through(comments: &mut [Comment], updates: &[Vec<Section>], te
         if (from, to) != (comment.from, comment.to) || anchored != comment.anchored_text {
             comment.from = from;
             comment.to = to;
-            comment.anchored_text = anchored;
+            comment.set_anchor(text, anchored);
             changed = true;
         }
     }
@@ -462,6 +619,129 @@ mod tests {
             comments[0].anchored_text, "phrase here",
             "the snippet is kept"
         );
+    }
+
+    const TABLE: &str = "x\n| a | b | c |\n|---|---|---|\n| d | e \\| f | g |\n| h | i | j |\n";
+
+    fn cell_comment(text: &str) -> Comment {
+        let at = |needle: &str| changes::utf16_of_byte(text, text.find(needle).unwrap());
+        let range = (at("b |"), at("j |") + 1);
+        let mut comment = Comment::new(
+            Author::Owner,
+            State::Queued,
+            text,
+            range,
+            "body".into(),
+            None,
+            1,
+        );
+        comment.cell_text = Some(cell_text(text, range.0, range.1));
+        comment
+    }
+
+    #[test]
+    fn cell_text_quotes_the_rectangle_not_the_source_span() {
+        let comment = cell_comment(TABLE);
+        assert_eq!(
+            cell_text(TABLE, comment.from, comment.to),
+            "b\tc\ne | f\tg\ni\tj"
+        );
+        assert_eq!(comment.quote(), "b\tc\ne | f\tg\ni\tj");
+        assert!(comment.anchored_text.starts_with("b | c |\n|---"));
+    }
+
+    #[test]
+    fn a_cell_comment_keeps_its_cell_text_current_through_edits() {
+        let mut comments = vec![cell_comment(TABLE)];
+        let at = changes::utf16_of_byte(TABLE, TABLE.find("e \\|").unwrap());
+        let length = changes::utf16_len(TABLE);
+        let text = apply(&mut comments, TABLE, json!([at, [0, "Z"], length - at]));
+        let quote = comments[0].cell_text.as_deref().unwrap();
+        assert!(
+            quote == "b\tc\nZe | f\tg\ni\tj" || quote == "b\tc\neZ | f\tg\ni\tj",
+            "{quote}"
+        );
+        assert_eq!(
+            comments[0].anchored_text,
+            slice(&text, comments[0].from, comments[0].to)
+        );
+    }
+
+    // The same vectors as "cellQuote skips the second line of any table as
+    // its separator" in test/table-cells.test.js.
+    #[test]
+    fn cell_text_skips_the_separator_of_any_table() {
+        let vectors = [
+            ("| a |\n|---|\n| b |", "b", "a\nb"),
+            ("| a | x |\n|-|-|\n| b | y |", "y", "a\tx\nb\ty"),
+            ("a | x\n--- | ---\nb | y", "y", "a\tx\nb\ty"),
+            ("p\n\n| a |\n|:-:|\n| b |\n| c |", "c", "a\nb\nc"),
+        ];
+        for (text, last, quote) in vectors {
+            let from = text.find('a').unwrap();
+            let to = text.rfind(last).unwrap() + 1;
+            assert_eq!(cell_text(text, from, to), quote, "{text}");
+        }
+    }
+
+    #[test]
+    fn cell_text_counts_utf16_units_through_non_ascii_text() {
+        let text = "ü😀\n| a | bé | c |\n|---|---|---|\n| d | 😀 \\| f | g |\n";
+        let at = |needle: &str| changes::utf16_of_byte(text, text.find(needle).unwrap());
+        assert_eq!(cell_text(text, at("bé"), at("g |") + 1), "bé\tc\n😀 | f\tg");
+    }
+
+    #[test]
+    fn cell_text_reads_crlf_lines_as_codemirror_does() {
+        let text = TABLE.replace('\n', "\r\n");
+        let at = |needle: &str| changes::utf16_of_byte(&text, text.find(needle).unwrap());
+        assert_eq!(
+            cell_text(&text, at("b |"), at("j |") + 1),
+            "b\tc\ne | f\tg\ni\tj"
+        );
+    }
+
+    #[test]
+    fn reanchoring_a_cell_comment_refreshes_its_cell_text() {
+        let mut comment = cell_comment(TABLE);
+        comment.cell_text = Some("stale".into());
+        reanchor(&mut comment, &format!("new line\n{TABLE}"));
+        assert!(!comment.orphaned);
+        assert_eq!(comment.quote(), "b\tc\ne | f\tg\ni\tj");
+    }
+
+    #[test]
+    fn a_cell_comment_whose_top_row_is_deleted_falls_back_to_its_range() {
+        let mut comments = vec![cell_comment(TABLE)];
+        let line = changes::utf16_of_byte(TABLE, TABLE.find("| a").unwrap());
+        let length = changes::utf16_len(TABLE);
+        let text = apply(
+            &mut comments,
+            TABLE,
+            json!([line, [14], length - line - 14]),
+        );
+        assert!(!text.contains("| a |"));
+        assert!(!comments[0].orphaned);
+        assert_eq!(comments[0].cell_text, None);
+        assert_eq!(comments[0].quote(), comments[0].anchored_text);
+        assert!(!comments[0].anchored_text.is_empty());
+    }
+
+    #[test]
+    fn a_saved_comment_without_cell_text_still_loads() {
+        let mut saved = serde_json::to_value(comment("some text", "text")).unwrap();
+        saved.as_object_mut().unwrap().remove("cellText");
+        let loaded: Comment = serde_json::from_value(saved).unwrap();
+        assert_eq!(loaded.cell_text, None);
+        assert_eq!(loaded.quote(), "text");
+    }
+
+    #[test]
+    fn a_comment_without_cells_serializes_without_cell_text() {
+        let plain = serde_json::to_value(comment("some text", "text")).unwrap();
+        assert!(plain.get("cellText").is_none());
+        let cells = serde_json::to_value(cell_comment(TABLE)).unwrap();
+        assert_eq!(cells["cellText"], "b\tc\ne | f\tg\ni\tj");
     }
 
     #[test]

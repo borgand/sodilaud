@@ -368,6 +368,8 @@ pub(crate) struct NewComment {
     to: usize,
     body: String,
     reply_to: Option<String>,
+    #[serde(default)]
+    cells: bool,
 }
 
 #[tauri::command]
@@ -383,6 +385,7 @@ pub(crate) fn comment_add(
         (comment.from, comment.to),
         &comment.body,
         comment.reply_to.as_deref(),
+        comment.cells,
     )
 }
 

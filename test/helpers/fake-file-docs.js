@@ -6,6 +6,8 @@
 // what a merge of an edited file produces. The Rust tests cover the merge itself.
 
 import { applyUpdatesToText } from "../../src/doc-sync.js";
+import { cellQuote } from "../../src/table-cells.js";
+import { Text } from "../../src/vendor/codemirror.js";
 
 export const SAVE_DELAY_MS = 400;
 
@@ -104,11 +106,12 @@ export function createFakeFileDocs({ emit, disk = {} }) {
     if (!comment) throw new Error("This comment no longer exists");
     return { path, doc, comment };
   };
-  function addComment(path, doc, { from, to, body, author = "owner", replyTo = null }) {
+  function addComment(path, doc, { from, to, body, author = "owner", replyTo = null, cellText }) {
     const comment = {
       id: `c_${(commentCounter += 1)}`, author, state: author === "agent" ? "open" : hold ? "held" : "queued", orphaned: false,
       from, to, anchoredText: doc.text.slice(from, to), headingPath: [], body, note: null, replyTo, unread: author === "agent", createdAt: commentCounter, updatedAt: commentCounter
     };
+    if (cellText !== undefined) comment.cellText = cellText;
     doc.comments.push(comment);
     changedComments(path, doc);
     return comment;
@@ -124,15 +127,17 @@ export function createFakeFileDocs({ emit, disk = {} }) {
   };
   const commentCommands = {
     comments_get: ({ doc: { path, docId } }) => commentsEvent(path, find(path, docId)),
-    comment_add: ({ doc: { path, docId }, comment: { version: at, from, to, body, replyTo } }) => {
+    comment_add: ({ doc: { path, docId }, comment: { version: at, from, to, body, replyTo, cells } }) => {
       const doc = find(path, docId);
       if (replyTo) {
         const root = rootOf(doc, replyTo);
         if (!root || root.state === "resolved") throw new Error("This thread is resolved; it can no longer be answered");
-        return addComment(path, doc, { from: root.from, to: root.to, body, replyTo: root.id });
+        return addComment(path, doc, { from: root.from, to: root.to, body, replyTo: root.id, cellText: root.cellText });
       }
       if (at !== version(doc)) throw new Error("The selected text changed; select it again");
-      return addComment(path, doc, { from, to, body });
+      // As Rust does, a rectangle whose ends are not in cells is an ordinary range.
+      const cellText = cells ? cellQuote(Text.of(doc.text.split("\n")), from, to) || undefined : undefined;
+      return addComment(path, doc, { from, to, body, cellText });
     },
     comment_edit: (args) => { const { path, doc, comment } = commentOf(args); comment.body = args.body; changedComments(path, doc); },
     comment_delete: (args) => { const { path, doc, comment } = commentOf(args); doc.comments = doc.comments.filter(c => c !== comment); changedComments(path, doc); },

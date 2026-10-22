@@ -2,58 +2,14 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { marked } from "marked";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
-import { installEditorDom } from "./helpers/cm-dom.js";
+import { setupLive as setup, settle } from "./helpers/live-editor.js";
 
 function loadHighlighter() {
   const context = {};
   vm.runInNewContext(`${readFileSync(new URL("../src/vendor/highlight.min.js", import.meta.url), "utf8")};this.hljs = hljs;`, context);
   return context.hljs;
-}
-
-const settle = () => new Promise(resolve => setTimeout(resolve, 0));
-
-async function setup(text, { focused = true, mermaid, hljs, comments = false } = {}) {
-  const env = installEditorDom();
-  env.window.marked = marked;
-  if (hljs) env.window.hljs = hljs;
-  const { createMarkdownEditor } = await import("../src/editor-view.js");
-  const live = await import("../src/editor-live-preview.js");
-  const commentsApi = await import("../src/editor-comments.js");
-  const opened = [];
-  const changes = [];
-  const selected = [];
-  const extensions = [live.livePreview({ onOpenLink: href => opened.push(href), mermaid: mermaid?.(env.document) })];
-  if (comments) extensions.push(commentsApi.commentsExtension({ onSubmit: async () => {}, onSelect: id => selected.push(id) }));
-  const editor = createMarkdownEditor({
-    parent: env.document.getElementById("host"),
-    ariaLabel: "t",
-    onChange: value => changes.push(value),
-    extensions
-  });
-  let hasFocus = focused;
-  Object.defineProperty(editor.view, "hasFocus", { get: () => hasFocus, configurable: true });
-  editor.loadText(text);
-  const t = {
-    env, editor, opened, changes, live, commentsApi, selected,
-    view: editor.view,
-    lines: () => [...editor.view.contentDOM.querySelectorAll(".cm-line")],
-    lineTexts: () => t.lines().map(line => line.textContent),
-    setFocus(value) { hasFocus = value; },
-    async caret(pos) {
-      editor.setSelection(pos, pos);
-      await settle();
-    },
-    mousedown(target, init = {}) {
-      const event = new env.window.MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0, ...init });
-      target.dispatchEvent(event);
-      return event;
-    },
-    done() { editor.destroy(); env.cleanup(); }
-  };
-  return t;
 }
 
 test("headings hide their marks unless the caret line is revealed", async () => {
@@ -117,42 +73,132 @@ async function clickLink(t, init = {}) {
 const caretLine = t => t.view.state.doc.lineAt(t.view.state.selection.main.head).number;
 const selectionStartLine = t => t.view.state.doc.lineAt(t.view.state.selection.main.from).number;
 
-test("Cmd-mousedown on a link opens it, a plain mousedown does not", async () => {
+test("a plain click on a link follows it on mouse up and leaves the caret", async () => {
+  const t = await setup("[l](https://x.y)\nother");
+  try {
+    const down = await clickLink(t, { clientX: 10, clientY: 10 });
+    assert.equal(down.defaultPrevented, true);
+    assert.deepEqual(t.opened, [], "nothing opens before the button is released");
+    t.mouseup(t.env.document, { clientX: 10, clientY: 10 });
+    assert.deepEqual(t.opened, ["https://x.y"]);
+    assert.equal(caretLine(t), 2, "following a link leaves the caret where it was");
+  } finally { t.done(); }
+});
+
+test("a press that drags off a link follows nothing", async () => {
+  const t = await setup("[l](https://x.y)\nother");
+  try {
+    await clickLink(t, { clientX: 10, clientY: 10 });
+    const drags = [];
+    const dispatch = t.view.dispatch.bind(t.view);
+    t.view.dispatch = (...specs) => {
+      specs.forEach(spec => spec?.userEvent === "select.pointer" && drags.push(spec.selection));
+      return dispatch(...specs);
+    };
+    t.mousemove(t.env.document, { clientX: 40, clientY: 10, buttons: 1 });
+    t.mouseup(t.env.document, { clientX: 40, clientY: 10 });
+    assert.deepEqual(t.opened, []);
+    assert.ok(drags.length === 1, "the drag extends the selection");
+    t.mouseup(t.env.document, { clientX: 10, clientY: 10 });
+    assert.deepEqual(t.opened, [], "the listeners are gone after mouse up");
+  } finally { t.done(); }
+});
+
+test("a lost mouse up leaves no phantom drag", async () => {
+  const t = await setup("[l](https://x.y)\nother");
+  try {
+    await clickLink(t, { clientX: 10, clientY: 10 });
+    const drags = [];
+    const dispatch = t.view.dispatch.bind(t.view);
+    t.view.dispatch = (...specs) => {
+      specs.forEach(spec => spec?.userEvent === "select.pointer" && drags.push(spec));
+      return dispatch(...specs);
+    };
+    t.mousemove(t.env.document, { clientX: 40, clientY: 10, buttons: 0 });
+    t.mousemove(t.env.document, { clientX: 80, clientY: 10, buttons: 1 });
+    assert.ok(drags.length === 0);
+  } finally { t.done(); }
+});
+
+test("a double click on a link is left to the editor and follows nothing", async () => {
+  const t = await setup("[l](https://x.y)\nother");
+  try {
+    await clickLink(t, { detail: 2 });
+    t.mouseup(t.env.document, {});
+    assert.deepEqual(t.opened, []);
+    assert.ok(selectionStartLine(t) === 1);
+  } finally { t.done(); }
+});
+
+test("a plain click on an ignored-scheme link in a table places the caret", async () => {
+  const t = await setup("intro\n\n| [t](#) |\n|---|\n| 1 |\n\nafter");
+  try {
+    await t.caret(0);
+    const link = t.view.contentDOM.querySelector(".cm-lp-table a[href]");
+    assert.ok(link);
+    t.mousedown(link);
+    t.mouseup(link);
+    assert.deepEqual(t.opened, []);
+    assert.ok(t.view.state.selection.main.head > 0);
+  } finally { t.done(); }
+});
+
+test("Cmd-click on a link places the caret in it", async () => {
   const t = await setup("[l](https://x.y)\nother");
   setPlatform(t, "MacIntel");
   try {
-    assert.equal(t.view.hasFocus, true);
-    const open = await clickLink(t, { metaKey: true });
-    assert.deepEqual(t.opened, ["https://x.y"]);
-    assert.equal(open.defaultPrevented, true);
-    assert.equal(caretLine(t), 2, "opening a link leaves the caret where it was");
-
-    await clickLink(t);
-    assert.deepEqual(t.opened, ["https://x.y"], "a plain mousedown never opens the link");
+    await clickLink(t, { metaKey: true });
+    t.mouseup(t.env.document, {});
+    assert.deepEqual(t.opened, []);
     // jsdom has no layout, so CodeMirror maps the click to an approximate range;
     // what matters is that the selection now reaches into the link line.
-    assert.equal(selectionStartLine(t), 1, "a plain mousedown moves the selection into the link line");
+    assert.equal(selectionStartLine(t), 1);
   } finally { t.done(); }
 });
 
-test("on macOS Ctrl-click is a right-click, so only Cmd opens links", async () => {
-  const t = await setup("[l](https://x.y)\nother");
-  setPlatform(t, "MacIntel");
-  try {
-    await clickLink(t, { ctrlKey: true });
-    assert.deepEqual(t.opened, []);
-  } finally { t.done(); }
-});
-
-test("off macOS Ctrl-click opens links and Meta-click does not", async () => {
+test("off macOS Ctrl-click on a link places the caret and Meta-click follows nothing", async () => {
   const t = await setup("[l](https://x.y)\nother");
   setPlatform(t, "Win32");
   try {
     await clickLink(t, { metaKey: true });
+    t.mouseup(t.env.document, {});
     assert.deepEqual(t.opened, []);
-    const open = await clickLink(t, { ctrlKey: true });
-    assert.deepEqual(t.opened, ["https://x.y"]);
-    assert.equal(open.defaultPrevented, true);
+    await clickLink(t, { ctrlKey: true });
+    t.mouseup(t.env.document, {});
+    assert.deepEqual(t.opened, []);
+    assert.equal(selectionStartLine(t), 1);
+  } finally { t.done(); }
+});
+
+test("on macOS Ctrl-click is a right-click and follows nothing", async () => {
+  const t = await setup("[l](https://x.y)\nother");
+  setPlatform(t, "MacIntel");
+  try {
+    await clickLink(t, { ctrlKey: true });
+    t.mouseup(t.env.document, {});
+    assert.deepEqual(t.opened, []);
+  } finally { t.done(); }
+});
+
+test("a plain click on a link in a rendered table follows it", async () => {
+  const t = await setup("intro\n\n| [t](https://t.y) |\n|---|\n| 1 |\n\nafter");
+  try {
+    await t.caret(0);
+    const link = t.view.contentDOM.querySelector(".cm-lp-table a[href]");
+    assert.ok(link);
+    t.mousedown(link);
+    t.mouseup(link);
+    assert.deepEqual(t.opened, ["https://t.y"]);
+  } finally { t.done(); }
+});
+
+test("hovering a link shows no follow button", async () => {
+  const t = await setup("[l](https://x.y)\nother");
+  try {
+    await t.caret(t.editor.getText().length);
+    const link = t.view.contentDOM.querySelector(".cm-lp-link");
+    link.dispatchEvent(new t.env.window.MouseEvent("mouseover", { bubbles: true }));
+    assert.ok(!t.view.dom.querySelector(".cm-lp-follow"));
   } finally { t.done(); }
 });
 
@@ -227,7 +273,7 @@ test("remote images never render, data images do", async () => {
   } finally { t.done(); }
 });
 
-test("tables render as an HTML widget until the caret enters them", async () => {
+test("tables render as an HTML widget until the caret enters them, then as a grid", async () => {
   const table = "| a | b |\n|---|---|\n| 1 | 2 |";
   const t = await setup(`intro\n\n${table}\n\nafter`);
   try {
@@ -236,7 +282,9 @@ test("tables render as an HTML widget until the caret enters them", async () => 
     assert.ok(t.lineTexts().every(text => !text.includes("|---")));
     await t.caret(t.editor.getText().indexOf("| 1"));
     assert.ok(!t.view.contentDOM.querySelector(".cm-lp-table"), "expected no match");
-    assert.ok(t.lineTexts().some(text => text.includes("|---")));
+    assert.equal(t.view.contentDOM.querySelectorAll(".cm-line.cm-lp-trow").length, 3);
+    assert.ok(t.lineTexts().every(text => !text.includes("|")));
+    assert.equal(t.editor.getSelection().start, t.editor.getText().indexOf("1 |"));
   } finally { t.done(); }
 });
 
@@ -251,14 +299,15 @@ test("the Live table widget keeps short values whole and scrolls wide tables", a
   } finally { t.done(); }
 });
 
-test("clicking a table widget moves the caret into the table", async () => {
+test("clicking a table widget moves the caret into the table's grid", async () => {
   const t = await setup("intro\n\n| a |\n|---|\n| 1 |");
   try {
     await t.caret(0);
     t.mousedown(t.view.contentDOM.querySelector(".cm-lp-table"));
     await settle();
-    assert.equal(t.editor.getSelection().start, 7);
+    assert.equal(t.editor.getSelection().start, 9);
     assert.ok(!t.view.contentDOM.querySelector(".cm-lp-table"), "expected no match");
+    assert.equal(t.view.contentDOM.querySelectorAll(".cm-line.cm-lp-trow").length, 3);
   } finally { t.done(); }
 });
 
@@ -495,10 +544,12 @@ test("a mermaid block renders as a diagram widget while the caret is outside it"
   } finally { t.done(); }
 });
 
-test("with the caret inside, the source stays editable and the diagram renders below it", async () => {
+test("with the pencil on, the source stays editable and the diagram renders below it", async () => {
   const t = await mermaidSetup(`intro\n\n${flowchart}\n\nafter`);
   try {
-    await t.caret(t.editor.getText().indexOf("A-->B"));
+    await t.caret(0);
+    await settle();
+    t.view.contentDOM.querySelector(".cm-lp-mermaid-block .cm-lp-pencil").click();
     await settle();
     assert.ok(t.lineTexts().includes("  A-->B"));
     const [diagram] = t.diagrams();
@@ -535,20 +586,100 @@ test("a syntax error shows Mermaid's message in place of the diagram", async () 
     const [diagram] = t.diagrams();
     assert.ok(diagram.classList.contains("mermaid-error"));
     assert.equal(diagram.querySelector("pre").textContent, "Parse error on line 1");
+    assert.ok(diagram.querySelector(".cm-lp-pencil"));
   } finally { t.done(); }
 });
 
-test("clicking a diagram moves the caret into its block", async () => {
+test("clicking a diagram leaves the caret where it was", async () => {
   const t = await mermaidSetup(`intro\n\n${flowchart}`);
   try {
     await t.caret(0);
     await settle();
     t.mousedown(t.diagrams()[0]);
     await settle();
-    assert.equal(t.editor.getSelection().start, 7);
+    assert.equal(t.editor.getSelection().start, 0);
+    assert.ok(t.diagrams()[0].classList.contains("cm-lp-mermaid-block"));
+  } finally { t.done(); }
+});
+
+test("the diagram's pencil shows the source with the diagram below", async () => {
+  const t = await mermaidSetup(`intro\n\n${flowchart}\n\nafter`);
+  try {
+    await t.caret(0);
+    await settle();
+    t.view.contentDOM.querySelector(".cm-lp-mermaid-block .cm-lp-pencil").click();
+    await settle();
+    assert.ok(t.lineTexts().includes("  A-->B"));
+    assert.ok(t.diagrams()[0].classList.contains("cm-lp-mermaid-preview"));
+    assert.equal(t.editor.getSelection().start, t.editor.getText().indexOf("graph TD"));
+    const pressed = t.view.contentDOM.querySelector('.cm-lp-pencil[aria-pressed="true"]');
+    assert.ok(pressed);
+    pressed.click();
+    await settle();
+    assert.ok(t.diagrams()[0].classList.contains("cm-lp-mermaid-block"));
+    assert.ok(t.diagrams()[0].querySelector(".cm-lp-pencil"));
+  } finally { t.done(); }
+});
+
+test("the diagram keeps its pencil after a re-render", async () => {
+  const t = await mermaidSetup(`${flowchart}\n\nafter`);
+  try {
+    await t.caret(t.editor.getText().length);
+    await settle();
+    assert.ok(t.diagrams()[0].querySelector(".cm-lp-pencil"));
+    t.renderer().setTheme({});
+    await settle();
+    assert.ok(t.diagrams()[0].querySelector(".cm-lp-pencil"));
+  } finally { t.done(); }
+});
+
+test("arrowing onto a diagram goes past it", async () => {
+  const F = "```";
+  const t = await mermaidSetup(`a\n${F}mermaid\ngraph TD\n${F}\nb`);
+  try {
+    await t.caret(1);
+    await settle();
+    t.view.dispatch({ selection: { anchor: 2 }, userEvent: "select" });
+    assert.equal(t.view.state.selection.main.head, t.editor.getText().indexOf("b"));
+    t.view.dispatch({ selection: { anchor: t.editor.getText().indexOf("b") - 1 }, userEvent: "select" });
+    assert.equal(t.view.state.selection.main.head, 1);
+  } finally { t.done(); }
+});
+
+test("Mod-Alt-e on the line next to a diagram toggles its pencil", async () => {
+  const F = "```";
+  const t = await mermaidSetup(`a\n${F}mermaid\ngraph TD\n${F}\nb`);
+  try {
+    for (const from of [1, t.editor.getText().length]) {
+      await t.caret(from);
+      await settle();
+      const press = () => t.view.contentDOM.dispatchEvent(new t.env.window.KeyboardEvent("keydown", {
+        key: "e", code: "KeyE", keyCode: 69, ctrlKey: true, altKey: true, bubbles: true, cancelable: true
+      }));
+      press();
+      await settle();
+      assert.ok(t.lineTexts().includes("graph TD"));
+      assert.ok(t.diagrams()[0].classList.contains("cm-lp-mermaid-preview"));
+      assert.ok(t.view.contentDOM.querySelector('.cm-lp-pencil[aria-pressed="true"]'));
+      assert.equal(t.view.state.selection.main.head, t.editor.getText().indexOf("graph TD"));
+      press();
+      await settle();
+      assert.ok(t.diagrams()[0].classList.contains("cm-lp-mermaid-block"));
+    }
+  } finally { t.done(); }
+});
+
+test("a programmatic selection inside the block still shows the source", async () => {
+  const t = await mermaidSetup(`intro\n\n${flowchart}\n\nafter`);
+  try {
+    await t.caret(0);
+    t.view.dispatch({ selection: { anchor: t.editor.getText().indexOf("A-->B") } });
+    await settle();
+    assert.ok(t.lineTexts().includes("  A-->B"));
     assert.ok(t.diagrams()[0].classList.contains("cm-lp-mermaid-preview"));
   } finally { t.done(); }
 });
+
 
 test("a known diagram renders without a placeholder and without re-rendering", async () => {
   const t = await mermaidSetup(`intro\n\n${flowchart}`);
@@ -602,27 +733,217 @@ test("a fence label names the file, else the language, else says code", async ()
   assert.deepEqual(codeFenceMeta("js", null), { label: "js", language: "" });
 });
 
-test("a fenced block shows a header label and hides its closing fence until the caret is on them", async () => {
-  const text = "```js path=src/a.js\nlet a = 1;\n```\nend";
+test("a fenced block keeps its header and hides its closing fence with the caret inside", async () => {
+  const F = "```";
+  const text = `intro\n${F}js\nlet a;\nlet b;\n${F}\nafter`;
+  const t = await setup(text);
+  try {
+    await t.caret(text.indexOf("let a;") + 2);
+    assert.equal(t.view.contentDOM.querySelector(".cm-lp-fence-label")?.textContent, "js");
+    assert.ok(t.lineTexts().every(line => !line.includes(F)));
+    const lines = t.lines();
+    assert.ok(lines[1].classList.contains("cm-lp-codeblock-head"));
+    assert.ok(lines[4].classList.contains("cm-lp-codeblock-foot"));
+  } finally { t.done(); }
+});
+
+test("a cursor moved onto the header goes past it in the direction of travel", async () => {
+  const F = "```";
+  const text = `intro\n${F}js\nlet a;\nlet b;\n${F}\nafter`;
+  const t = await setup(text);
+  try {
+    const open = t.view.state.doc.line(2);
+    const first = t.view.state.doc.line(3);
+    await t.caret(first.from);
+    t.view.dispatch({ selection: { anchor: open.from + 2 }, userEvent: "select" });
+    assert.equal(t.view.state.selection.main.head, 5);
+    t.view.dispatch({ selection: { anchor: open.from + 2 }, userEvent: "select" });
+    assert.equal(t.view.state.selection.main.head, first.from);
+  } finally { t.done(); }
+});
+
+test("a cursor moved onto the closing fence goes past it", async () => {
+  const F = "```";
+  const text = `intro\n${F}js\nlet a;\nlet b;\n${F}\nafter`;
+  const t = await setup(text);
+  try {
+    const { doc } = t.view.state;
+    const last = doc.line(4);
+    const close = doc.line(5);
+    await t.caret(last.to);
+    t.view.dispatch({ selection: { anchor: close.from + 1 }, userEvent: "select" });
+    assert.equal(t.view.state.selection.main.head, doc.line(6).from);
+    t.view.dispatch({ selection: { anchor: close.from + 1 }, userEvent: "select" });
+    assert.equal(t.view.state.selection.main.head, last.to);
+  } finally { t.done(); }
+});
+
+test("a fence at the start of the document keeps an upward cursor on its first code line", async () => {
+  const text = "```js\nx\n```";
+  const t = await setup(text);
+  try {
+    await t.caret(6);
+    t.view.dispatch({ selection: { anchor: 1 }, userEvent: "select" });
+    assert.equal(t.view.state.selection.main.head, 6);
+  } finally { t.done(); }
+});
+
+test("a click on the label puts the caret on the first code line", async () => {
+  const F = "```";
+  const text = `intro\n${F}js\nlet a;\nlet b;\n${F}\nafter`;
   const t = await setup(text);
   try {
     await t.caret(text.length);
-    let lines = t.lines();
-    assert.ok(lines[0].classList.contains("cm-lp-codeblock-head"));
-    assert.equal(lines[0].querySelector(".cm-lp-fence-label")?.textContent, "src/a.js");
-    assert.equal(lines[0].textContent, "src/a.js");
-    assert.ok(lines[2].classList.contains("cm-lp-codeblock-foot"));
-    assert.equal(lines[2].textContent, "");
+    t.mousedown(t.view.contentDOM.querySelector(".cm-lp-fence-label"));
+    assert.equal(t.view.state.selection.main.head, t.view.state.doc.line(3).from);
+  } finally { t.done(); }
+});
 
-    await t.caret(2);
-    lines = t.lines();
-    assert.equal(lines[0].textContent, "```js path=src/a.js");
-    assert.ok(lines[0].classList.contains("cm-lp-codeblock-head"));
+test("Backspace at the first code line and Delete at the last leave the fences intact", async () => {
+  const F = "```";
+  const text = `intro\n${F}js\nlet a;\nlet b;\n${F}\nafter`;
+  const t = await setup(text);
+  try {
+    const { doc } = t.view.state;
+    const first = doc.line(3);
+    const last = doc.line(4);
+    await t.caret(first.from);
+    t.view.dispatch({ changes: { from: first.from - 1, to: first.from }, userEvent: "delete.backward" });
+    assert.equal(t.view.state.doc.toString(), text);
+    await t.caret(last.to);
+    t.view.dispatch({ changes: { from: last.to, to: last.to + 1 }, userEvent: "delete.forward" });
+    assert.equal(t.view.state.doc.toString(), text);
 
-    await t.caret(text.indexOf("```\nend") + 1);
-    lines = t.lines();
-    assert.equal(lines[2].textContent, "```");
-    assert.equal(lines[2].classList.contains("cm-lp-codeblock-foot"), false);
+    t.view.dispatch({ selection: { anchor: 0, head: first.from + 4 } });
+    t.view.dispatch({ changes: { from: 0, to: first.from + 4 }, userEvent: "delete" });
+    assert.equal(t.view.state.doc.toString(), text.slice(first.from + 4));
+  } finally { t.done(); }
+});
+
+test("Backspace after the closing fence and Delete before the header move the caret instead of joining", async () => {
+  const F = "```";
+  const text = `intro\n${F}js\nlet a;\nlet b;\n${F}\nafter`;
+  const t = await setup(text);
+  try {
+    const { doc } = t.view.state;
+    await t.caret(doc.line(6).from);
+    t.view.dispatch({ changes: { from: doc.line(6).from - 1, to: doc.line(6).from }, userEvent: "delete.backward" });
+    assert.equal(t.view.state.doc.toString(), text);
+    assert.equal(t.view.state.selection.main.head, doc.line(4).to);
+    await t.caret(doc.line(1).to);
+    t.view.dispatch({ changes: { from: doc.line(1).to, to: doc.line(2).from }, userEvent: "delete.forward" });
+    assert.equal(t.view.state.doc.toString(), text);
+    assert.equal(t.view.state.selection.main.head, doc.line(3).from);
+  } finally { t.done(); }
+});
+
+test("the cursor skips chains of back-to-back fences in both directions", async () => {
+  const F = "```";
+  const text = `${F}a\nx\n${F}\n${F}b\ny\n${F}\n${F}c\nz\n${F}`;
+  const t = await setup(text);
+  try {
+    const { doc } = t.view.state;
+    const go = pos => t.view.dispatch({ selection: { anchor: pos }, userEvent: "select" });
+    await t.caret(doc.line(2).to);
+    go(doc.line(3).from + 1);
+    assert.equal(t.view.state.selection.main.head, doc.line(5).from);
+    await t.caret(doc.line(5).from);
+    go(doc.line(4).from + 1);
+    assert.equal(t.view.state.selection.main.head, doc.line(2).to);
+    await t.caret(doc.line(5).to);
+    go(doc.line(6).from + 1);
+    assert.equal(t.view.state.selection.main.head, doc.line(8).from);
+    await t.caret(doc.line(8).from);
+    go(doc.line(7).from + 1);
+    assert.equal(t.view.state.selection.main.head, doc.line(5).to);
+    await t.caret(doc.line(2).to);
+    go(doc.line(3).from + 1);
+    go(doc.line(6).from + 1);
+    assert.ok(![3, 4, 6, 7].includes(doc.lineAt(t.view.state.selection.main.head).number));
+  } finally { t.done(); }
+});
+
+test("deleting the last code line whole leaves the fences intact and applies", async () => {
+  const F = "```";
+  const text = `intro\n${F}js\nlet a;\nlet b;\n${F}\nafter`;
+  const t = await setup(text);
+  try {
+    const { doc } = t.view.state;
+    const last = doc.line(4);
+    await t.caret(last.from + 1);
+    t.view.dispatch({ changes: { from: last.from, to: last.to + 1 }, userEvent: "delete.line" });
+    assert.equal(t.view.state.doc.toString(), `intro\n${F}js\nlet a;\n${F}\nafter`);
+    const first = t.view.state.doc.line(3);
+    await t.caret(first.from);
+    t.view.dispatch({ changes: { from: first.from, to: first.to + 1 }, userEvent: "delete.line" });
+    assert.equal(t.view.state.doc.toString(), `intro\n${F}js\n${F}\nafter`);
+  } finally { t.done(); }
+});
+
+test("a multi-cursor delete is blocked when any empty cursor would break a fence", async () => {
+  const F = "```";
+  const text = `intro\n${F}js\nlet a;\nlet b;\n${F}\nafter`;
+  const t = await setup(text);
+  try {
+    const { doc } = t.view.state;
+    const first = doc.line(3);
+    const { EditorSelection, EditorState, StateEffect } = await import("../src/vendor/codemirror.js");
+    t.view.dispatch({ effects: StateEffect.appendConfig.of(EditorState.allowMultipleSelections.of(true)) });
+    t.view.dispatch({ selection: EditorSelection.create([EditorSelection.cursor(2), EditorSelection.cursor(first.from)], 0) });
+    t.view.dispatch({
+      changes: [{ from: 1, to: 2 }, { from: first.from - 1, to: first.from }],
+      userEvent: "delete.backward"
+    });
+    assert.equal(t.view.state.doc.toString(), text);
+  } finally { t.done(); }
+});
+
+test("an unterminated fence keeps its header and the cursor skips it", async () => {
+  const F = "```";
+  const text = `intro\n${F}js\nlet a;\nlet b;`;
+  const t = await setup(text);
+  try {
+    const { doc } = t.view.state;
+    await t.caret(doc.line(3).from);
+    assert.equal(t.view.contentDOM.querySelector(".cm-lp-fence-label")?.textContent, "js");
+    t.view.dispatch({ selection: { anchor: doc.line(2).from + 1 }, userEvent: "select" });
+    assert.equal(t.view.state.selection.main.head, doc.line(1).to);
+  } finally { t.done(); }
+});
+
+test("a fence in a list item skips its hidden lines", async () => {
+  const F = "```";
+  const text = `- item\n  ${F}js\n  let a;\n  ${F}\n- next`;
+  const t = await setup(text);
+  try {
+    const { doc } = t.view.state;
+    await t.caret(doc.line(3).to);
+    t.view.dispatch({ selection: { anchor: doc.line(4).from + 3 }, userEvent: "select" });
+    assert.equal(t.view.state.selection.main.head, doc.line(5).from);
+    await t.caret(doc.line(3).from);
+    t.view.dispatch({ selection: { anchor: doc.line(2).from + 3 }, userEvent: "select" });
+    assert.equal(t.view.state.selection.main.head, doc.line(1).to);
+  } finally { t.done(); }
+});
+
+test("a fence ending the document keeps a downward cursor on its last code line", async () => {
+  const text = "intro\n```js\nlet a;\n```";
+  const t = await setup(text);
+  try {
+    const { doc } = t.view.state;
+    await t.caret(doc.line(3).from);
+    t.view.dispatch({ selection: { anchor: doc.line(4).from + 1 }, userEvent: "select" });
+    assert.equal(t.view.state.selection.main.head, doc.line(3).to);
+  } finally { t.done(); }
+});
+
+test("an empty fenced block shows its fences when the caret is on them", async () => {
+  const F = "```";
+  const text = `a\n${F}\n${F}\nb`;
+  const t = await setup(text);
+  try {
+    await t.caret(text.indexOf(F) + 1);
+    assert.equal(t.lineTexts()[1], F);
   } finally { t.done(); }
 });
 

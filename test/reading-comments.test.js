@@ -93,7 +93,7 @@ test("submit sends the range and closing does not focus the hidden editor", asyn
     t.preview.querySelector(".reading-composer .cm-comment-add").click();
     await new Promise(resolve => setTimeout(resolve, 0));
     const from = PROSE.indexOf("beta");
-    assert.deepEqual(t.submitted, [{ from, to: from + 4, body: "Why beta?" }]);
+    assert.deepEqual(t.submitted, [{ from, to: from + 4, body: "Why beta?", cells: false }]);
     assert.equal(focused, 0);
     assert.ok(!t.preview.querySelector(".reading-composer"));
     assert.equal(t.comments.commentComposer(t.view().state), null);

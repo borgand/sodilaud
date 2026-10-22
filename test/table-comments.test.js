@@ -264,7 +264,8 @@ test("a Reading composer left in another file is gone after switching back in Li
   view.dispatch({ selection: { anchor: view.state.doc.toString().indexOf("middle") } });
   await app.settle(100);
   assert.ok(!doc.querySelector(".cm-comment-composer"), "no composer lingers");
-  assert.ok(!view.contentDOM.querySelector(".cm-lp-table"), "the table reveals its source with the caret inside");
+  assert.ok(!view.contentDOM.querySelector(".cm-lp-table"), "the table widget gives way to the grid");
+  assert.ok(view.contentDOM.querySelector(".cm-lp-trow"), "the table is a grid with the caret inside");
 });
 
 test("a Live composer left in another file is gone after switching back in Reading", async () => {
@@ -290,7 +291,7 @@ test("a Live composer left in another file is gone after switching back in Readi
   assert.ok(!doc.querySelector(".cm-comment-composer"), "no composer lingers");
 });
 
-test("Live: a table ignores a Reading composer and reveals its source around the caret", async () => {
+test("Live: a table ignores a Reading composer and shows its grid around the caret", async () => {
   const app = await boot(10);
   const doc = app.dom.window.document;
   const { startCommentAt } = await import("../src/editor-comments.js");
@@ -302,5 +303,30 @@ test("Live: a table ignores a Reading composer and reveals its source around the
   view.dispatch({ selection: { anchor: from } });
   await app.settle(100);
   assert.ok(!doc.querySelector(".cm-comment-composer"), "the Reading composer is not drawn in Live");
-  assert.ok(!view.contentDOM.querySelector(".cm-lp-table"), "the table reveals its source with the caret inside");
+  assert.ok(!view.contentDOM.querySelector(".cm-lp-table"), "the table widget gives way to the grid");
+  assert.ok(view.contentDOM.querySelector(".cm-lp-trow"), "the table is a grid with the caret inside");
+});
+
+test("the comments panel quotes a cell comment's cell text", async () => {
+  const app = await boot(11);
+  const doc = app.dom.window.document;
+  await app.settle();
+  const view = app.editor();
+  view.focus();
+  const from = TEXT.indexOf("alpha");
+  const to = TEXT.indexOf("middle row") + "middle row".length;
+  view.dispatch({ selection: { anchor: from, head: to }, userEvent: "select.pointer" });
+  await app.settle();
+  view.contentDOM.dispatchEvent(new app.dom.window.KeyboardEvent("keydown", { key: "m", metaKey: true, altKey: true, bubbles: true, cancelable: true }));
+  await app.settle(100);
+
+  const input = doc.querySelector(".cm-comment-composer textarea");
+  assert.ok(input, "the composer opened");
+  input.value = "These four";
+  doc.querySelector(".cm-comment-add").click();
+  await app.until(() => app.fileDocs.comments(PATH).length === 1);
+  const [comment] = app.fileDocs.comments(PATH);
+  assert.equal(comment.cellText, "alpha\tfirst row\nbeta\tmiddle row");
+  await app.until(() => doc.querySelector("#comments-panel .comment-snippet"));
+  assert.equal(doc.querySelector("#comments-panel .comment-snippet").textContent, comment.cellText);
 });

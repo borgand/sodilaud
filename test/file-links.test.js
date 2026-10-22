@@ -82,66 +82,43 @@ test("links Rust refuses or the sanitizer drops leave the shown file alone", asy
   assert.equal(app.invocations.some(({ command }) => command === "confirm_and_open_url"), false);
 });
 
-for (const [platform, modifier] of [["MacIntel", { metaKey: true }], ["Linux x86_64", { ctrlKey: true }]]) {
-  test(`Live mode opens a sibling chapter on ${platform} with the link modifier`, async () => {
+const click = (app, element, init = {}) => {
+  for (const type of ["mousedown", "mouseup"]) {
+    element.dispatchEvent(new app.dom.window.MouseEvent(type, { bubbles: true, cancelable: true, button: 0, ...init }));
+  }
+};
+
+for (const platform of ["MacIntel", "Linux x86_64"]) {
+  test(`Live mode opens a sibling chapter on ${platform} with a plain click`, async () => {
     const { app, document } = await boot(platform);
     const link = [...document.querySelectorAll("#editor-host .cm-lp-link")]
       .find((element) => element.getAttribute("data-href") === "01-tools.md#register-tools");
-    link.dispatchEvent(new app.dom.window.MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0, ...modifier }));
+    click(app, link);
     await app.settle();
     assert.equal(document.getElementById("main-title").textContent, "01-tools.md");
   });
-}
 
-for (const [platform, modifier] of [["MacIntel", { metaKey: true }], ["Linux x86_64", { ctrlKey: true }]]) {
-  test(`Live mode follows a link inside a table on ${platform} with the link modifier`, async () => {
+  test(`Live mode follows a link inside a table on ${platform} with a plain click`, async () => {
     const { app, document } = await boot(platform);
-    const link = document.querySelector('#editor-host .cm-lp-table a[href="01-tools.md"]');
-    assert.ok(link, "the table renders its link");
-    link.dispatchEvent(new app.dom.window.MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0, ...modifier }));
+    click(app, document.querySelector('#editor-host .cm-lp-table a[href="01-tools.md"]'));
     await app.settle();
     assert.equal(document.getElementById("main-title").textContent, "01-tools.md");
   });
 }
 
-test("a plain click on a table link still places the cursor in the table", async () => {
+test("a link-modifier click on a table link places the cursor instead of following", async () => {
   const { app, document } = await boot();
-  const link = document.querySelector('#editor-host .cm-lp-table a[href="01-tools.md"]');
-  link.dispatchEvent(new app.dom.window.MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));
+  click(app, document.querySelector('#editor-host .cm-lp-table a[href="01-tools.md"]'), { metaKey: true });
   await app.settle();
   assert.equal(document.getElementById("main-title").textContent, "00-overview.md");
   assert.equal(siblingCalls(app).length, 0);
 });
 
-test("hovering a Live link shows a button that follows it without a modifier", async () => {
-  const { app, document } = await boot();
-  const button = document.querySelector("#editor-host .cm-lp-follow");
-  assert.equal(button.hidden, true);
-  assert.equal(button.getAttribute("aria-label"), "Follow link");
-
-  const link = [...document.querySelectorAll("#editor-host .cm-lp-link")]
-    .find((element) => element.getAttribute("data-href") === "01-tools.md#register-tools");
-  link.dispatchEvent(new app.dom.window.MouseEvent("mouseover", { bubbles: true }));
-  assert.equal(button.hidden, false);
-
-  const pressed = new app.dom.window.MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 });
-  button.dispatchEvent(pressed);
-  assert.equal(pressed.defaultPrevented, true, "pressing the button never moves the cursor");
-  button.click();
-  await app.settle();
-  assert.equal(document.getElementById("main-title").textContent, "01-tools.md");
-  assert.equal(button.hidden, true);
-});
-
-test("hovering a table link shows the follow button too", async () => {
+test("Live mode has no hover follow button", async () => {
   const { app, document } = await boot();
   const link = document.querySelector('#editor-host .cm-lp-table a[href="01-tools.md"]');
   link.dispatchEvent(new app.dom.window.MouseEvent("mouseover", { bubbles: true }));
-  const button = document.querySelector("#editor-host .cm-lp-follow");
-  assert.equal(button.hidden, false);
-  button.click();
-  await app.settle();
-  assert.equal(document.getElementById("main-title").textContent, "01-tools.md");
+  assert.equal(document.querySelector("#editor-host .cm-lp-follow"), null);
 });
 
 function pressShortcut(app, key) {

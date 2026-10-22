@@ -36,6 +36,8 @@ Decided 2026-09-27:
 - Images: only `data:` images render. Remote images stay as muted Markdown source (zero egress,
   CSP `img-src`).
 
+Superseded in part by item 18.
+
 - Spike (~1 day): vendor-bundle CM6, mount it in the secondary pane, port `getSmartKeyEdit`,
   and live-preview headings, emphasis, links and task boxes. Measure mount and swap time on a
   5,000-line note. Input test that must pass: dead keys on the US International layout, which
@@ -369,3 +371,9 @@ Status: done (spec
 Several peer main windows, each with its own open files. Move to New Window and Move to Window
 on an open file's context menu; New Window in the File menu (Cmd+Alt+N). Windows, their files
 and their positions are restored on restart. The Folders section of item 4 will be per window.
+
+## 18. Edit tables and code in their rendered form
+
+Status: done, to ship in the next release (spec [docs/superpowers/specs/2026-10-20-live-rendered-editing-design.md](docs/superpowers/specs/2026-10-20-live-rendered-editing-design.md))
+
+In Live mode tables stay rendered while you type in their cells, with spreadsheet-style cell keys and rectangle selection, copy and comments; code blocks keep their header while edited; a plain click follows a link; a pencil button or Cmd/Ctrl+Alt+E shows one block's raw Markdown. This reverses item 1's "raw pipe source when entered", "no cell-grid editing" and "click places cursor" for links.

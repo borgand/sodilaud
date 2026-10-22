@@ -2829,7 +2829,7 @@ pub(crate) mod tests {
         };
         let answer = server
             .registry
-            .comment_add(&note, 0, (0, 0), "Why ask?", Some(&id))
+            .comment_add(&note, 0, (0, 0), "Why ask?", Some(&id), false)
             .unwrap();
         let pending = structured(
             server
@@ -2917,7 +2917,7 @@ pub(crate) mod tests {
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         assert!(registry.coedit_state().listening);
         registry
-            .comment_add(&note, 0, (0, 5), "Tighten this", None)
+            .comment_add(&note, 0, (0, 5), "Tighten this", None, false)
             .unwrap();
         let woken = structured(
             tokio::time::timeout(std::time::Duration::from_secs(5), poll)
@@ -2944,7 +2944,7 @@ pub(crate) mod tests {
         cancelled.cancel();
         assert_eq!(poll.await.unwrap().unwrap().is_error, Some(true));
         registry
-            .comment_add(&note, 0, (0, 5), "Later", None)
+            .comment_add(&note, 0, (0, 5), "Later", None, false)
             .unwrap();
         let later = structured(
             server

@@ -13,7 +13,29 @@ import {
   layer,
   syntaxTree
 } from "./vendor/codemirror.js";
-import { modeFacet, plainTextFacet, syntaxHighlightingFacet } from "./editor-view.js";
+import { syntaxHighlightingFacet } from "./editor-view.js";
+import {
+  PencilWidget,
+  TABLE_CONTAINERS,
+  fenceBody,
+  fenceCaretFilter,
+  fenceInfo,
+  fenceOptions,
+  fillsLines,
+  headedFenceAt,
+  isLive,
+  isMacView,
+  isMermaidFence,
+  isRawBlock,
+  liveFocusField,
+  mermaidFacet,
+  pencilButton,
+  pressPencil,
+  rawBlockKeymap,
+  rawBlocksField,
+  setLiveFocus
+} from "./editor-live-blocks.js";
+import { focusedCell, gridExtension, gridTable, tableMouseStyle } from "./editor-table-grid.js";
 import { isSafeMarkdownUrl, renderMarkdown, resolveLinkAction } from "./markdown.js";
 import { scrollToAnchor } from "./editor-anchors.js";
 import { buildHunkElement, languageForPath, reviewHunkMeta } from "./diff-hunk.js";
@@ -32,6 +54,7 @@ import {
 import {
   activeComment,
   commentComposer,
+  commentRanges,
   commentsDiffer,
   composerHost,
   createComposerElement,
@@ -58,8 +81,6 @@ function tableHtml(source) {
   }
   return html;
 }
-
-const isLive = state => state.facet(modeFacet) === "live" && !state.facet(plainTextFacet);
 
 function revealedLines(state, focused) {
   if (!focused) return [];
@@ -147,7 +168,6 @@ class ImageWidget extends WidgetType {
 
 const MERMAID_TYPING_PAUSE_MS = 300;
 
-const mermaidFacet = Facet.define({ combine: values => values.find(Boolean) ?? null });
 const followFacet = Facet.define({ combine: values => values.find(Boolean) ?? null });
 
 function followHref(view, href) {
@@ -155,17 +175,64 @@ function followHref(view, href) {
   if (follow) follow(view, href);
 }
 
+const CLICK_SLOP_PX = 4;
+
+// A press on a link follows it on release, unless the pointer travelled: then it
+// is a drag that selects text, as it would anywhere else in the editor. A
+// `style` (a CodeMirror mouse selection style) picks the selection for the drag.
+function pressLink(view, event, href, style = null) {
+  event.preventDefault();
+  const doc = view.dom.ownerDocument;
+  const start = { x: event.clientX, y: event.clientY };
+  const link = eventElement(event)?.closest(".cm-lp-link, a[href]");
+  let dragging = false;
+  let anchor = null;
+  const end = () => {
+    doc.removeEventListener("mousemove", onMove, true);
+    doc.removeEventListener("mouseup", onUp, true);
+  };
+  const onMove = move => {
+    if (move.buttons === 0) {
+      end();
+      return;
+    }
+    if (!dragging) {
+      if (Math.hypot(move.clientX - start.x, move.clientY - start.y) <= CLICK_SLOP_PX) return;
+      dragging = true;
+      view.focus();
+      if (!style) anchor = view.posAtCoords(start) ?? view.posAtDOM(link);
+    }
+    const selection = style
+      ? style.get(move, false, false)
+      : EditorSelection.single(anchor, view.posAtCoords({ x: move.clientX, y: move.clientY }) ?? anchor);
+    view.dispatch({ selection, userEvent: "select.pointer" });
+  };
+  const onUp = up => {
+    end();
+    if (!dragging && Math.hypot(up.clientX - start.x, up.clientY - start.y) <= CLICK_SLOP_PX) {
+      followHref(view, href);
+    }
+  };
+  doc.addEventListener("mousemove", onMove, true);
+  doc.addEventListener("mouseup", onUp, true);
+}
+
 function showMermaid(wrapper, view, widget) {
   const { renderer, source } = widget;
   wrapper.dataset.source = source;
+  // fill replaces every child, the pencil included.
+  const fill = result => {
+    renderer.fill(wrapper, result);
+    if (wrapper.pencil) wrapper.append(wrapper.pencil);
+  };
   const hit = renderer.cached(source);
   if (hit) {
-    renderer.fill(wrapper, hit);
+    fill(hit);
     return;
   }
   renderer.render(source).then(result => {
     if (wrapper.dataset.source !== source || !wrapper.isConnected) return;
-    renderer.fill(wrapper, result);
+    fill(result);
     view.requestMeasure();
   });
 }
@@ -195,15 +262,11 @@ class MermaidWidget extends WidgetType {
       placeholder.textContent = "Rendering diagram…";
       wrapper.append(placeholder);
     }
-    showMermaid(wrapper, view, this);
     if (this.kind === "block") {
-      wrapper.addEventListener("mousedown", event => {
-        if (!isPrimaryClick(event, view)) return;
-        event.preventDefault();
-        view.dispatch({ selection: EditorSelection.cursor(view.posAtDOM(wrapper)) });
-        view.focus();
-      });
+      wrapper.pencil = pencilButton(view.dom.ownerDocument, false, () => pressPencil(view, view.posAtDOM(wrapper)));
     }
+    showMermaid(wrapper, view, this);
+    if (wrapper.pencil && !wrapper.pencil.isConnected) wrapper.append(wrapper.pencil);
     return wrapper;
   }
 
@@ -268,7 +331,7 @@ class TableWidget extends WidgetType {
   updateDOM(dom, view) {
     if (dom.tableSource !== this.source) {
       for (const child of [...dom.childNodes]) {
-        if (!child.classList?.contains("cm-lp-table-composer")) child.remove();
+        if (!child.classList?.contains("cm-lp-table-composer") && !child.classList?.contains("cm-lp-pencil")) child.remove();
       }
       dom.insertAdjacentHTML("afterbegin", tableHtml(this.source));
       dom.tableSource = this.source;
@@ -283,31 +346,29 @@ class TableWidget extends WidgetType {
     wrapper.innerHTML = tableHtml(this.source);
     wrapper.tableSource = this.source;
     showTableReview(wrapper, view, this);
+    wrapper.append(pencilButton(view.dom.ownerDocument, false, () => pressPencil(view, view.posAtDOM(wrapper))));
     wrapper.addEventListener("mousedown", event => {
       const element = eventElement(event);
-      if (element?.closest(".cm-lp-table-composer")) return;
+      if (element?.closest(".cm-lp-table-composer, .cm-lp-pencil")) return;
       const link = element?.closest("a[href]");
-      if (link && isOpenLinkClick(event, view)) {
-        event.preventDefault();
-        followHref(view, link.getAttribute("href"));
+      if (link && isPlainClick(event) && resolveLinkAction(link.getAttribute("href")).kind !== "ignore") {
+        pressLink(view, event, link.getAttribute("href"), tableMouseStyle(view, event));
         return;
       }
       if (!isPrimaryClick(event, view)) return;
-      event.preventDefault();
       const marked = element?.closest("[data-comment-id]");
       if (marked) {
+        event.preventDefault();
         selectComment(view, marked.getAttribute("data-comment-id"));
-        return;
       }
-      const anchor = view.posAtDOM(wrapper);
-      view.dispatch({ selection: EditorSelection.cursor(anchor) });
-      view.focus();
     });
     return wrapper;
   }
 
-  ignoreEvent() {
-    return true;
+  // A press on a cell goes to CodeMirror, whose mouse selection (see
+  // tableMouseStyle) places the caret and drags out cell rectangles.
+  ignoreEvent(event) {
+    return event.type !== "mousedown" || Boolean(eventElement(event)?.closest(".cm-lp-table-composer, .cm-lp-pencil"));
   }
 }
 
@@ -350,16 +411,19 @@ function tableReview(state, from, to) {
   const active = activeComment(state);
   const marks = shownComments(state)
     .filter(comment => !comment.orphaned && comment.state !== "resolved" && comment.to > comment.from)
-    .filter(comment => comment.from < to && comment.to > from)
-    .map(comment => ({
-      from: Math.max(comment.from, from) - from,
-      to: Math.min(comment.to, to) - from,
-      className: `cm-comment cm-comment-${comment.author}${comment.id === active ? " cm-comment-active" : ""}`,
-      id: comment.id
-    }));
+    .flatMap(comment => commentRanges(state, comment)
+      .filter(range => range.from < to && range.to > from)
+      .map(range => ({
+        from: Math.max(range.from, from) - from,
+        to: Math.min(range.to, to) - from,
+        className: `cm-comment cm-comment-${comment.author}${comment.id === active ? " cm-comment-active" : ""}`,
+        id: comment.id
+      })));
   const composer = commentComposer(state);
   if (!composer || composer.outside || !composerWithin(composer, from, to)) return { marks, composer: null };
-  marks.push({ from: composer.from - from, to: composer.to - from, className: "cm-comment cm-comment-draft" });
+  for (const range of commentRanges(state, composer)) {
+    marks.push({ from: range.from - from, to: range.to - from, className: "cm-comment cm-comment-draft" });
+  }
   return { marks, composer: { key: composer.key } };
 }
 
@@ -457,25 +521,36 @@ class HunkWidget extends WidgetType {
 
 // The label a fenced code block shows in place of its opening fence.
 class FenceLabelWidget extends WidgetType {
-  constructor(label) {
+  constructor(label, from) {
     super();
     this.label = label;
+    this.from = from;
   }
 
   eq(other) {
-    return other.label === this.label;
+    return other.label === this.label && other.from === this.from;
   }
 
   toDOM(view) {
+    const wrapper = view.dom.ownerDocument.createElement("span");
+    wrapper.className = "cm-lp-fence-head";
     const label = view.dom.ownerDocument.createElement("span");
     label.className = "cm-lp-fence-label";
     label.textContent = this.label;
-    return label;
+    label.addEventListener("mousedown", event => {
+      if (event.button !== 0) return;
+      const fence = headedFenceAt(view.state, view.posAtDOM(label), fenceOptions(view.state));
+      if (!fence) return;
+      event.preventDefault();
+      view.dispatch({ selection: EditorSelection.cursor(fence.first.from), userEvent: "select" });
+      view.focus();
+    });
+    wrapper.append(label, pencilButton(view.dom.ownerDocument, false, () => pressPencil(view, this.from)));
+    return wrapper;
   }
 
-  // A click on the label places the cursor there and shows the fence.
   ignoreEvent() {
-    return false;
+    return true;
   }
 }
 
@@ -483,6 +558,13 @@ const bulletWidget = Decoration.replace({ widget: new BulletWidget() });
 const ruleWidget = Decoration.replace({ widget: new RuleWidget() });
 const hidden = Decoration.replace({});
 const codeMark = Decoration.mark({ class: "cm-lp-code" });
+// Prose in Live keeps one style for all emphasis; a grid cell matches the
+// rendered table instead.
+const cellEmphasis = {
+  StrongEmphasis: Decoration.mark({ class: "cm-lp-strong" }),
+  Emphasis: Decoration.mark({ class: "cm-lp-em" }),
+  Strikethrough: Decoration.mark({ class: "cm-lp-del" })
+};
 const blockedImageMark = Decoration.mark({ class: "cm-lp-image-blocked" });
 const lineClasses = {};
 for (const name of ["h1", "h2", "h3", "h4", "h5", "h6", "quote", "codeblock", "hr", "gap"]) {
@@ -496,6 +578,7 @@ const headingLine = classes => {
 for (const name of ["head", "foot", "highlighted"]) {
   lineClasses[`codeblock-${name}`] = Decoration.line({ class: `cm-lp-codeblock cm-lp-codeblock-${name}` });
 }
+lineClasses["codeblock-head-caret"] = Decoration.line({ class: "cm-lp-codeblock cm-lp-codeblock-head cm-lp-codeblock-caret" });
 
 const FENCE_PATH = /(?:^|\s)(?:path|file|filename|title)=(?:"([^"]*)"|'([^']*)'|(\S+))/;
 
@@ -555,15 +638,20 @@ function headingLevel(name) {
   return match ? Number(match[1]) : 0;
 }
 
-function buildInline(view, focused) {
+function buildInline(view) {
   const { state } = view;
   const { doc } = state;
-  const revealed = revealedLines(state, focused);
+  const revealed = revealedLines(state, state.field(liveFocusField));
   const ranges = [];
   const lineDecorations = new Map();
   const handled = new Set();
+  const gridded = gridTable(state);
+  const cell = gridded && focusedCell(gridded);
 
-  const isRevealed = (from, to) => touchesRevealed(state, revealed, from, to);
+  // In a grid table only the focused cell shows its Markdown.
+  const isRevealed = (from, to) => gridded && from >= gridded.from && to <= gridded.to
+    ? from <= cell.segTo && to >= cell.segFrom
+    : touchesRevealed(state, revealed, from, to);
   const singleLine = (from, to) => to > from && !doc.sliceString(from, to).includes("\n");
   const hide = (from, to) => {
     if (singleLine(from, to)) ranges.push(hidden.range(from, to));
@@ -595,14 +683,18 @@ function buildInline(view, focused) {
     const marks = node.getChildren("CodeMark");
     if (!marks.length) return;
     const open = doc.lineAt(node.from);
-    lineDecorations.set(open.from, lineClasses["codeblock-head"]);
+    const raw = isRawBlock(state, node.from);
+    lineDecorations.set(open.from, lineClasses[isRevealed(node.from, node.to) ? "codeblock-head-caret" : "codeblock-head"]);
+    const headed = !raw && headedFenceAt(state, node.from, fenceOptions(state)) !== null;
     let close = marks.length > 1 ? doc.lineAt(marks.at(-1).from) : null;
-    if (close && (close.from === open.from || isRevealed(close.from, close.to))) close = null;
+    if (close && (close.from === open.from || raw || (!headed && isRevealed(close.from, close.to)))) close = null;
     if (close) lineDecorations.set(close.from, lineClasses["codeblock-foot"]);
     if (handled.has(`fence:${node.from}`)) return;
     handled.add(`fence:${node.from}`);
-    if (!isRevealed(open.from, open.to)) {
-      ranges.push(Decoration.replace({ widget: new FenceLabelWidget(meta.label) }).range(marks[0].from, open.to));
+    if (raw) {
+      ranges.push(Decoration.widget({ widget: new PencilWidget(node.from, true), side: 1 }).range(open.to));
+    } else if (headed || !isRevealed(open.from, open.to)) {
+      ranges.push(Decoration.replace({ widget: new FenceLabelWidget(meta.label, node.from) }).range(marks[0].from, open.to));
     }
     if (close) hide(marks.at(-1).from, marks.at(-1).to);
     if (text && meta.language) {
@@ -685,6 +777,7 @@ function buildInline(view, focused) {
             if (!seen && !isRevealed(from, to) && singleLine(from, to)) ranges.push(ruleWidget.range(from, to));
             return false;
           case "Table":
+            return gridded?.from === from;
           case "CodeBlock":
           case "HTMLBlock":
             return false;
@@ -724,6 +817,13 @@ function buildInline(view, focused) {
             }
             return false;
           }
+          case "StrongEmphasis":
+          case "Emphasis":
+          case "Strikethrough":
+            if (gridded && from >= gridded.from && to <= gridded.to && !isRevealed(from, to)) {
+              ranges.push(cellEmphasis[name].range(from, to));
+            }
+            return true;
           case "Link":
             handleLink(ref.node);
             return true;
@@ -786,7 +886,7 @@ function buildInline(view, focused) {
 
 const inlinePreview = ViewPlugin.fromClass(class {
   constructor(view) {
-    this.decorations = isLive(view.state) ? buildInline(view, view.hasFocus) : Decoration.none;
+    this.decorations = isLive(view.state) ? buildInline(view) : Decoration.none;
   }
 
   update(update) {
@@ -795,40 +895,18 @@ const inlinePreview = ViewPlugin.fromClass(class {
     const highlightingChanged = update.startState.facet(syntaxHighlightingFacet) !== update.state.facet(syntaxHighlightingFacet);
     if (
       !modeChanged && !treeChanged && !highlightingChanged && !update.docChanged && !update.selectionSet &&
-      !update.viewportChanged && !update.focusChanged
+      !update.viewportChanged &&
+      update.startState.field(rawBlocksField) === update.state.field(rawBlocksField) &&
+      update.startState.field(liveFocusField) === update.state.field(liveFocusField) &&
+      commentComposer(update.startState) === commentComposer(update.state)
     ) {
       return;
     }
-    this.decorations = isLive(update.state) ? buildInline(update.view, update.view.hasFocus) : Decoration.none;
+    this.decorations = isLive(update.state) ? buildInline(update.view) : Decoration.none;
   }
 }, { decorations: plugin => plugin.decorations });
 
-const setTableFocus = StateEffect.define();
 const refreshMermaid = StateEffect.define();
-
-const TABLE_CONTAINERS = new Set(["Document", "BulletList", "OrderedList", "ListItem"]);
-
-function isMermaidFence(state, node) {
-  const info = node.getChild("CodeInfo");
-  return info !== null && state.doc.sliceString(info.from, info.to).trim().toLowerCase() === "mermaid";
-}
-
-function fenceInfo(state, node) {
-  const info = node.getChild("CodeInfo");
-  return info ? state.doc.sliceString(info.from, info.to) : "";
-}
-
-function fenceBody(state, node) {
-  const text = node.getChild("CodeText");
-  return text ? state.doc.sliceString(text.from, text.to) : "";
-}
-
-// A block shown as a widget fills its lines: nothing before it on its first
-// line, nothing after it on its last.
-function fillsLines(doc, ref) {
-  const start = doc.lineAt(ref.from);
-  return /^\s*$/.test(doc.sliceString(start.from, ref.from)) && ref.to === doc.lineAt(ref.to).to;
-}
 
 // Whether the composer's whole range lies in one table that renders as a widget.
 function tableHostsComposer(state, composer) {
@@ -844,11 +922,12 @@ function tableHostsComposer(state, composer) {
   return hosted;
 }
 
-function buildBlocks(state, focused) {
+function buildBlocks(state) {
   if (!isLive(state)) return Decoration.none;
   const { doc } = state;
   const mermaid = state.facet(mermaidFacet);
-  const revealed = revealedLines(state, focused);
+  const revealed = revealedLines(state, state.field(liveFocusField));
+  const gridFrom = gridTable(state)?.from;
   const opened = commentComposer(state);
   // A Reading composer is drawn in the preview, never in a table here.
   const composer = opened?.outside ? null : opened;
@@ -865,12 +944,17 @@ function buildBlocks(state, focused) {
       const start = doc.lineAt(ref.from);
       const end = doc.lineAt(ref.to);
       const inside = touchesRevealed(state, revealed, ref.from, ref.to);
+      if (isTable && isRawBlock(state, ref.from)) {
+        ranges.push(Decoration.widget({ widget: new PencilWidget(ref.from, true), side: 1 }).range(start.to));
+        return false;
+      }
       if (isTable) {
         // A composer reaching past the table is drawn under its last line,
         // which a widget would hide.
         const hosts = composer !== null && composerWithin(composer, ref.from, ref.to);
         const partial = composer !== null && !hosts && composer.from < ref.to && composer.to > ref.from;
-        if ((!inside || hosts) && !partial) {
+        if (!hosts && (partial || gridFrom === ref.from)) return false;
+        if (!inside || hosts) {
           const source = doc.sliceString(ref.from, ref.to);
           const widget = new TableWidget(source, tableReview(state, ref.from, ref.to));
           ranges.push(Decoration.replace({ widget, block: true }).range(start.from, end.to));
@@ -886,7 +970,9 @@ function buildBlocks(state, focused) {
         return false;
       }
       const source = fenceBody(state, ref.node);
-      if (inside) {
+      const raw = isRawBlock(state, ref.from);
+      if (inside || raw) {
+        if (raw) ranges.push(Decoration.widget({ widget: new PencilWidget(ref.from, true), side: 1 }).range(start.to));
         ranges.push(Decoration.widget({ widget: new MermaidWidget(source, mermaid, "preview"), block: true, side: 1 }).range(end.to));
       } else {
         ranges.push(Decoration.replace({ widget: new MermaidWidget(source, mermaid, "block"), block: true }).range(start.from, end.to));
@@ -898,25 +984,21 @@ function buildBlocks(state, focused) {
 }
 
 const blockField = StateField.define({
-  create: state => ({ focused: false, decorations: buildBlocks(state, false) }),
+  create: state => buildBlocks(state),
   update(value, tr) {
-    let { focused } = value;
-    let refreshed = false;
-    for (const effect of tr.effects) {
-      if (effect.is(setTableFocus)) focused = effect.value;
-      if (effect.is(refreshMermaid)) refreshed = true;
-    }
-    const changed = focused !== value.focused ||
+    const refreshed = tr.effects.some(effect => effect.is(refreshMermaid));
+    const changed = tr.startState.field(liveFocusField) !== tr.state.field(liveFocusField) ||
       refreshed ||
       tr.docChanged ||
       tr.selection !== undefined ||
       commentsDiffer(tr.startState, tr.state) ||
+      tr.startState.field(rawBlocksField) !== tr.state.field(rawBlocksField) ||
       isLive(tr.startState) !== isLive(tr.state) ||
       syntaxTree(tr.startState) !== syntaxTree(tr.state);
     if (!changed) return value;
-    return { focused, decorations: buildBlocks(tr.state, focused) };
+    return buildBlocks(tr.state);
   },
-  provide: field => EditorView.decorations.from(field, value => value.decorations)
+  provide: field => EditorView.decorations.from(field)
 });
 
 // Code blocks get their background from a layer under the selection's, since a
@@ -937,7 +1019,7 @@ const codeBlockLayer = layer({
     const box = line.getBoundingClientRect();
     const left = box.left - scroller.left + view.scrollDOM.scrollLeft;
     const top = view.documentTop - scroller.top + view.scrollDOM.scrollTop;
-    const widgets = view.state.field(blockField).decorations;
+    const widgets = view.state.field(blockField);
     const markers = [];
     const drawn = new Set();
     for (const { from, to } of view.visibleRanges) {
@@ -966,11 +1048,11 @@ const codeBlockLayer = layer({
 
 const blockFocusSync = EditorView.updateListener.of(update => {
   const { view } = update;
-  if (update.state.field(blockField).focused === view.hasFocus) return;
+  if (update.state.field(liveFocusField) === view.hasFocus) return;
   queueMicrotask(() => {
-    const field = view.state.field(blockField, false);
-    if (field && field.focused !== view.hasFocus) {
-      view.dispatch({ effects: setTableFocus.of(view.hasFocus) });
+    const focused = view.state.field(liveFocusField, false);
+    if (focused !== undefined && focused !== view.hasFocus) {
+      view.dispatch({ effects: setLiveFocus.of(view.hasFocus) });
     }
   });
 });
@@ -991,20 +1073,11 @@ function eventElement(event) {
   return target && target.nodeType === 1 ? target : target?.parentElement ?? null;
 }
 
-function isMacNavigator(nav) {
-  const platform = nav?.userAgentData?.platform || nav?.platform || nav?.userAgent || "";
-  return /mac|iphone|ipad|ipod/i.test(platform);
+function isPlainClick(event) {
+  return event.button === 0 && event.detail < 2 && !(event.metaKey || event.ctrlKey || event.altKey || event.shiftKey);
 }
 
-// macOS turns Ctrl-click into a right-click, so the link modifier is Cmd there.
-function isMacView(view) {
-  return isMacNavigator(view.dom.ownerDocument.defaultView?.navigator ?? globalThis.navigator);
-}
-
-function isOpenLinkClick(event, view) {
-  return isMacView(view) ? event.metaKey : event.ctrlKey;
-}
-
+// macOS turns Ctrl-click into a right-click.
 function isPrimaryClick(event, view) {
   return event.button === 0 && !(event.ctrlKey && isMacView(view));
 }
@@ -1015,8 +1088,9 @@ function isPrimaryClick(event, view) {
  * unless the mode facet is "live".
  *
  * @param {object} [options]
- * @param {(href: string) => void} [options.onOpenLink] called when a link is followed: Cmd-click
- *   (Ctrl-click off macOS) or its hover button; `#anchor` links go to onFollowAnchor instead
+ * @param {(href: string) => void} [options.onOpenLink] called when a link is followed by a plain
+ *   click; Cmd-click (Ctrl-click off macOS) places the caret instead. `#anchor` links go to
+ *   onFollowAnchor instead
  * @param {(fragment: string) => void} [options.onFollowAnchor] called for `#anchor` links; without
  *   one, the editor scrolls to the anchor itself
  * @param {object} [options.mermaid] a renderer from createMermaidRenderer; without one,
@@ -1059,13 +1133,12 @@ export function livePreview({ onOpenLink, onFollowAnchor, mermaid } = {}) {
         return true;
       }
 
-      if (isOpenLinkClick(event, view)) {
-        const link = element.closest(".cm-lp-link");
-        if (link) {
-          event.preventDefault();
-          follow(view, link.getAttribute("data-href") ?? "");
-          return true;
-        }
+      const link = element.closest(".cm-lp-link");
+      if (link && isPlainClick(event)) {
+        const href = link.getAttribute("data-href") ?? "";
+        if (resolveLinkAction(href).kind === "ignore") return false;
+        pressLink(view, event, href);
+        return true;
       }
       return false;
     }
@@ -1073,6 +1146,11 @@ export function livePreview({ onOpenLink, onFollowAnchor, mermaid } = {}) {
 
   return [
     mermaidFacet.of(mermaid ?? null),
+    liveFocusField,
+    fenceCaretFilter,
+    rawBlocksField,
+    gridExtension(),
+    rawBlockKeymap,
     followFacet.of(follow),
     composerHost.of((state, composer) => isLive(state) && tableHostsComposer(state, composer)),
     blockField,
@@ -1080,89 +1158,6 @@ export function livePreview({ onOpenLink, onFollowAnchor, mermaid } = {}) {
     blockFocusSync,
     mermaidThemeSync,
     inlinePreview,
-    followButton,
     handlers
   ];
 }
-
-const FOLLOW_HIDE_DELAY_MS = 300;
-const linkHref = link => link.getAttribute("data-href") ?? link.getAttribute("href") ?? "";
-
-// A plain click places the cursor and reveals a link's Markdown, so hovering a
-// rendered link shows a button that follows it without touching the cursor.
-// It sits outside the content DOM, where CodeMirror's own handlers never see it.
-const followButton = ViewPlugin.fromClass(class {
-  constructor(view) {
-    this.view = view;
-    this.link = null;
-    this.hideTimer = null;
-    const document = view.dom.ownerDocument;
-    this.button = document.createElement("button");
-    this.button.type = "button";
-    this.button.className = "cm-lp-follow";
-    this.button.setAttribute("aria-label", "Follow link");
-    this.button.hidden = true;
-    this.button.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17L17 7M9 7h8v8" /></svg>';
-    this.button.addEventListener("mousedown", event => event.preventDefault());
-    this.button.addEventListener("click", event => {
-      event.preventDefault();
-      const href = this.link ? linkHref(this.link) : "";
-      this.hide();
-      if (href) followHref(view, href);
-    });
-    this.button.addEventListener("mouseenter", () => clearTimeout(this.hideTimer));
-    this.button.addEventListener("mouseleave", () => this.scheduleHide());
-    this.onOver = event => this.over(event);
-    this.onScroll = () => this.hide();
-    this.onLeave = () => this.scheduleHide();
-    view.dom.append(this.button);
-    view.dom.addEventListener("mouseover", this.onOver);
-    view.dom.addEventListener("mouseleave", this.onLeave);
-    view.scrollDOM.addEventListener("scroll", this.onScroll);
-  }
-
-  over(event) {
-    const element = eventElement(event);
-    if (!element || this.button.contains(element)) return;
-    const link = isLive(this.view.state) ? element.closest(".cm-lp-link, .cm-lp-table a[href]") : null;
-    if (!link) {
-      if (this.link) this.scheduleHide();
-      return;
-    }
-    clearTimeout(this.hideTimer);
-    if (link === this.link && !this.button.hidden) return;
-    const href = linkHref(link);
-    if (resolveLinkAction(href).kind === "ignore") return;
-    this.link = link;
-    const rects = link.getClientRects();
-    const rect = rects.length ? rects[rects.length - 1] : link.getBoundingClientRect();
-    const host = this.view.dom.getBoundingClientRect();
-    this.button.style.left = `${rect.right - host.left + 2}px`;
-    this.button.style.top = `${rect.top - host.top + (rect.height - 18) / 2}px`;
-    this.button.title = `Follow link: ${href}`;
-    this.button.hidden = false;
-  }
-
-  scheduleHide() {
-    clearTimeout(this.hideTimer);
-    this.hideTimer = setTimeout(() => this.hide(), FOLLOW_HIDE_DELAY_MS);
-  }
-
-  hide() {
-    clearTimeout(this.hideTimer);
-    this.link = null;
-    this.button.hidden = true;
-  }
-
-  update(update) {
-    if (update.docChanged || update.viewportChanged) this.hide();
-  }
-
-  destroy() {
-    clearTimeout(this.hideTimer);
-    this.view.dom.removeEventListener("mouseover", this.onOver);
-    this.view.dom.removeEventListener("mouseleave", this.onLeave);
-    this.view.scrollDOM.removeEventListener("scroll", this.onScroll);
-    this.button.remove();
-  }
-});
