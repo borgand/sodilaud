@@ -143,7 +143,7 @@ test("the open list carries the active file", async () => {
 test("a file handed over before the page started is shown", async () => {
   const fake = lists();
   const app = await bootMainWindow({
-    instance: 15,
+    instance: 43,
     disk: { "/docs/plan.md": "# Plan\n" },
     handlers: { ...fake.handlers, file_take_pending: () => [{ path: "/docs/plan.md", view: null }] }
   });
@@ -400,7 +400,7 @@ test("the outline marks the section in view in Reading mode", async () => {
   const fake = lists({ open: ["/docs/book.md"] });
   let scrolls = 0;
   const app = await bootMainWindow({
-    instance: 13,
+    instance: 41,
     disk: { "/docs/book.md": BOOK_TEXT },
     beforeBoot: (dom) => {
       dom.window.marked = marked;
@@ -437,7 +437,7 @@ test("the outline mark follows Live scrolling and survives a re-render", async (
   const fake = lists({ open: ["/docs/book.md"] });
   let scrolls = 0;
   const app = await bootMainWindow({
-    instance: 14,
+    instance: 42,
     disk: { "/docs/book.md": BOOK_TEXT },
     beforeBoot: (dom) => {
       dom.window.marked = marked;
