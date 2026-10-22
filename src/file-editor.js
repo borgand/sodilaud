@@ -20,8 +20,12 @@ import { reviewHunkFences, setHunkReviewed } from "./editor-hunks.js";
 import { foldedSections, revealAnchor, sectionFolding, setFoldedSections, setSectionFolded } from "./editor-folds.js";
 import {
   applyReadingFolds,
+  isScrolledToEnd,
+  markCurrentOutline,
   nextUnreviewed,
   outlineEntries,
+  outlineIdAt,
+  readingHeadingAt,
   readingFoldsHiding,
   renderOutlineList,
   reviewProgress,
@@ -30,7 +34,7 @@ import {
 import { normalizeLayoutMode } from "./view-preferences.js";
 import { applyUpdatesToText, createDocSync } from "./doc-sync.js";
 import { createFilesModel, isDirty, needsPrompt } from "./files.js";
-import { commentsExtension } from "./editor-comments.js";
+import { commentsExtension, startComment } from "./editor-comments.js";
 import { createComments } from "./comments-panel.js";
 import { createOpenFileMenu } from "./open-file-menu.js";
 import { createFolderSidebar } from "./folder-sidebar.js";
@@ -38,11 +42,13 @@ import { createFindBar } from "./find-bar.js";
 import { createFileSplit } from "./file-split.js";
 import { createPaneCompare } from "./pane-compare.js";
 import { isMacLikePlatform } from "./platform-labels.js";
+import { createReadingComments, dropStrayComposer } from "./reading-comments.js";
 import { EditorState, EditorView, Transaction } from "./vendor/codemirror.js";
 
 const LAYOUT_KEY = "sodilaud_layout_mode";
 // The outline reparses the whole file, so it waits for typing to pause.
 const OUTLINE_DELAY_MS = 150;
+const SAVED_FADE_MS = 2000;
 
 const editorModeFor = (mode) => (mode === "source" ? "source" : "live");
 
@@ -66,6 +72,7 @@ export function createFileEditor({
   const openList = $("open-files-list");
   const title = $("main-title");
   const status = $("file-status");
+  const statusPath = $("file-status-path");
   const preview = $("markdown-preview");
   const outlineSection = $("outline-section");
   const outlineToggle = $("outline-toggle-btn");
@@ -96,8 +103,18 @@ export function createFileEditor({
   let recent = [];
   let drafts = [];
   let outlineTimer = null;
+  let outlineShown = [];
+  let currentOutlineId = null;
+  let statusKey = null;
+  let fadeTimer = null;
   const navHistory = createNavHistory();
 
+  const reading = createReadingComments({
+    preview,
+    view: () => editor.view,
+    enabled: () => layoutMode === "reading" && Boolean(model.active()) && model.active().kind !== "plain",
+    onShortcut: () => comments.start()
+  });
   // Both panes edit with the same extensions; `pane` names the one they serve.
   const editorOptions = (pane) => ({
     placeholder: "Type something here... Supports Markdown formatting.",
@@ -115,6 +132,11 @@ export function createFileEditor({
       commentsExtension({
         onSubmit: (view, comment) => comments.submit(view, comment),
         onSelect: id => comments.select(id)
+      }),
+      reading.extension,
+      // The preview's source offsets go stale with any edit, the owner's or a remote one.
+      EditorView.updateListener.of(update => {
+        if (update.docChanged) renderPreview();
       })
     ]
   });
@@ -203,12 +225,12 @@ export function createFileEditor({
       { view: split.editor().view, doc: paneDoc("secondary") }
     ].filter(({ doc }) => doc),
     active: () => {
-      const pane = split.activePane();
-      const doc = paneDoc(pane);
-      return doc && layoutMode !== "reading" ? { view: activeEditor().view, doc } : null;
+      const doc = paneDoc(split.activePane());
+      return doc ? { view: activeEditor().view, doc } : null;
     },
     flush: () => sync.flush(),
-    notify
+    notify,
+    startComment: view => layoutMode === "reading" ? reading.start() : startComment(view)
   });
 
   const fileMenu = createOpenFileMenu({
@@ -373,7 +395,17 @@ export function createFileEditor({
     title.textContent = buffer ? `${buffer.name}${dirty(buffer) ? " •" : ""}` : "Sodilaud";
     title.title = buffer?.path ?? "";
     document.title = buffer ? `${buffer.name} - Sodilaud` : "Sodilaud";
-    status.textContent = buffer ? `${statusText(buffer)}${buffer.path ? ` · ${buffer.path}` : ""}` : "";
+    const text = buffer ? statusText(buffer) : "";
+    status.textContent = text;
+    status.title = buffer?.path ?? "";
+    statusPath.textContent = buffer?.path ?? "";
+    const key = buffer ? `${buffer.id}:${text}` : null;
+    if (key !== statusKey) {
+      statusKey = key;
+      clearTimeout(fadeTimer);
+      status.classList.remove("settled");
+      if (text === "Saved") fadeTimer = setTimeout(() => status.classList.add("settled"), SAVED_FADE_MS);
+    }
   }
 
   function renderSidebar() {
@@ -496,20 +528,23 @@ export function createFileEditor({
       findBar.refreshPreview();
       return;
     }
-    try {
-      preview.innerHTML = renderMarkdown(editor.getText(), "*Empty file*");
-      const hljs = document.defaultView.hljs;
-      renderHunkWidgets(preview, {
-        hljs: appearance.syntaxHighlighting ? hljs : null,
-        onToggleReviewed: (target, reviewed) => setHunkReviewed(editor.view, target, reviewed)
-      });
-      highlightPreviewCode(preview, hljs, appearance.syntaxHighlighting);
-      mermaid?.renderBlocks(preview);
-      renderReadingFolds();
-    } catch (error) {
-      console.error("Could not render the file", error);
-      preview.textContent = editor.getText();
-    }
+    reading.renderWith(() => {
+      try {
+        preview.innerHTML = renderMarkdown(editor.getText(), "*Empty file*", undefined, { positions: true });
+        const hljs = document.defaultView.hljs;
+        renderHunkWidgets(preview, {
+          hljs: appearance.syntaxHighlighting ? hljs : null,
+          onToggleReviewed: (target, reviewed) => setHunkReviewed(editor.view, target, reviewed),
+          ...reading.hunkOptions()
+        });
+        highlightPreviewCode(preview, hljs, appearance.syntaxHighlighting);
+        mermaid?.renderBlocks(preview);
+        renderReadingFolds();
+      } catch (error) {
+        console.error("Could not render the file", error);
+        preview.textContent = editor.getText();
+      }
+    });
     findBar.refreshPreview();
   }
 
@@ -521,6 +556,27 @@ export function createFileEditor({
     });
   }
 
+  // A heading or hunk this close below the top of the view counts as the one
+  // being read, so one a jump just scrolled to is not skipped for the next.
+  const TOP_SLACK_PX = 8;
+
+  function updateCurrentOutline() {
+    if (outlineSection.hidden) return;
+    let id;
+    if (layoutMode === "reading") {
+      const box = preview.getBoundingClientRect();
+      id = readingHeadingAt(preview, isScrolledToEnd(preview) ? box.bottom : box.top + TOP_SLACK_PX);
+    } else {
+      const { view } = editor;
+      const box = view.scrollDOM.getBoundingClientRect();
+      const edge = isScrolledToEnd(view.scrollDOM) ? box.bottom : box.top + TOP_SLACK_PX;
+      id = outlineIdAt(outlineShown, view.lineBlockAtHeight(edge - view.documentTop).from);
+    }
+    if (id === currentOutlineId) return;
+    currentOutlineId = id;
+    markCurrentOutline(outlineList, id)?.scrollIntoView?.({ block: "nearest" });
+  }
+
   function renderOutline() {
     clearTimeout(outlineTimer);
     outlineTimer = null;
@@ -529,18 +585,19 @@ export function createFileEditor({
     const markdown = Boolean(buffer) && buffer.kind !== "plain";
     const hunks = markdown ? reviewHunkFences(state) : [];
     const entries = markdown ? outlineEntries(documentAnchors(state), hunks, state.doc.length) : [];
+    outlineShown = entries;
     outlineSection.hidden = entries.length === 0;
-    if (entries.length) renderOutlineList(outlineList, entries, jumpTo);
+    if (entries.length) {
+      renderOutlineList(outlineList, entries, jumpTo);
+      markCurrentOutline(outlineList, currentOutlineId);
+      updateCurrentOutline();
+    } else currentOutlineId = null;
     const progress = reviewProgress(hunks);
     reviewStatus.hidden = progress.total === 0;
     reviewStatus.textContent = reviewProgressText(progress);
     reviewStatus.classList.toggle("complete", progress.total > 0 && progress.reviewed === progress.total);
     reviewNext.hidden = progress.reviewed === progress.total;
   }
-
-  // A hunk this close below the top of the view counts as the one being read,
-  // so a hunk a jump just scrolled to is not picked again.
-  const TOP_SLACK_PX = 8;
 
   function nextUnreviewedHunk() {
     if (layoutMode === "reading") {
@@ -611,8 +668,10 @@ export function createFileEditor({
         editor.restoreState(buffer.editorState);
         applyKind(buffer);
         refreshFind();
+        dropStrayComposer(editor.view, layoutMode === "reading" ? "reading" : "editor");
       } else loadBuffer(buffer);
       shownId = buffer.id;
+      currentOutlineId = null;
       renderPreview();
       editor.restoreScroll(buffer.scroll);
       preview.scrollTop = buffer.previewTop ?? 0;
@@ -1131,10 +1190,7 @@ export function createFileEditor({
     if (buffer) compareEdited(buffer.id);
     const inActivePane = buffer && buffer.id === (split.activePane() === "secondary" ? split.shownId() : shownId);
     if (inActivePane && findBar.isOpen()) findBar.run({ preserveActive: true, selectActive: false });
-    if (buffer && buffer.id === shownId) {
-      renderPreview();
-      scheduleOutline();
-    }
+    if (buffer && buffer.id === shownId) scheduleOutline();
     renderTitle();
     renderSidebar();
   }
@@ -1155,7 +1211,10 @@ export function createFileEditor({
   // Mode, sidebar and settings
   // ----------------------------------------------------
   function setLayoutMode(value, { persist = true } = {}) {
-    layoutMode = normalizeLayoutMode(value);
+    const next = normalizeLayoutMode(value);
+    // A composer is drawn by the editor or by the preview, never carried over.
+    if (next !== layoutMode) reading.close();
+    layoutMode = next;
     editorSection.classList.remove("mode-live", "mode-source", "mode-reading");
     editorSection.classList.add(`mode-${layoutMode}`);
     for (const [mode, button] of Object.entries(layoutButtons)) {
@@ -1167,9 +1226,9 @@ export function createFileEditor({
     if (layoutMode === "reading") split.close();
     renderSplitButton();
     syncFormatting();
-    $("comment-btn").disabled = layoutMode === "reading";
     comments.render();
     renderPreview();
+    updateCurrentOutline();
     // Leaving Reading mode keeps the old preview, highlights and all.
     findBar.refreshPreview();
     if (persist) {
@@ -1267,6 +1326,8 @@ export function createFileEditor({
     for (const [mode, button] of Object.entries(layoutButtons)) {
       button.addEventListener("click", () => setLayoutMode(mode));
     }
+    editor.view.scrollDOM.addEventListener("scroll", updateCurrentOutline, { passive: true });
+    preview.addEventListener("scroll", updateCurrentOutline, { passive: true });
     sidebarToggle.addEventListener("click", toggleSidebar);
     outlineToggle.addEventListener("click", toggleOutline);
     reviewNext.addEventListener("click", goToNextUnreviewed);

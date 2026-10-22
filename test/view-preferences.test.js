@@ -4,15 +4,21 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  DEFAULT_EDITOR_LINE_SPACING,
   LAYOUT_MODES,
   normalizeEditorLineNumbers,
   normalizeEditorLineSpacing,
   normalizeEditorZoom,
   normalizeLayoutMode,
   normalizeNotePreviewLines,
+  normalizeContentWidth,
+  normalizeParagraphSpacing,
+  normalizeReadableWidth,
   normalizeSyntaxHighlighting,
   stepEditorLineSpacing,
   stepEditorZoom,
+  stepContentWidth,
+  stepParagraphSpacing,
   stepNotePreviewLines
 } from "../src/view-preferences.js";
 
@@ -29,6 +35,22 @@ test("editor line spacing is rounded and bounded", () => {
   assert.equal(normalizeEditorLineSpacing(1), 1.2);
   assert.equal(normalizeEditorLineSpacing(3), 2.4);
   assert.equal(stepEditorLineSpacing(1.6, -1), 1.5);
+});
+
+test("paragraph spacing normalizes to 0.5-2.0 in 0.1 steps", () => {
+  assert.equal(normalizeParagraphSpacing("abc"), 1);
+  assert.equal(normalizeParagraphSpacing(0.1), 0.5);
+  assert.equal(normalizeParagraphSpacing(9), 2);
+  assert.equal(stepParagraphSpacing(1, 1), 1.1);
+});
+
+test("content width normalizes to 60-120 in steps of 5", () => {
+  assert.equal(normalizeContentWidth("x"), 80);
+  assert.equal(normalizeContentWidth(83), 85);
+  assert.equal(normalizeContentWidth(200), 120);
+  assert.equal(stepContentWidth(80, -1), 75);
+  assert.equal(normalizeReadableWidth(undefined), true);
+  assert.equal(normalizeReadableWidth("false"), false);
 });
 
 test("note preview context is limited to one through ten lines", () => {
@@ -68,3 +90,5 @@ test("layout modes migrate legacy values and default to live", () => {
   assert.equal(normalizeLayoutMode(42), "live");
   assert.equal(normalizeLayoutMode("toString"), "live");
 });
+
+test("default line spacing is 1.7", () => assert.equal(DEFAULT_EDITOR_LINE_SPACING, 1.7));

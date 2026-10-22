@@ -59,6 +59,47 @@ export function nextUnreviewed(hunks, after) {
   return (open.find(hunk => hunk.at > after) ?? open[0])?.id ?? null;
 }
 
+/** The id of the last entry that starts at or before `pos`, else null. */
+export function outlineIdAt(entries, pos) {
+  let id = null;
+  for (const entry of entries) {
+    if (entry.from > pos) break;
+    id = entry.id;
+  }
+  return id;
+}
+
+/** The anchor of the last visible top-level heading whose top is at or above `y`. */
+export function readingHeadingAt(root, y) {
+  let id = null;
+  for (const element of root.children) {
+    if (!HEADING_TAG.test(element.tagName) || element.classList.contains("section-fold-hidden")) continue;
+    const anchor = element.getAttribute(ANCHOR_ATTRIBUTE);
+    if (!anchor) continue;
+    if (element.getBoundingClientRect().top > y) break;
+    id = anchor;
+  }
+  return id;
+}
+
+export const isScrolledToEnd = ({ scrollTop, clientHeight, scrollHeight }) =>
+  scrollTop > 0 && scrollTop + clientHeight >= scrollHeight - 2;
+
+/** Marks the outline row for `id` as current; returns that row or null. */
+export function markCurrentOutline(list, id) {
+  let current = null;
+  for (const item of list.querySelectorAll(".outline-item")) {
+    const isCurrent = id !== null && item.dataset.outlineId === id;
+    item.classList.toggle("current", isCurrent);
+    const link = item.querySelector(".outline-link");
+    if (isCurrent) {
+      link?.setAttribute("aria-current", "location");
+      current = item;
+    } else link?.removeAttribute("aria-current");
+  }
+  return current;
+}
+
 /** Fills the sidebar outline: one button per heading, indented by level. */
 export function renderOutlineList(list, entries, onSelect) {
   const document = list.ownerDocument;
@@ -66,12 +107,12 @@ export function renderOutlineList(list, entries, onSelect) {
   list.replaceChildren(...entries.map(entry => {
     const item = document.createElement("li");
     item.className = "outline-item";
+    item.dataset.outlineId = entry.id;
     item.style.setProperty("--outline-depth", String(entry.level - top));
     const link = document.createElement("button");
     link.type = "button";
     link.className = "outline-link";
     link.textContent = entry.text;
-    link.title = entry.text;
     link.addEventListener("click", () => onSelect(entry.id));
     item.append(link);
     if (entry.total) {

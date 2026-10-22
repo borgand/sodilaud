@@ -185,6 +185,12 @@ export const PRESET_THEMES = [
     sidebar: "#242e2e",
     accent: "#1e959d",
     border: "#543529",
-    selection: "#1b676b"
+    selection: "#1b676b",
+    heading: "#f2946c",
+    codeBackground: "#1f2629",
+    codeBorder: "#2f383b",
+    tableHeaderBackground: "#222a2d",
+    tableBorder: "#353e42",
+    rule: "#3a4346"
   }
 ];

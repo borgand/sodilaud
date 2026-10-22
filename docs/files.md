@@ -60,6 +60,8 @@ Open files are listed in the sidebar; click one to switch to it, or its **×** t
 Each file keeps its own undo history while it is open. The files that were open when you quit
 reopen at the next launch.
 
+The status bar shows the save state ("Saved" fades after a moment) and, on hover, the file's path.
+
 ## Folders
 
 **File → Open Folder…** (`Cmd+Shift+O`, `Ctrl+Shift+O` on Windows and Linux), the start page's

@@ -15,15 +15,19 @@ import { scrollToReadingAnchor } from "./anchors.js";
 import { getNotePreview } from "./note-preview.js";
 import { createThemes } from "./themes.js";
 import { createAppearance } from "./appearance.js";
+import { createDocumentFonts } from "./document-fonts.js";
 import { broadcastPreference, onPreferenceChange } from "./preferences.js";
 import { createAgentAccess } from "./agent-access.js";
 import { applyPlatformShortcutLabels, isMacLikePlatform } from "./platform-labels.js";
 import { createPaneCompare } from "./pane-compare.js";
 import { findTextMatches } from "./find.js";
 import { createFindBar } from "./find-bar.js";
+import { EditorView } from "./vendor/codemirror.js";
 import { createMarkdownEditor } from "./editor-view.js";
-import { commentsExtension, startComment } from "./editor-comments.js";
+import { closeComposer, commentsExtension, startComment } from "./editor-comments.js";
 import { createComments } from "./comments-panel.js";
+import { createReadingComments, dropStrayComposer } from "./reading-comments.js";
+import { stripSourceAnnotations } from "./source-map.js";
 import { markdownEditingCommands, runFormatAction } from "./editor-commands.js";
 import { createFormatToolbar } from "./format-toolbar.js";
 import { livePreview } from "./editor-live-preview.js";
@@ -225,6 +229,13 @@ const appearance = createAppearance({
   }
 });
 const mermaid = createMermaidRenderer({ document });
+const fonts = createDocumentFonts({
+  document,
+  storage: localStorage,
+  broadcast: shareAppearance,
+  themeFonts: () => themes.activeTheme(),
+  onApplied: () => mermaid.setTheme(themeVariablesFrom(document))
+});
 mermaid.onChange(() => {
   updateMarkdownPreview();
   updateSecondaryMarkdownPreview();
@@ -234,7 +245,10 @@ const themes = createThemes({
   document,
   storage: localStorage,
   invoke,
-  onApplied: () => mermaid.setTheme(themeVariablesFrom(document))
+  onApplied: () => {
+    fonts.apply();
+    mermaid.setTheme(themeVariablesFrom(document));
+  }
 });
 
 // ----------------------------------------------------
@@ -406,6 +420,13 @@ function forgetPaneStates(noteId = null) {
   }
 }
 
+// What the user sees for a pane's note: its editor, the Reading preview that
+// takes comments, or a preview that does not.
+const shownIn = pane => {
+  if (currentLayoutMode !== "reading") return "editor";
+  return pane === "primary" && readingComments() ? "reading" : null;
+};
+
 function showNoteInPane(pane, editor, note) {
   const previous = paneNoteIds[pane];
   if (previous === note.id) return;
@@ -415,8 +436,10 @@ function showNoteInPane(pane, editor, note) {
   paneNoteIds[pane] = note.id;
   const cached = paneStates[pane].get(note.id);
   paneStates[pane].delete(note.id);
-  if (cached) editor.restoreState(cached);
-  else editor.loadText(note.syncedContent ?? note.content, { extensions: noteSync.extension(note.id, note.version ?? 0) });
+  if (cached) {
+    editor.restoreState(cached);
+    dropStrayComposer(editor.view, shownIn(pane));
+  } else editor.loadText(note.syncedContent ?? note.content, { extensions: noteSync.extension(note.id, note.version ?? 0) });
   comments.shown();
 }
 
@@ -594,6 +617,14 @@ const paneDocs = () => {
   }
   return shown;
 };
+// Reading comments only on the primary pane's preview; split-note Reading has none.
+const readingComments = () => currentLayoutMode === "reading" && !isSplitNoteMode;
+const reading = createReadingComments({
+  preview: markdownPreview,
+  view: () => primaryEditor?.view ?? null,
+  enabled: readingComments,
+  onShortcut: () => comments.start()
+});
 const comments = createComments({
   document,
   invoke,
@@ -601,12 +632,13 @@ const comments = createComments({
   countButton: document.getElementById("comments-count-btn"),
   editors: paneDocs,
   active: () => {
-    if (currentLayoutMode === "reading" || !collectionId) return null;
+    if (!collectionId || (currentLayoutMode === "reading" && isSplitNoteMode)) return null;
     const pane = isSplitNoteMode ? activePane : "primary";
     return paneDocs().find(shown => shown.pane === pane) ?? null;
   },
   flush: () => noteSync.flush(),
-  notify: message => showNotification(message)
+  notify: message => showNotification(message),
+  startComment: view => readingComments() ? reading.start() : startComment(view)
 });
 
 const WORD_COUNT_DEBOUNCE_MS = 150;
@@ -624,7 +656,7 @@ function scheduleWordCharCount(pane, editor) {
 
 const editorModeFor = mode => mode === "source" ? "source" : "live";
 
-function createAppEditor(host, { ariaLabel, pane }) {
+function createAppEditor(host, { ariaLabel, pane, extensions = [] }) {
   const editor = createMarkdownEditor({
     parent: host,
     ariaLabel,
@@ -641,7 +673,8 @@ function createAppEditor(host, { ariaLabel, pane }) {
           setActivePane(view === secondaryEditor?.view ? "secondary" : "primary");
           comments.select(id);
         }
-      })
+      }),
+      ...extensions
     ],
     onChange: pane === "primary" ? handleEditorInput : handleSecondaryEditorInput,
     onSelectionChange: () => {
@@ -707,7 +740,17 @@ function readLocalCollection() {
 async function init() {
   // 1. Localize shortcut labels and attach event listeners immediately.
   applyPlatformShortcutLabels(document, navigator);
-  primaryEditor = createAppEditor(editorHost, { ariaLabel: "Sodilaud content", pane: "primary" });
+  primaryEditor = createAppEditor(editorHost, {
+    ariaLabel: "Sodilaud content",
+    pane: "primary",
+    extensions: [
+      reading.extension,
+      // The preview's source offsets go stale with any edit, the owner's or a remote one.
+      EditorView.updateListener.of(update => {
+        if (update.docChanged) updateMarkdownPreview();
+      })
+    ]
+  });
   secondaryEditor = createAppEditor(secondaryEditorHost, {
     ariaLabel: "Secondary scratchpad content",
     pane: "secondary"
@@ -721,6 +764,7 @@ async function init() {
   // 2. Load the saved theme (Executive on first launch) and layout mode
   themes.load();
   appearance.load();
+  fonts.load();
   const savedLayoutMode = localStorage.getItem("sodilaud_layout_mode");
   setLayoutMode(normalizeLayoutMode(savedLayoutMode), { persist: savedLayoutMode !== null });
   loadCollapsedFolders();
@@ -1486,12 +1530,6 @@ function handleEditorInput(text) {
   // The collab client sends the change; this only shows it is on its way.
   triggerSavingState();
   scheduleNoteListRender();
-
-  // Live markdown compilation
-  clearTimeout(previewDebounceTimer);
-  previewDebounceTimer = setTimeout(() => {
-    updateMarkdownPreview();
-  }, 150);
 }
 
 function handleTitleInput() {
@@ -1528,10 +1566,11 @@ function setSavedState() {
   saveStatus.classList.remove("unsaved");
 }
 
-function renderPreviewHunks(container, editor) {
+function renderPreviewHunks(container, editor, options = {}) {
   renderHunkWidgets(container, {
     hljs: appearance.syntaxHighlighting ? window.hljs : null,
-    onToggleReviewed: (target, reviewed) => setHunkReviewed(editor.view, target, reviewed)
+    onToggleReviewed: (target, reviewed) => setHunkReviewed(editor.view, target, reviewed),
+    ...options
   });
 }
 
@@ -1541,25 +1580,27 @@ function updateMarkdownPreview() {
   const rawText = primaryEditor.getText();
   
   if (window.marked) {
-    try {
-      let html = "";
-      if (typeof window.marked.parse === "function") {
-        html = renderMarkdown(rawText, "*Empty scratchpad*");
-      } else if (typeof window.marked === "function") {
-        html = sanitizeMarkdownHtml(window.marked(rawText || "*Empty scratchpad*"));
-      } else {
-        throw new Error("window.marked is neither a function nor contains a parse function");
+    reading.renderWith(() => {
+      try {
+        let html = "";
+        if (typeof window.marked.parse === "function") {
+          html = renderMarkdown(rawText, "*Empty scratchpad*", undefined, { positions: true });
+        } else if (typeof window.marked === "function") {
+          html = sanitizeMarkdownHtml(window.marked(rawText || "*Empty scratchpad*"));
+        } else {
+          throw new Error("window.marked is neither a function nor contains a parse function");
+        }
+        markdownPreview.innerHTML = html;
+        renderPreviewHunks(markdownPreview, primaryEditor, reading.hunkOptions());
+        highlightPreviewCode(markdownPreview, window.hljs, appearance.syntaxHighlighting);
+        mermaid.renderBlocks(markdownPreview);
+      } catch (e) {
+        console.error("Marked parser error:", e);
+        markdownPreview.innerHTML = `<div style="color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.2); background: rgba(239, 68, 68, 0.05); padding: 12px; border-radius: 8px; margin-bottom: 16px; font-size: 0.9rem;">
+          <strong>Markdown Parsing Error:</strong> ${escapeHTML(e.message)}
+        </div>` + escapeHTML(rawText).replace(/\n/g, "<br>").replace(/ /g, "&nbsp;");
       }
-      markdownPreview.innerHTML = html;
-      renderPreviewHunks(markdownPreview, primaryEditor);
-      highlightPreviewCode(markdownPreview, window.hljs, appearance.syntaxHighlighting);
-      mermaid.renderBlocks(markdownPreview);
-    } catch (e) {
-      console.error("Marked parser error:", e);
-      markdownPreview.innerHTML = `<div style="color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.2); background: rgba(239, 68, 68, 0.05); padding: 12px; border-radius: 8px; margin-bottom: 16px; font-size: 0.9rem;">
-        <strong>Markdown Parsing Error:</strong> ${escapeHTML(e.message)}
-      </div>` + escapeHTML(rawText).replace(/\n/g, "<br>").replace(/ /g, "&nbsp;");
-    }
+    });
   } else {
     // Fallback if marked is offline / missing - render as plaintext with line breaks preserved
     console.warn("window.marked is not defined! Rendering as plain text.");
@@ -1576,6 +1617,11 @@ function updateMarkdownPreview() {
 // ----------------------------------------------------
 function setLayoutMode(value, { persist = true } = {}) {
   const mode = normalizeLayoutMode(value);
+  // A composer is drawn by the editor or by the preview, never carried over.
+  if (mode !== currentLayoutMode) {
+    reading.close();
+    closeComposer(secondaryEditor.view);
+  }
   currentLayoutMode = mode;
 
   appContainer.classList.remove("mode-live", "mode-source", "mode-reading");
@@ -1588,11 +1634,16 @@ function setLayoutMode(value, { persist = true } = {}) {
   primaryEditor.setMode(editorModeFor(mode));
   secondaryEditor.setMode(editorModeFor(mode));
   setFormatControlsEnabled(mode !== "reading");
-  document.getElementById("comment-btn").disabled = mode === "reading";
-  comments.render();
+  updateCommentControls();
   if (mode === "reading") updateMarkdownPreview();
 
   if (persist) localStorage.setItem("sodilaud_layout_mode", mode);
+}
+
+// Split-note Reading shows two previews and takes no comments.
+function updateCommentControls() {
+  document.getElementById("comment-btn").disabled = currentLayoutMode === "reading" && isSplitNoteMode;
+  comments.render();
 }
 
 // ----------------------------------------------------
@@ -1617,6 +1668,7 @@ const setFormatControlsEnabled = (enabled) => formatToolbar.setEnabled(enabled);
 // Another window changed a shared preference: re-read and apply it here.
 function followPreferenceChange(key) {
   if (appearance.reload(key)) return;
+  if (fonts.reload(key)) return;
   if (key === "sodilaud_active_theme" || key === "sodilaud_custom_themes" || key === "color-scheme") {
     themes.load();
   } else if (key === "sodilaud_layout_mode") {
@@ -1681,6 +1733,7 @@ async function renderedHtmlForCopy() {
   if (currentLayoutMode === "reading") {
     await mermaid.renderBlocks(markdownPreview);
     const copy = markdownPreview.cloneNode(true);
+    stripSourceAnnotations(copy);
     exportHunks(copy, window.hljs);
     return copy.innerHTML;
   }
@@ -2810,6 +2863,7 @@ function toggleSplitNoteMode(forceState) {
     toggleFindResults(false);
   }
 
+  if (currentLayoutMode === "reading" && shouldOpen !== isSplitNoteMode) reading.close();
   isSplitNoteMode = shouldOpen;
   splitNoteBtn.setAttribute("aria-pressed", String(isSplitNoteMode));
   
@@ -2841,7 +2895,10 @@ function toggleSplitNoteMode(forceState) {
     compareNotesBtn.hidden = true;
     activePane = "primary";
     primaryEditor.focus();
+    // The single preview was not kept up to date while split.
+    updateMarkdownPreview();
   }
+  updateCommentControls();
 }
 
 function openNoteInSecondaryPane(noteId) {

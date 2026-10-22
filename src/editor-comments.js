@@ -14,7 +14,8 @@ import {
   getSyncedVersion,
   gutter,
   keymap,
-  sendableUpdates
+  sendableUpdates,
+  syntaxTree
 } from "./vendor/codemirror.js";
 
 // Comments anchored to text, shown as tinted ranges with a gutter marker, an
@@ -157,11 +158,12 @@ export function startComment(view) {
 /**
  * Opens the composer for `from..to` without touching the selection. A
  * `hosted` composer is drawn by the widget that covers the range, not below
- * its line, which a replacing widget would hide.
+ * its line, which a replacing widget would hide. An `outside` composer is
+ * drawn outside the editor (Reading mode), so no widget draws it either.
  */
-export function startCommentAt(view, from, to, { hosted = false } = {}) {
+export function startCommentAt(view, from, to, { hosted = false, outside = false } = {}) {
   if (to <= from || view.state.field(composerField, false) === undefined) return false;
-  view.dispatch({ effects: composerEffect.of({ from, to, hosted, key: Date.now() + Math.random() }) });
+  view.dispatch({ effects: composerEffect.of({ from, to, hosted: hosted || outside, outside, key: Date.now() + Math.random() }) });
   return true;
 }
 
@@ -181,8 +183,24 @@ export function selectComment(view, id) {
   view.state.facet(commentHandlers)?.onSelect(id);
 }
 
-/** The composer's DOM for the composer `key`; `onSubmit` comes from the extension. */
-export function createComposerElement(view, key) {
+/**
+ * Widgets that cover a range draw the composer themselves; each value is a
+ * `(state, composer) => boolean` that claims it.
+ */
+export const composerHost = Facet.define();
+
+/** Whether the open composer is drawn by a widget rather than below its line. */
+export function composerHosted(state) {
+  const composer = state.field(composerField, false);
+  if (!composer) return false;
+  return Boolean(composer.hosted) || state.facet(composerHost).some(claims => claims(state, composer));
+}
+
+/**
+ * The composer's DOM for the composer `key`; `onSubmit` comes from the extension.
+ * With `refocus: false` closing leaves focus where it is, for hosts outside the editor.
+ */
+export function createComposerElement(view, key, { refocus = true } = {}) {
   const doc = view.dom.ownerDocument;
   const box = doc.createElement("div");
   box.className = "cm-comment-composer";
@@ -209,7 +227,7 @@ export function createComposerElement(view, key) {
 
   const close = () => {
     closeComposer(view);
-    view.focus();
+    if (refocus) view.focus();
   };
   const submit = async () => {
     const composer = view.state.field(composerField);
@@ -284,14 +302,25 @@ export function commentsExtension({ onSubmit, onSelect = () => {} }) {
     }
   }
 
-  const composerDecorations = EditorView.decorations.compute([composerField], state => {
+  const buildComposerDecorations = state => {
     const composer = state.field(composerField);
-    if (!composer || composer.hosted) return Decoration.none;
+    if (!composer || composerHosted(state)) return Decoration.none;
     const end = state.doc.lineAt(composer.to).to;
     return Decoration.set([
       Decoration.mark({ class: "cm-comment cm-comment-draft" }).range(composer.from, Math.max(composer.from, composer.to)),
       Decoration.widget({ widget: new ComposerWidget(composer.key), block: true, side: 1 }).range(end)
     ].filter(range => range.from < range.to || range.value.spec.widget), true);
+  };
+
+  const composerDecorations = StateField.define({
+    create: buildComposerDecorations,
+    update: (value, tr) =>
+      tr.docChanged || tr.reconfigured || tr.startState.field(composerField) !== tr.state.field(composerField) ||
+      // A host's claim can depend on the tree, which a background parse completes later.
+      syntaxTree(tr.startState) !== syntaxTree(tr.state)
+        ? buildComposerDecorations(tr.state)
+        : value,
+    provide: field => EditorView.decorations.from(field)
   });
 
   const flashTimers = ViewPlugin.define(view => {

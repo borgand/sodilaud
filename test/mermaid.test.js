@@ -176,3 +176,13 @@ test("theme variables fall back to Mermaid's defaults when colors do not resolve
   assert.equal(variables.darkMode, false);
   assert.equal(variables.background, undefined);
 });
+
+test("theme variables use the document body font when the root sets one", () => {
+  const dom = new JSDOM("<!doctype html><body style=\"font-family: Arial\"></body>");
+  const root = dom.window.document.documentElement;
+  assert.equal(themeVariablesFrom(dom.window.document).fontFamily, "Arial");
+  root.style.setProperty("--doc-font-body", "'IBM Plex Serif', Georgia, serif");
+  assert.equal(themeVariablesFrom(dom.window.document).fontFamily, "'IBM Plex Serif', Georgia, serif");
+  root.style.setProperty("--doc-font-body", "var(--font-sans)");
+  assert.equal(themeVariablesFrom(dom.window.document).fontFamily, "Arial");
+});

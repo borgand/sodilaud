@@ -11,7 +11,7 @@ function typeInto(app, pane, text) {
   view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text }, userEvent: "input.type" });
 }
 
-test("reading previews render once after rapid edits and use the latest text", async () => {
+test("the primary reading preview renders at once and the secondary one after rapid edits", async () => {
   const app = await bootApp({
     storage: {
       sodilaud_layout_mode: "reading",
@@ -39,8 +39,6 @@ test("reading previews render once after rapid edits and use the latest text", a
 
   for (const value of ["first", "second", "# final"]) typeInto(app, "primary", value);
 
-  assert.equal(preview.innerHTML, initialPreview);
-  await app.settle(200);
   assert.equal(preview.querySelector("h1").textContent, "final");
   assert.doesNotMatch(preview.textContent, /first|second/);
 
@@ -56,4 +54,25 @@ test("reading previews render once after rapid edits and use the latest text", a
   assert.equal(secondaryPreview.innerHTML, initialSecondaryPreview);
   await app.settle(200);
   assert.equal(secondaryPreview.querySelector("h2").textContent, "secondary final");
+});
+
+test("typing outside Reading mode leaves the preview alone until the mode changes", async () => {
+  const app = await bootApp({
+    instance: 2,
+    storage: {
+      sodilaud_layout_mode: "live",
+      sodilaud_notes: [{ id: "live-note", title: "Live note", content: "initial", updatedAt: 1, isTitleLocked: true }]
+    },
+    beforeBoot: (dom) => { dom.window.marked = marked; }
+  });
+  const { document } = app.dom.window;
+  const preview = document.getElementById("markdown-preview");
+  const before = preview.innerHTML;
+  typeInto(app, "primary", "# typed");
+  assert.equal(preview.innerHTML, before);
+  await app.settle(200);
+  assert.equal(preview.innerHTML, before);
+  app.click("mode-reading");
+  await app.settle();
+  assert.equal(preview.querySelector("h1").textContent, "typed");
 });

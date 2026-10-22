@@ -50,7 +50,61 @@ test("Open File shows the file, lists it and Rust autosaves edits", async () => 
   await app.settle(700);
   assert.deepEqual(app.fileDocs.writes, [{ path: "/docs/plan.md", text: "# Plan\n- ship it\n" }]);
   assert.equal(doc(app).getElementById("main-title").textContent, "plan.md");
-  assert.match(doc(app).getElementById("file-status").textContent, /^Saved · \/docs\/plan.md/);
+  const status = doc(app).getElementById("file-status");
+  assert.equal(status.textContent, "Saved");
+  assert.equal(status.title, "/docs/plan.md");
+  assert.equal(doc(app).getElementById("file-status-path").textContent, "/docs/plan.md");
+});
+
+test("Saved fades after a moment and an edit brings the status back", async () => {
+  const fake = lists({ open: ["/docs/a.md"] });
+  const app = await bootMainWindow({ instance: 15, disk: { "/docs/a.md": "one\n" }, handlers: fake.handlers });
+  const status = doc(app).getElementById("file-status");
+  assert.equal(status.textContent, "Saved");
+  assert.ok(!status.classList.contains("settled"));
+  await app.until(() => status.classList.contains("settled"), 4000);
+  assert.ok(status.classList.contains("settled"));
+  typeAt(app, 0, "x");
+  assert.match(status.textContent, /^Saving…/);
+  assert.ok(!status.classList.contains("settled"));
+  await app.settle(700);
+  assert.equal(status.textContent, "Saved");
+  assert.ok(!status.classList.contains("settled"));
+});
+
+test("switching files restarts the fade", async () => {
+  const fake = lists({ open: ["/docs/a.md", "/docs/b.md"] });
+  const app = await bootMainWindow({
+    instance: 16,
+    disk: { "/docs/a.md": "one\n", "/docs/b.md": "two\n" },
+    handlers: fake.handlers
+  });
+  const status = doc(app).getElementById("file-status");
+  await app.until(() => status.classList.contains("settled"), 4000);
+  const names = [...doc(app).querySelectorAll(".open-file-name")];
+  const other = names.find((item) => !item.closest(".open-file-item").classList.contains("active"));
+  other.click();
+  await app.settle();
+  assert.equal(status.textContent, "Saved");
+  assert.ok(!status.classList.contains("settled"));
+});
+
+test("the hidden path text follows the active file", async () => {
+  const fake = lists({ open: ["/docs/a.md", "/docs/b.md"] });
+  const app = await bootMainWindow({
+    instance: 40,
+    disk: { "/docs/a.md": "one\n", "/docs/b.md": "two\n" },
+    handlers: fake.handlers
+  });
+  const path = doc(app).getElementById("file-status-path");
+  const active = () => doc(app).getElementById("main-title").textContent;
+  const first = active();
+  assert.equal(path.textContent, `/docs/${first}`);
+  const other = [...doc(app).querySelectorAll(".open-file-name")].find((item) => !item.closest(".open-file-item").classList.contains("active"));
+  other.click();
+  await app.settle();
+  assert.notEqual(active(), first);
+  assert.equal(path.textContent, `/docs/${active()}`);
 });
 
 test("a file open in another window is not reported as an error here", async () => {
@@ -89,7 +143,7 @@ test("the open list carries the active file", async () => {
 test("a file handed over before the page started is shown", async () => {
   const fake = lists();
   const app = await bootMainWindow({
-    instance: 15,
+    instance: 43,
     disk: { "/docs/plan.md": "# Plan\n" },
     handlers: { ...fake.handlers, file_take_pending: () => [{ path: "/docs/plan.md", view: null }] }
   });
@@ -338,6 +392,95 @@ test("a file without headings or hunks shows no outline and no review count", as
   const app = await bootMainWindow({ instance: 12, disk: { "/docs/plain.md": "just text\n" }, handlers: fake.handlers });
   assert.equal(doc(app).getElementById("outline-section").hidden, true);
   assert.equal(doc(app).getElementById("review-progress").hidden, true);
+});
+
+const BOOK_TEXT = "# Book\n\nIntro\n\n## Engine\n\nBody\n\n## Notes\n\nDeep\n";
+
+test("the outline marks the section in view in Reading mode", async () => {
+  const fake = lists({ open: ["/docs/book.md"] });
+  let scrolls = 0;
+  const app = await bootMainWindow({
+    instance: 41,
+    disk: { "/docs/book.md": BOOK_TEXT },
+    beforeBoot: (dom) => {
+      dom.window.marked = marked;
+      dom.window.HTMLElement.prototype.scrollIntoView = () => { scrolls += 1; };
+    },
+    handlers: fake.handlers
+  });
+  const page = doc(app);
+  app.click("mode-reading");
+  const preview = page.getElementById("markdown-preview");
+  const rect = (top) => () => ({ top, bottom: top });
+  preview.getBoundingClientRect = rect(0);
+  const place = (book, engine, notes) => {
+    page.querySelector("#markdown-preview [data-anchor=book]").getBoundingClientRect = rect(book);
+    page.querySelector("#markdown-preview [data-anchor=engine]").getBoundingClientRect = rect(engine);
+    page.querySelector("#markdown-preview [data-anchor=notes]").getBoundingClientRect = rect(notes);
+  };
+  const current = () => page.querySelector(".outline-item.current");
+  place(-300, -20, 400);
+  const before = scrolls;
+  preview.dispatchEvent(new app.dom.window.Event("scroll"));
+  assert.equal(current().dataset.outlineId, "engine");
+  assert.equal(current().querySelector(".outline-link").getAttribute("aria-current"), "location");
+  assert.equal(scrolls, before + 1);
+  place(-300, -20, -5);
+  preview.dispatchEvent(new app.dom.window.Event("scroll"));
+  assert.equal(current().dataset.outlineId, "notes");
+  const after = scrolls;
+  preview.dispatchEvent(new app.dom.window.Event("scroll"));
+  assert.equal(scrolls, after, "an unchanged section does not scroll the sidebar");
+});
+
+test("the outline mark follows Live scrolling and survives a re-render", async () => {
+  const fake = lists({ open: ["/docs/book.md"] });
+  let scrolls = 0;
+  const app = await bootMainWindow({
+    instance: 42,
+    disk: { "/docs/book.md": BOOK_TEXT },
+    beforeBoot: (dom) => {
+      dom.window.marked = marked;
+      dom.window.HTMLElement.prototype.scrollIntoView = () => { scrolls += 1; };
+    },
+    handlers: fake.handlers
+  });
+  const page = doc(app);
+  const view = app.editor();
+  view.lineBlockAtHeight = () => ({ from: BOOK_TEXT.indexOf("## Notes") });
+  view.scrollDOM.dispatchEvent(new app.dom.window.Event("scroll"));
+  const current = () => page.querySelector(".outline-item.current");
+  assert.equal(current().dataset.outlineId, "notes");
+  const before = scrolls;
+  typeAt(app, BOOK_TEXT.length, "x");
+  await app.settle(250);
+  assert.equal(current().dataset.outlineId, "notes");
+  assert.equal(scrolls, before, "a re-render does not scroll the sidebar");
+});
+
+test("switching files forgets the marked section", async () => {
+  const fake = lists({ open: ["/docs/a.md", "/docs/b.md"] });
+  let scrolls = 0;
+  const app = await bootMainWindow({
+    instance: 17,
+    disk: { "/docs/a.md": BOOK_TEXT, "/docs/b.md": BOOK_TEXT },
+    beforeBoot: (dom) => {
+      dom.window.marked = marked;
+      dom.window.HTMLElement.prototype.scrollIntoView = () => { scrolls += 1; };
+    },
+    handlers: fake.handlers
+  });
+  const page = doc(app);
+  app.editor().lineBlockAtHeight = () => ({ from: BOOK_TEXT.indexOf("## Notes") });
+  app.editor().scrollDOM.dispatchEvent(new app.dom.window.Event("scroll"));
+  assert.equal(page.querySelector(".outline-item.current").dataset.outlineId, "notes");
+  const before = scrolls;
+  const other = [...page.querySelectorAll(".open-file-name")]
+    .find((item) => !item.closest(".open-file-item").classList.contains("active"));
+  other.click();
+  await app.settle();
+  assert.equal(page.querySelector(".outline-item.current").dataset.outlineId, "notes");
+  assert.ok(scrolls > before, "the sidebar follows the new file's current row");
 });
 
 test("Save As onto the file's own path right after typing keeps every change", async () => {

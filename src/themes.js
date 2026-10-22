@@ -4,9 +4,10 @@
 // a page with the picker markup (the main window) can change it. Every element
 // is looked up by id and may be missing.
 
-import { ACTIVE_TEXT_PROPERTIES, DERIVED_THEME_PROPERTIES, deriveThemeSurfaceColors, isValidColor } from "./theme-colors.js";
+import { ACTIVE_TEXT_PROPERTIES, DERIVED_THEME_PROPERTIES, THEME_SLOTS, deriveDocumentColors, deriveThemeSurfaceColors, ensureContrast, isValidColor, toHex } from "./theme-colors.js";
 import { createCssColorResolver, createOpaqueColorParser, isColorDark } from "./css-color.js";
 import { PRESET_THEMES } from "./preset-themes.js";
+import { normalizeFontValue } from "./document-fonts.js";
 import { escapeHTML } from "./syntax-highlighting.js";
 
 export const THEME_STORAGE_KEYS = ["sodilaud_active_theme", "sodilaud_custom_themes", "color-scheme"];
@@ -174,7 +175,7 @@ export function createThemes({ document, storage, invoke, onApplied = () => {}, 
     root.style.setProperty("--preview-text", theme.foreground);
     root.style.setProperty("--bg-sidebar", theme.sidebar || theme.background);
     root.style.setProperty("--sidebar-bg", theme.sidebar || theme.background);
-    root.style.setProperty("--statusbar-bg", theme.sidebar || theme.background);
+    root.style.setProperty("--statusbar-bg", theme.uiStyle ? theme.sidebar || theme.background : theme.background);
     root.style.setProperty("--topbar-bg", theme.sidebar || theme.background);
     root.style.setProperty("--dropdown-bg", theme.sidebar || theme.background);
     root.style.setProperty("--border-color", theme.border || "rgba(128,128,128,0.2)");
@@ -190,6 +191,17 @@ export function createThemes({ document, storage, invoke, onApplied = () => {}, 
     // aren't parseable keep the plain values set above.
     const derived = deriveThemeSurfaceColors(theme, parseOpaqueThemeColor) || {};
     Object.entries(derived).forEach(([prop, value]) => root.style.setProperty(prop, value));
+    Object.entries(deriveDocumentColors(theme, parseOpaqueThemeColor))
+      .forEach(([prop, value]) => root.style.setProperty(prop, value));
+
+    if (isValidColor(theme.mutedText)) {
+      const background = parseOpaqueThemeColor(theme.background);
+      const sidebar = parseOpaqueThemeColor(theme.sidebar) || background;
+      const muted = parseOpaqueThemeColor(theme.mutedText);
+      root.style.setProperty("--text-muted", background && muted
+        ? toHex(ensureContrast(muted, [background, sidebar], 4.5))
+        : theme.mutedText.trim());
+    }
 
     // The active row rebinds its text to the on-active tones whether or not we
     // could measure them, so anything left underived is pinned to the theme's own
@@ -222,6 +234,33 @@ export function createThemes({ document, storage, invoke, onApplied = () => {}, 
     delete root.dataset.themeStyle;
   }
 
+  function pickSlots(source, isKv) {
+    const slots = {};
+    for (const slot of Object.keys(THEME_SLOTS)) {
+      const value = isKv
+        ? source[slot.toLowerCase()] ?? source[slot.replace(/[A-Z]/g, c => `_${c.toLowerCase()}`)]
+        : source[slot];
+      if (isValidColor(value)) slots[slot] = value.trim();
+    }
+    return slots;
+  }
+
+  const FONT_THEME_KEYS = { body: "fontBody", heading: "fontHeading", code: "fontCode" };
+
+  // Font suggestions go through the same validation as a typed font name, so an
+  // imported theme cannot put CSS text into a font stack.
+  function pickFonts(source, isKv) {
+    const fonts = {};
+    for (const [slot, key] of Object.entries(FONT_THEME_KEYS)) {
+      const value = isKv
+        ? source[key.toLowerCase()] ?? source[key.replace(/[A-Z]/g, c => `_${c.toLowerCase()}`)]
+        : source[key];
+      const font = normalizeFontValue(value, slot);
+      if (font) fonts[key] = font;
+    }
+    return fonts;
+  }
+
   function normalizeCustomTheme(theme, index = 0) {
     if (!theme || typeof theme !== "object") return null;
     if (!isValidColor(theme.background) || !isValidColor(theme.foreground)) return null;
@@ -235,6 +274,8 @@ export function createThemes({ document, storage, invoke, onApplied = () => {}, 
       accent: isValidColor(theme.accent) ? theme.accent.trim() : "#3b82f6",
       border: isValidColor(theme.border) ? theme.border.trim() : "rgba(128,128,128,0.2)",
       selection: isValidColor(theme.selection) ? theme.selection.trim() : "rgba(59,130,246,0.2)",
+      ...pickSlots(theme, false),
+      ...pickFonts(theme, false),
       isCustom: true
     };
   }
@@ -427,6 +468,8 @@ export function createThemes({ document, storage, invoke, onApplied = () => {}, 
           accent: isValidColor(accent) ? accent : "#3b82f6",
           border: isValidColor(border) ? border : "rgba(128,128,128,0.2)",
           selection: isValidColor(sel) ? sel : "rgba(59,130,246,0.2)",
+          ...pickSlots(colors, false),
+          ...pickFonts(colors, false),
           isCustom: true
         }
       };
@@ -473,6 +516,8 @@ export function createThemes({ document, storage, invoke, onApplied = () => {}, 
           accent: isValidColor(accent) ? accent : "#3b82f6",
           border: isValidColor(border) ? border : "rgba(128,128,128,0.2)",
           selection: isValidColor(sel) ? sel : "rgba(59,130,246,0.2)",
+          ...pickSlots(kv, true),
+          ...pickFonts(kv, true),
           isCustom: true
         }
       };
@@ -498,6 +543,12 @@ export function createThemes({ document, storage, invoke, onApplied = () => {}, 
       border: active.border,
       selection: active.selection
     };
+    for (const slot of Object.keys(THEME_SLOTS)) {
+      if (active[slot]) exportData[slot] = active[slot];
+    }
+    for (const key of Object.values(FONT_THEME_KEYS)) {
+      if (active[key]) exportData[key] = active[key];
+    }
 
     const jsonStr = JSON.stringify(exportData, null, 2);
     const blob = new Blob([jsonStr], { type: "application/json" });
@@ -533,6 +584,7 @@ export function createThemes({ document, storage, invoke, onApplied = () => {}, 
     closeModal: closeThemeModal,
     isModalOpen: () => isThemeModalOpen,
     modal: themeModal,
-    activeThemeId: () => activeThemeId
+    activeThemeId: () => activeThemeId,
+    activeTheme: () => [...PRESET_THEMES, ...customThemes].find(theme => theme.id === activeThemeId)
   };
 }

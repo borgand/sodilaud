@@ -52,14 +52,16 @@ export function hunkFenceAt(state, pos) {
   return reviewHunkFences(state).find(found => state.doc.lineAt(found.from).number === line.number) ?? null;
 }
 
-/**
- * Finds a hunk by id, or by its position among review hunks when it has no
- * valid id, and returns the change that sets its reviewed mark.
- */
-export function reviewedChange(state, { hunk = null, index = -1 } = {}, reviewed) {
+/** A hunk by id, or by its position among review hunks when it has no valid id. */
+export function findHunkFence(state, { hunk = null, index = -1 } = {}) {
   const fences = reviewHunkFences(state);
-  const target = hunk ? fences.find(found => found.meta.hunk === hunk) : fences[index];
-  return target ? fenceReviewedChange(target, reviewed) : null;
+  return (hunk ? fences.find(found => found.meta.hunk === hunk) : fences[index]) ?? null;
+}
+
+/** The change that sets the reviewed mark of the hunk findHunkFence finds. */
+export function reviewedChange(state, target = {}, reviewed) {
+  const found = findHunkFence(state, target);
+  return found ? fenceReviewedChange(found, reviewed) : null;
 }
 
 function fenceReviewedChange(found, reviewed) {

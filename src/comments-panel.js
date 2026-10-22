@@ -2,7 +2,7 @@
 
 import { getSyncedVersion } from "./vendor/codemirror.js";
 import { isMacLikePlatform } from "./platform-labels.js";
-import { flashChanges, fromConfirmed, setActiveComment, setComments, shownComments, startComment, toConfirmed } from "./editor-comments.js";
+import { flashChanges, fromConfirmed, setActiveComment, setComments, shownComments, startComment as startSelectedComment, toConfirmed } from "./editor-comments.js";
 
 // The comments of the document an editor shows: the status-bar count, the
 // drawer listing them, and keeping each editor's ranges in step with Rust.
@@ -61,8 +61,9 @@ export function countLabel(all) {
  * @param {() => {view: object, doc: object} | null} options.active the editor the drawer follows
  * @param {() => Promise<unknown>} options.flush sends unsent typing
  * @param {(message: string) => void} [options.notify]
+ * @param {(view: object) => boolean} [options.startComment] opens a composer on the selection
  */
-export function createComments({ document, invoke, root, countButton, editors, active, flush, notify = () => {} }) {
+export function createComments({ document, invoke, root, countButton, editors, active, flush, notify = () => {}, startComment = startSelectedComment }) {
   const latest = new Map();
   const asking = new Set();
   let coedit = { holdForReview: false, listening: false };
@@ -344,7 +345,9 @@ export function createComments({ document, invoke, root, countButton, editors, a
     const editor = active();
     const event = editor ? latest.get(docKey(editor.doc)) : null;
     const all = event?.comments ?? [];
-    countButton.hidden = !editor;
+    const hideCount = !editor || (all.length === 0 && !open && !coedit.listening);
+    if (hideCount && document.activeElement === countButton) editor?.view.focus();
+    countButton.hidden = hideCount;
     countButton.textContent = countLabel(all);
     countButton.classList.toggle("listening", coedit.listening);
     countButton.title = coedit.listening ? "Comments. An agent is listening for them." : "Comments";

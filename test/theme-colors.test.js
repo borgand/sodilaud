@@ -7,8 +7,11 @@ import { PRESET_THEMES } from "../src/preset-themes.js";
 import {
   ACTIVE_TEXT_PROPERTIES,
   DERIVED_THEME_PROPERTIES,
+  DOCUMENT_THEME_PROPERTIES,
   contrastRatio,
+  deriveDocumentColors,
   deriveThemeSurfaceColors,
+  THEME_SLOTS,
   ensureContrast,
   mix,
   parseColor,
@@ -167,7 +170,7 @@ test("a translucent background or foreground makes the whole theme unmeasurable"
 });
 
 test("DERIVED_THEME_PROPERTIES covers everything a derivation can return", () => {
-  const full = deriveThemeSurfaceColors(PRESET_THEMES[0]);
+  const full = { ...deriveThemeSurfaceColors(PRESET_THEMES[0]), ...deriveDocumentColors(PRESET_THEMES[0]) };
   assert.deepEqual(Object.keys(full).sort(), [...DERIVED_THEME_PROPERTIES].sort());
 
   // Partial derivations must stay a subset, or callers clearing the list would
@@ -195,4 +198,51 @@ test("every active-row tone is one of the derived properties", () => {
     selection: "rgb(31 111 235)"
   });
   assert.deepEqual(ACTIVE_TEXT_PROPERTIES.filter(property => property in partial), []);
+});
+
+test("deriveDocumentColors returns every document property for every preset", () => {
+  for (const theme of PRESET_THEMES) {
+    const colors = deriveDocumentColors(theme);
+    assert.deepEqual(Object.keys(colors).sort(), [...DOCUMENT_THEME_PROPERTIES].sort(), theme.id);
+  }
+});
+
+test("document text colours clear 4.5:1 on the surfaces they sit on", () => {
+  for (const theme of PRESET_THEMES) {
+    const c = deriveDocumentColors(theme);
+    assert.ok(ratio(c["--preview-heading"], theme.background) >= 4.5, theme.id);
+    assert.ok(ratio(c["--preview-link"], c["--preview-quote-bg"]) >= 4.5, theme.id);
+    assert.ok(ratio(c["--preview-quote-text"], c["--preview-quote-bg"]) >= 4.5, theme.id);
+    for (const k of ["--syntax-muted", "--syntax-code", "--syntax-string", "--syntax-number", "--syntax-danger"])
+      assert.ok(ratio(c[k], c["--preview-code-bg"]) >= 4.5, `${theme.id} ${k}`);
+  }
+});
+
+test("rules are visible but soft and code blocks sit just off the page", () => {
+  for (const theme of PRESET_THEMES) {
+    const c = deriveDocumentColors(theme);
+    const hr = ratio(c["--preview-hr"], theme.background);
+    assert.ok(hr >= 1.5 && hr <= 3, `${theme.id} hr ${hr}`);
+    const code = ratio(c["--preview-code-bg"], theme.background);
+    assert.ok(code > 1 && code < 1.3, `${theme.id} code ${code}`);
+    assert.ok(ratio(c["--preview-table-border"], theme.background) >= 1.3, theme.id);
+  }
+});
+
+test("an unmeasurable theme gets color-mix values, not nothing", () => {
+  const c = deriveDocumentColors({ background: "rgba(10,10,10,0.9)", foreground: "#eeeeee", accent: "#ff8800" });
+  for (const p of DOCUMENT_THEME_PROPERTIES) assert.match(c[p], /^(#|color-mix\()/, p);
+});
+
+test("deriveDocumentColors has nothing to derive without a theme", () => {
+  assert.equal(deriveDocumentColors(null), null);
+});
+
+test("Executive's slots land in the derived document colours", () => {
+  const executive = PRESET_THEMES.find(theme => theme.id === "executive");
+  const colors = deriveDocumentColors(executive);
+  for (const [slot, prop] of Object.entries(THEME_SLOTS)) {
+    if (!executive[slot] || slot === "mutedText") continue;
+    assert.equal(colors[prop], executive[slot], slot);
+  }
 });

@@ -244,7 +244,7 @@ likely use the local server MCP already runs.
 
 ## 9. Comments on tables and in Reading mode
 
-Status: not started
+Status: done, to ship in the next release (spec [`2026-10-18-table-reading-comments-design.md`](docs/superpowers/specs/2026-10-18-table-reading-comments-design.md))
 
 Seen 2026-10-07 while reviewing a document with the co-edit comments (item 5). Comments work
 on prose but fail around tables:
@@ -310,7 +310,7 @@ that writes a `reviewed` token into the fence, a collapse toggle, and a per-line
 button. Export emits a plain highlighted diff.
 
 As built: clicking a line number comments on that line's code, without its `+`, `-` or
-indent, and works in Live mode only until item 9. An `elided` hunk shows a note instead of
+indent, in Live and Reading mode. An `elided` hunk shows a note instead of
 its body. Copy as HTML emits a `figure` with the path as caption.
 
 Depends on: 11.
@@ -339,7 +339,29 @@ Quick Notes has neither yet.
 
 Depends on: 12.
 
-## 15. Multiple main windows
+## 15. Document styling
+
+Status: done, to ship in the next release (#54, #55, #56, #57, #58) (spec [docs/superpowers/specs/2026-10-18-document-styling-design.md](docs/superpowers/specs/2026-10-18-document-styling-design.md))
+
+The document takes code, table, rule, quote, heading and link colors from the active theme, themes can set those colors and body, heading and code fonts, and Executive is retuned to use them. Headings get a scale with rules under H1 and H2, and Appearance gains paragraph spacing, a readable column width and font settings, with IBM Plex Serif and IBM Plex Mono bundled.
+
+## 16. Quieter chrome
+
+Status: partly done, to ship in the next release (#59) (spec [docs/superpowers/specs/2026-10-18-quieter-chrome-design.md](docs/superpowers/specs/2026-10-18-quieter-chrome-design.md))
+
+The outline wraps long headings with larger rows and deeper indents and marks the section in view, the active file gets a thin accent bar, "Saved" fades and the path moves to a hover tooltip, the comment count hides when there is nothing to show, and the status bar and line-number gutter take the page tone.
+
+Not done, needs a decision:
+
+- Merge title bar and toolbar: needs a frameless or overlay title bar that differs per platform.
+- Floating formatting pill: a second toolbar mode is a product choice, not a restyle.
+- Open Files and Outline as tabs: `feat/multi-window` is reworking the open-files list.
+- Focus mode hiding the status bar: the main window has no focus mode yet.
+- Line-number numbering in Live mode: each option changes what the setting means.
+- Soft line breaks reported as inconsistent: not reproduced, needs a sample.
+- Smaller "MCP listening" indicator: already shown only while agent access is on, and the security audit relies on it.
+
+## 17. Multiple main windows
 
 Status: done (spec
 [`docs/superpowers/specs/2026-10-18-multi-window-design.md`](docs/superpowers/specs/2026-10-18-multi-window-design.md))

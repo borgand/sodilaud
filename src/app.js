@@ -7,6 +7,7 @@ import { CLIPBOARD_SETTINGS_KEY, acceleratorFromKeyEvent, formatAccelerator, isM
 import { setupClipboardHistory, syncClipboardPopupTheme } from "./clipboard-settings-ui.js";
 import { createThemes } from "./themes.js";
 import { createAppearance } from "./appearance.js";
+import { createDocumentFonts } from "./document-fonts.js";
 import { broadcastPreference, onPreferenceChange } from "./preferences.js";
 import { listenHere } from "./window-events.js";
 import { trapModalFocus } from "./modal-focus.js";
@@ -60,11 +61,19 @@ const appearance = createAppearance({
   onSyntaxHighlighting: (enabled) => fileEditor?.setSyntaxHighlighting(enabled)
 });
 const mermaid = createMermaidRenderer({ document });
+const fonts = createDocumentFonts({
+  document,
+  storage: localStorage,
+  broadcast: (key) => broadcastPreference(window, key),
+  themeFonts: () => themes.activeTheme(),
+  onApplied: () => mermaid.setTheme(themeVariablesFrom(document))
+});
 const themes = createThemes({
   document,
   storage: localStorage,
   invoke,
   onApplied: () => {
+    fonts.apply();
     syncClipboardPopupTheme({ document, invoke, isMac: isMac && Boolean(window.__TAURI__) });
     mermaid.setTheme(themeVariablesFrom(document));
   },
@@ -290,6 +299,7 @@ function handleLinkClick(event) {
 // ----------------------------------------------------
 function followPreferenceChange(key) {
   if (appearance.reload(key)) return;
+  if (fonts.reload(key)) return;
   if (key === CLIPBOARD_SETTINGS_KEY) {
     clipboard?.reload();
     return;
@@ -559,6 +569,7 @@ async function startApp() {
   attachListeners();
   themes.load();
   appearance.load();
+  fonts.load();
   await registerNativeHandlers();
   await onPreferenceChange(window, followPreferenceChange);
   try {
