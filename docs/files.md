@@ -1,7 +1,7 @@
 # Editing files
 
-The main Sodilaud window edits Markdown and plain-text files on disk: `.md`, `.markdown` and
-`.txt`. It uses the same editor as Quick Notes (Live, Source and Reading modes, the formatting
+Main Sodilaud windows edit Markdown and plain-text files on disk: `.md`, `.markdown` and
+`.txt`. They use the same editor as Quick Notes (Live, Source and Reading modes, the formatting
 toolbar, and the smart editing keys), but files and notes never mix: files do not appear in
 Quick Notes, in search or in trash, and notes do not appear here. An agent can read or edit
 a file only while it is open here, and only with the co-editing permissions on (see
@@ -37,7 +37,7 @@ sodilaud notes.md
 sodilaud README.md docs/plan.md
 ```
 
-It starts Sodilaud if it is not running, opens the files in the main window, and returns at
+It starts Sodilaud if it is not running, opens the files in the window you used last, and returns at
 once. Relative paths are taken from the terminal's current folder. A file that does not exist
 yet is created empty, but only in a folder that exists. Only `.md`, `.markdown` and `.txt`
 files are accepted; anything else is refused with a message and nothing is opened.
@@ -57,6 +57,25 @@ Each file keeps its own undo history while it is open. The files that were open 
 reopen at the next launch.
 
 The status bar shows the save state ("Saved" fades after a moment) and, on hover, the file's path.
+
+## Windows
+
+**File → New Window** (`Cmd+Alt+N`, `Ctrl+Alt+N` on Windows and Linux) opens another main
+window, the same size as the current one and a little down and to the right. Each open file
+belongs to one window, so a review book can stay in one window while you work in another.
+
+To move a file, right-click it in the open files list (or press the Menu key, or `Shift+F10`)
+and choose **Move to New Window**, or **Move to Window** and then a window. A file that has not
+been saved yet must be saved first. Unsaved edits, comments, the cursor, the scroll position
+and folded sections move with the file. The undo history does not.
+
+Files opened from Finder, the `sodilaud` command or an agent open in the window you used last.
+A file that is already open in another window is not opened twice: that window comes to the
+front instead.
+
+Closing a window saves its files and closes them; a file with a name that cannot be saved, or
+an unsaved new file you do not discard, keeps the window open. Closing the last window works as
+before. After a restart the windows come back with their files and positions.
 
 ## Saving
 
@@ -108,7 +127,7 @@ Sodilaud's own saves are recognized and never reported as outside changes.
 
 ## Access and privacy
 
-The main window can read and write only the files you chose: through the Open or Save dialog,
+A main window can read and write only the files you chose: through the Open or Save dialog,
 through Finder or a launch argument, or in an earlier session (the open and recent lists, kept
 in `files.json` in the app's config directory, readable only by you). Every file command
 checks the path, after resolving `..` and symbolic links, against those choices, so the page

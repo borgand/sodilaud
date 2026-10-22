@@ -16,6 +16,7 @@ mod docs;
 mod files;
 mod hook;
 mod integration;
+mod main_window;
 mod mcp;
 mod mcp_config;
 mod platform;
@@ -348,11 +349,8 @@ fn handle_macos_menu_event(app: &AppHandle<Wry>, event: tauri::menu::MenuEvent) 
         return;
     }
 
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.unminimize();
-        let _ = window.show();
-        let _ = window.set_focus();
-        if let Err(error) = window.emit(OPEN_ABOUT_EVENT, ()) {
+    if let Some(label) = main_window::show_target(app) {
+        if let Err(error) = app.emit_to(label.as_str(), OPEN_ABOUT_EVENT, ()) {
             eprintln!("Could not open the Sodilaud About panel: {error}");
         }
     }
@@ -362,16 +360,17 @@ fn on_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
     #[cfg(target_os = "macos")]
     clipboard::popup::on_window_event(window, event);
     quicknotes::window::on_window_event(window, event);
-    if window.label() == quicknotes::window::MAIN_LABEL {
-        if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-            // The main window is never destroyed: closing it hides it (macOS keeps
-            // running in the tray) or quits after every window has saved.
-            api.prevent_close();
-            #[cfg(target_os = "macos")]
-            clipboard::tray::hide_main(window.app_handle());
-            #[cfg(not(target_os = "macos"))]
-            quit::request(window.app_handle());
+    let label = window.label();
+    if !files::windows::is_main_label(label) {
+        return;
+    }
+    if let tauri::WindowEvent::Focused(true) = event {
+        if let Some(files) = window.try_state::<files::Files>() {
+            files.update(|lists| lists.windows.focused(label));
         }
+    }
+    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+        main_window::on_close_requested(window, api);
     }
 }
 
@@ -481,7 +480,11 @@ pub fn run(context: tauri::Context<tauri::Wry>) {
             files::commands::file_doc_pull,
             files::commands::file_doc_close,
             files::commands::file_doc_save,
-            files::commands::file_doc_resolve
+            files::commands::file_doc_resolve,
+            main_window::main_window_new,
+            main_window::main_window_move_file,
+            main_window::main_window_list,
+            main_window::main_window_close_done
         ])
         .setup(|app| {
             #[cfg(target_os = "macos")]
@@ -520,7 +523,9 @@ pub fn run(context: tauri::Context<tauri::Wry>) {
                 clipboard::popup::destroy(app);
             }
             #[cfg(target_os = "macos")]
-            tauri::RunEvent::Reopen { .. } => clipboard::tray::show_main(app),
+            tauri::RunEvent::Reopen { .. } => {
+                main_window::show_target(app);
+            }
             // Finder's "Open With" and double-clicks, at launch or later.
             #[cfg(target_os = "macos")]
             tauri::RunEvent::Opened { urls } => files::open_from_system(

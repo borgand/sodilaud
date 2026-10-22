@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import {
-  DEFAULT_CLIPBOARD_SETTINGS, acceleratorFromKeyEvent, formatAccelerator,
+  CLIPBOARD_SETTINGS_KEY, DEFAULT_CLIPBOARD_SETTINGS, acceleratorFromKeyEvent, formatAccelerator,
   loadClipboardSettings, normalizeClipboardSettings, saveClipboardSettings
 } from "./clipboard-settings.js";
 import { createCssColorResolver } from "./css-color.js";
@@ -76,7 +76,9 @@ export async function syncClipboardPopupTheme({ document, invoke, isMac } = {}) 
   }
 }
 
-export async function setupClipboardHistory({ document, invoke, listen, storage, notify, isMac }) {
+// `broadcast(key)` tells the other main windows the stored settings changed;
+// they call `reload()`, which shows them without applying them again.
+export async function setupClipboardHistory({ document, invoke, listen, broadcast, storage, notify, isMac }) {
   if (!isMac) return;
   const $ = (id) => document.getElementById(id);
   $("clipboard-history-menu-section").hidden = false;
@@ -137,9 +139,15 @@ export async function setupClipboardHistory({ document, invoke, listen, storage,
     }
     try {
       saveClipboardSettings(storage, settings);
+      broadcast?.(CLIPBOARD_SETTINGS_KEY);
     } catch {
       // Storage can be full; the settings still apply for this session.
     }
+    render();
+  }
+
+  function reload() {
+    settings = loadClipboardSettings(storage);
     render();
   }
 
@@ -190,4 +198,5 @@ export async function setupClipboardHistory({ document, invoke, listen, storage,
 
   await apply(settings);
   await syncClipboardPopupTheme({ document, invoke, isMac });
+  return { reload };
 }

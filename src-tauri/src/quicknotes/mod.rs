@@ -113,18 +113,18 @@ pub fn refresh_tray(app: &AppHandle) {
     let _ = app;
 }
 
-/// Shows the windows that were showing at the last quit. The first launch, or a
-/// quit with both hidden, shows the main window so a launch always shows something.
+/// Restores every main window and shows the windows that were showing at the
+/// last quit. The first launch, or a quit with all hidden, shows the main
+/// windows so a launch always shows something.
 pub fn restore_windows(app: &AppHandle) {
     let saved = app.state::<QuickNotes>().config().windows_at_quit;
     let (main, panel) = startup_windows(saved);
     if panel {
         window::show(app, None);
     }
-    if main {
-        window::show_main(app, None);
-    } else {
-        #[cfg(target_os = "macos")]
+    crate::main_window::restore(app, main);
+    #[cfg(target_os = "macos")]
+    if !main {
         crate::clipboard::tray::hide_main(app);
     }
 }

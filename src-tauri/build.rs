@@ -75,6 +75,10 @@ fn main() {
             "file_doc_close",
             "file_doc_save",
             "file_doc_resolve",
+            "main_window_new",
+            "main_window_move_file",
+            "main_window_list",
+            "main_window_close_done",
         ]),
     ))
     .expect("failed to run tauri-build");

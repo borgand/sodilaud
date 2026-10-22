@@ -3,12 +3,13 @@
 // The main window: the start page, the Sodilaud menu and the file editor. Notes
 // live in the Quick Notes panel (notes.html), which owns their storage.
 
-import { acceleratorFromKeyEvent, formatAccelerator, isMacPlatform } from "./clipboard-settings.js";
+import { CLIPBOARD_SETTINGS_KEY, acceleratorFromKeyEvent, formatAccelerator, isMacPlatform } from "./clipboard-settings.js";
 import { setupClipboardHistory, syncClipboardPopupTheme } from "./clipboard-settings-ui.js";
 import { createThemes } from "./themes.js";
 import { createAppearance } from "./appearance.js";
 import { createDocumentFonts } from "./document-fonts.js";
 import { broadcastPreference, onPreferenceChange } from "./preferences.js";
+import { listenHere } from "./window-events.js";
 import { trapModalFocus } from "./modal-focus.js";
 import { applyPlatformShortcutLabels } from "./platform-labels.js";
 import { resolveLinkAction } from "./markdown.js";
@@ -166,6 +167,8 @@ function acceptQuickNotesStatus(status) {
   renderQuickNotes();
 }
 
+const QUICK_NOTES_HOTKEY_KEY = "sodilaud_quicknotes_hotkey";
+
 async function loadQuickNotesConfig() {
   try {
     acceptQuickNotesStatus(await invoke("qn_get_config"));
@@ -178,6 +181,7 @@ async function loadQuickNotesConfig() {
 async function setQuickNotesHotkey(hotkey) {
   try {
     acceptQuickNotesStatus(await invoke("qn_set_hotkey", { hotkey }));
+    broadcastPreference(window, QUICK_NOTES_HOTKEY_KEY);
   } catch (error) {
     console.error("Could not change the Quick Notes hotkey", error);
     hotkeyStatus.textContent = "Could not change the hotkey.";
@@ -296,6 +300,14 @@ function handleLinkClick(event) {
 function followPreferenceChange(key) {
   if (appearance.reload(key)) return;
   if (fonts.reload(key)) return;
+  if (key === CLIPBOARD_SETTINGS_KEY) {
+    clipboard?.reload();
+    return;
+  }
+  if (key === QUICK_NOTES_HOTKEY_KEY) {
+    loadQuickNotesConfig();
+    return;
+  }
   if (key === "sodilaud_layout_mode") {
     fileEditor.setLayoutMode(localStorage.getItem(key), { persist: false });
     return;
@@ -348,6 +360,7 @@ function attachListeners() {
     setQuickNotesHotkey(isMac ? DEFAULT_QUICK_NOTES_HOTKEY_MAC : DEFAULT_QUICK_NOTES_HOTKEY_OTHER);
   });
   $("open-quicknotes-menu-btn").addEventListener("click", closeMenuThen(() => showQuickNotes()));
+  $("menu-new-window-btn").addEventListener("click", closeMenuThen(openNewWindow));
   // The sodilaud command is a shell script; Windows has no install for it.
   const cliToolBtn = $("menu-cli-tool-btn");
   cliToolBtn.hidden = isWindowsPlatform(navigator);
@@ -417,6 +430,11 @@ function handleKeydown(event) {
     fileEditor.toggleSidebar();
     return;
   }
+  if (isNewWindowShortcut(event)) {
+    event.preventDefault();
+    openNewWindow();
+    return;
+  }
   if (fileEditor.handleShortcut(event)) return;
 
   // Disable browser inspect shortcuts and accidental page reloads.
@@ -459,6 +477,20 @@ function isSidebarShortcut(event) {
   return event.altKey && !event.metaKey && event.key.toLowerCase() === "s";
 }
 
+// Cmd+Alt+N on macOS, Ctrl+Alt+N elsewhere. Cmd+Shift+N is the Quick Notes
+// hotkey. Option+N is a dead key on macOS, so the physical key is matched.
+function isNewWindowShortcut(event) {
+  if (event.code !== "KeyN" || !event.altKey || event.shiftKey) return false;
+  if (event.getModifierState?.("AltGraph")) return false;
+  return isMacLikePlatform(navigator)
+    ? event.metaKey && !event.ctrlKey
+    : event.ctrlKey && !event.metaKey;
+}
+
+function openNewWindow() {
+  invoke("main_window_new").catch(() => showNotification("Could not open a new window"));
+}
+
 // Rust waits for this window's answer before quitting: every open file is
 // saved first, and an unsaved new file is asked about.
 async function registerQuitHandler(listen) {
@@ -478,12 +510,36 @@ async function registerQuitHandler(listen) {
       console.error("Failed to quit Sodilaud", error);
     });
   });
+  await registerCloseHandler(listen);
   await invoke("quit_handler_ready");
 }
 
+// Rust asks before closing a window that is not the last one, once this page
+// can answer (`quit_handler_ready`): the window closes once its files are saved.
+async function registerCloseHandler(listen) {
+  let closing = false;
+  await listen("main-window-close-requested", async () => {
+    if (closing) return;
+    closing = true;
+    let ok = false;
+    try {
+      ok = await fileEditor.flushForClose();
+    } catch (error) {
+      console.error("Failed to save files before closing the window", error);
+    }
+    try {
+      await invoke("main_window_close_done", { ok });
+    } catch (error) {
+      console.error("Failed to close the window", error);
+    } finally {
+      closing = false;
+    }
+  });
+}
+
 async function registerNativeHandlers() {
-  const listen = window.__TAURI__?.event?.listen;
-  if (typeof listen !== "function") return;
+  if (typeof window.__TAURI__?.event?.listen !== "function") return;
+  const listen = (name, handler) => listenHere(window, name, handler);
   try {
     await registerQuitHandler(listen);
     await listen("sodilaud-open-about", openAboutModal);
@@ -500,6 +556,8 @@ async function registerNativeHandlers() {
   }
 }
 
+let clipboard = null;
+
 async function startApp() {
   applyPlatformShortcutLabels(document, navigator);
   attachListeners();
@@ -509,10 +567,11 @@ async function startApp() {
   await registerNativeHandlers();
   await onPreferenceChange(window, followPreferenceChange);
   try {
-    await setupClipboardHistory({
+    clipboard = await setupClipboardHistory({
       document,
       invoke,
-      listen: window.__TAURI__?.event?.listen,
+      listen: (name, handler) => listenHere(window, name, handler),
+      broadcast: (key) => broadcastPreference(window, key),
       storage: localStorage,
       notify: showNotification,
       isMac: isMac && Boolean(window.__TAURI__)

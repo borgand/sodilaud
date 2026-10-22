@@ -7,7 +7,7 @@ use objc2::rc::Retained;
 use objc2_app_kit::{NSApplicationActivationOptions, NSRunningApplication, NSWorkspace};
 use objc2_foundation::{NSDictionary, NSNumber, NSString};
 use serde::Serialize;
-use tauri::{AppHandle, Emitter};
+use tauri::AppHandle;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 use super::hygiene::{disable_core_dumps, now_ms, silence_clipboard_panics};
@@ -124,7 +124,7 @@ impl ClipboardRuntime {
                 drop(service);
                 let emitter = app.clone();
                 let on_panic = move || {
-                    let _ = emitter.emit_to("main", STOPPED_EVENT, ());
+                    crate::main_window::emit_all(&emitter, STOPPED_EVENT, ());
                 };
                 *lock(&self.watcher) = Some(watcher::spawn(on_panic, self.service.clone()));
                 let handle = app.clone();

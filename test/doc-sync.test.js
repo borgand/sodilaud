@@ -68,3 +68,35 @@ test("a document client keeps local typing through an outside change and reports
     view.destroy();
   } finally { env.cleanup(); }
 });
+
+test("flush with a filter sends only the picked documents", async () => {
+  const env = installEditorDom();
+  try {
+    const { EditorState, EditorView } = await import("../src/vendor/codemirror.js");
+    const { applyUpdatesToText, createDocSync } = await import("../src/doc-sync.js");
+    const server = authority({ "/a.md": "a", "/b.md": "b" }, applyUpdatesToText);
+    const sync = createDocSync({
+      push: server.push,
+      pull: server.pull,
+      same: (doc, event) => doc.path === event.path,
+      isGone: () => false,
+      pushDelay: 1000
+    });
+    const make = (path, text) => new EditorView({
+      state: EditorState.create({ doc: text, extensions: sync.extension({ path }, 0) }),
+      parent: env.document.getElementById("host")
+    });
+    const a = make("/a.md", "a");
+    const b = make("/b.md", "b");
+    a.dispatch({ changes: { from: 1, insert: "1" } });
+    b.dispatch({ changes: { from: 1, insert: "2" } });
+    assert.equal(await sync.flush(doc => doc.path === "/a.md"), true);
+    assert.equal(server.docs.get("/a.md").text, "a1");
+    assert.equal(sync.pending(doc => doc.path === "/b.md"), true);
+    assert.equal(server.docs.get("/b.md").text, "b");
+    assert.equal(await sync.flush(), true);
+    assert.equal(server.docs.get("/b.md").text, "b2");
+    a.destroy();
+    b.destroy();
+  } finally { env.cleanup(); }
+});

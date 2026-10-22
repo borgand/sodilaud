@@ -3,7 +3,7 @@
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
-use tauri::{ActivationPolicy, AppHandle, Manager, Wry};
+use tauri::{AppHandle, Manager, Wry};
 
 use super::layout::tray_glyph;
 use super::popup;
@@ -105,17 +105,9 @@ fn hotkey_label(hotkey: &str) -> String {
 }
 
 pub fn show_main(app: &AppHandle) {
-    let _ = app.set_activation_policy(ActivationPolicy::Regular);
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.unminimize();
-        let _ = window.show();
-        let _ = window.set_focus();
-    }
+    crate::main_window::show_target(app);
 }
 
 pub fn hide_main(app: &AppHandle) {
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.hide();
-    }
-    let _ = app.set_activation_policy(ActivationPolicy::Accessory);
+    crate::main_window::hide_all(app);
 }
