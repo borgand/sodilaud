@@ -179,7 +179,16 @@ test("Reading: the comments count and drawer show", async () => {
   await app.settle();
   app.click("mode-reading");
   await app.settle();
+  assert.equal(doc.getElementById("comments-count-btn").hidden, true, "no comments, no agent: hidden");
+  selectIn(app, doc.querySelector("#markdown-preview p"), "vague");
+  app.click("comment-btn");
+  await app.settle(100);
+  doc.querySelector("#markdown-preview .reading-composer textarea").value = "Note";
+  doc.querySelector("#markdown-preview .cm-comment-add").click();
+  await app.until(() => app.fileDocs.comments(PATH).length === 1);
+  await app.settle();
   assert.equal(doc.getElementById("comments-count-btn").hidden, false);
+  assert.equal(doc.getElementById("comments-panel").hidden, false);
 });
 
 test("Reading: an agent edit while composing keeps the text and focus and moves the tint", async () => {
