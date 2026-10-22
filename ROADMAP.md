@@ -241,7 +241,7 @@ likely use the local server MCP already runs.
 
 ## 9. Comments on tables and in Reading mode
 
-Status: not started
+Status: done, to ship in the next release (spec [`2026-10-18-table-reading-comments-design.md`](docs/superpowers/specs/2026-10-18-table-reading-comments-design.md))
 
 Seen 2026-10-07 while reviewing a document with the co-edit comments (item 5). Comments work
 on prose but fail around tables:
@@ -307,7 +307,7 @@ that writes a `reviewed` token into the fence, a collapse toggle, and a per-line
 button. Export emits a plain highlighted diff.
 
 As built: clicking a line number comments on that line's code, without its `+`, `-` or
-indent, and works in Live mode only until item 9. An `elided` hunk shows a note instead of
+indent, in Live and Reading mode. An `elided` hunk shows a note instead of
 its body. Copy as HTML emits a `figure` with the path as caption.
 
 Depends on: 11.

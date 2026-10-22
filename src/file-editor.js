@@ -34,8 +34,10 @@ import {
 import { normalizeLayoutMode } from "./view-preferences.js";
 import { createDocSync } from "./doc-sync.js";
 import { createFilesModel, isDirty, needsPrompt } from "./files.js";
-import { commentsExtension } from "./editor-comments.js";
+import { commentsExtension, startComment } from "./editor-comments.js";
 import { createComments } from "./comments-panel.js";
+import { createReadingComments, dropStrayComposer } from "./reading-comments.js";
+import { EditorView } from "./vendor/codemirror.js";
 
 const LAYOUT_KEY = "sodilaud_layout_mode";
 // The outline reparses the whole file, so it waits for typing to pause.
@@ -96,6 +98,12 @@ export function createFileEditor({
   let fadeTimer = null;
   const navHistory = createNavHistory();
 
+  const reading = createReadingComments({
+    preview,
+    view: () => editor.view,
+    enabled: () => layoutMode === "reading" && Boolean(model.active()),
+    onShortcut: () => comments.start()
+  });
   const editor = createMarkdownEditor({
     parent: $("editor-host"),
     ariaLabel: "File content",
@@ -110,6 +118,11 @@ export function createFileEditor({
       commentsExtension({
         onSubmit: (view, comment) => comments.submit(view, comment),
         onSelect: id => comments.select(id)
+      }),
+      reading.extension,
+      // The preview's source offsets go stale with any edit, the owner's or a remote one.
+      EditorView.updateListener.of(update => {
+        if (update.docChanged) renderPreview();
       })
     ],
     onChange: handleEditorChange
@@ -153,10 +166,11 @@ export function createFileEditor({
     },
     active: () => {
       const doc = shownDoc();
-      return doc && layoutMode !== "reading" ? { view: editor.view, doc } : null;
+      return doc ? { view: editor.view, doc } : null;
     },
     flush: () => sync.flush(),
-    notify
+    notify,
+    startComment: view => layoutMode === "reading" ? reading.start() : startComment(view)
   });
 
   const unsent = (buffer) => buffer.path !== null && sync.pending((doc) => doc.docId === buffer.docId);
@@ -278,20 +292,23 @@ export function createFileEditor({
 
   function renderPreview() {
     if (layoutMode !== "reading" || !model.active()) return;
-    try {
-      preview.innerHTML = renderMarkdown(editor.getText(), "*Empty file*");
-      const hljs = document.defaultView.hljs;
-      renderHunkWidgets(preview, {
-        hljs: appearance.syntaxHighlighting ? hljs : null,
-        onToggleReviewed: (target, reviewed) => setHunkReviewed(editor.view, target, reviewed)
-      });
-      highlightPreviewCode(preview, hljs, appearance.syntaxHighlighting);
-      mermaid?.renderBlocks(preview);
-      renderReadingFolds();
-    } catch (error) {
-      console.error("Could not render the file", error);
-      preview.textContent = editor.getText();
-    }
+    reading.renderWith(() => {
+      try {
+        preview.innerHTML = renderMarkdown(editor.getText(), "*Empty file*", undefined, { positions: true });
+        const hljs = document.defaultView.hljs;
+        renderHunkWidgets(preview, {
+          hljs: appearance.syntaxHighlighting ? hljs : null,
+          onToggleReviewed: (target, reviewed) => setHunkReviewed(editor.view, target, reviewed),
+          ...reading.hunkOptions()
+        });
+        highlightPreviewCode(preview, hljs, appearance.syntaxHighlighting);
+        mermaid?.renderBlocks(preview);
+        renderReadingFolds();
+      } catch (error) {
+        console.error("Could not render the file", error);
+        preview.textContent = editor.getText();
+      }
+    });
   }
 
   // Reading mode shows the folds Live mode keeps in the editor state.
@@ -408,8 +425,10 @@ export function createFileEditor({
         previous.scroll = editor.scrollPlace();
         previous.previewTop = preview.scrollTop;
       }
-      if (buffer.editorState) editor.restoreState(buffer.editorState);
-      else loadBuffer(buffer);
+      if (buffer.editorState) {
+        editor.restoreState(buffer.editorState);
+        dropStrayComposer(editor.view, layoutMode === "reading" ? "reading" : "editor");
+      } else loadBuffer(buffer);
       shownId = buffer.id;
       currentOutlineId = null;
       renderPreview();
@@ -765,10 +784,7 @@ export function createFileEditor({
     if (!event?.path) return;
     sync.receive(event);
     const buffer = model.docUpdated(event);
-    if (buffer && buffer.id === shownId) {
-      renderPreview();
-      scheduleOutline();
-    }
+    if (buffer && buffer.id === shownId) scheduleOutline();
     renderTitle();
     renderSidebar();
   }
@@ -789,7 +805,10 @@ export function createFileEditor({
   // Mode, sidebar and settings
   // ----------------------------------------------------
   function setLayoutMode(value, { persist = true } = {}) {
-    layoutMode = normalizeLayoutMode(value);
+    const next = normalizeLayoutMode(value);
+    // A composer is drawn by the editor or by the preview, never carried over.
+    if (next !== layoutMode) reading.close();
+    layoutMode = next;
     editorSection.classList.remove("mode-live", "mode-source", "mode-reading");
     editorSection.classList.add(`mode-${layoutMode}`);
     for (const [mode, button] of Object.entries(layoutButtons)) {
@@ -798,7 +817,6 @@ export function createFileEditor({
     }
     editor.setMode(editorModeFor(layoutMode));
     formatToolbar.setEnabled(layoutMode !== "reading");
-    $("comment-btn").disabled = layoutMode === "reading";
     comments.render();
     renderPreview();
     updateCurrentOutline();

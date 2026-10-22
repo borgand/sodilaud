@@ -10,7 +10,8 @@ import {
   parseSiblingHref,
   renderMarkdown,
   resolveLinkAction,
-  sanitizeMarkdownHtml
+  sanitizeMarkdownHtml,
+  tableCellRanges
 } from "../src/markdown.js";
 
 const dom = new JSDOM("<!doctype html><html><body></body></html>");
@@ -259,4 +260,97 @@ test("keeping table values whole twice changes nothing", () => {
   keepTableValuesWhole(container);
   assert.equal(container.innerHTML, once);
   assert.equal(sanitizeMarkdownHtml(once), once);
+});
+
+const rendered = (text, opts = { positions: true }) => {
+  const box = document.createElement("div");
+  box.innerHTML = renderMarkdown(text, "", marked, opts);
+  return box;
+};
+const sliceOf = (text, el) =>
+  text.slice(Number(el.getAttribute("data-src-from")), Number(el.getAttribute("data-src-to")));
+
+test("positions off leaves output without source attributes", () => {
+  const doc = "# T\n\n- a\n- b\n\n| x | y |\n|---|---|\n| 1 | 2 |\n\n> q\n\n```js\nx\n```\n";
+  assert.doesNotMatch(renderMarkdown(doc, "", marked), /data-src-/);
+  assert.doesNotMatch(renderMarkdown(doc, "", marked, { positions: false }), /data-src-/);
+  assert.match(renderMarkdown(doc, "", marked, { positions: true }), /data-src-from/);
+});
+
+test("headings and paragraphs carry their source range", () => {
+  const doc = "# T\n\nSome **bold**.\n";
+  const box = rendered(doc);
+  const h1 = box.querySelector("h1");
+  assert.equal(h1.getAttribute("data-src-from"), "0");
+  assert.equal(sliceOf(doc, h1).trim(), "# T");
+  const p = box.querySelector("p");
+  assert.equal(p.getAttribute("data-src-from"), "5");
+  assert.equal(sliceOf(doc, p).trim(), "Some **bold**.");
+});
+
+test("list items carry their source range", () => {
+  const doc = "- a\n- b";
+  const box = rendered(doc);
+  assert.deepEqual([...box.querySelectorAll("li")].map(li => sliceOf(doc, li)), ["- a\n", "- b"]);
+  assert.ok(box.querySelector("ul").hasAttribute("data-src-from"));
+});
+
+test("cell ranges keep escaped pipes", () => {
+  const doc = "| a | b \\| c |\n|---|---|\n| 1 | 2 |";
+  const ranges = tableCellRanges(doc);
+  assert.deepEqual(ranges[0].map(r => doc.slice(r.from, r.to)), ["a", "b \\| c"]);
+  assert.deepEqual(ranges[1], []);
+  assert.deepEqual(ranges[2].map(r => doc.slice(r.from, r.to)), ["1", "2"]);
+  const box = rendered(doc);
+  assert.deepEqual([...box.querySelectorAll("td")].map(td => sliceOf(doc, td)), ["1", "2"]);
+  assert.deepEqual([...box.querySelectorAll("th")].map(th => sliceOf(doc, th)), ["a", "b \\| c"]);
+  assert.ok(box.querySelector("table").hasAttribute("data-src-from"));
+});
+
+test("cell ranges accept tables without outer pipes", () => {
+  const doc = "a | b\n--|--\n1 | 2";
+  assert.deepEqual(tableCellRanges(doc).map(l => l.map(r => doc.slice(r.from, r.to))), [["a", "b"], [], ["1", "2"]]);
+});
+
+test("code positions cover the content only", () => {
+  const doc = "```javascript\nconsole.log(1)\n```";
+  const pre = rendered(doc).querySelector("pre");
+  assert.ok(sliceOf(doc, pre).startsWith("console"));
+  assert.doesNotMatch(sliceOf(doc, pre), /`/);
+  const unclosed = "```js\nx = 1\n";
+  assert.equal(sliceOf(unclosed, rendered(unclosed).querySelector("pre")), "x = 1\n");
+  const indented = "    code\n";
+  assert.equal(sliceOf(indented, rendered(indented).querySelector("pre")), "    code\n");
+});
+
+test("only the outer blockquote is annotated", () => {
+  const box = rendered("> quoted\n");
+  assert.ok(box.querySelector("blockquote").hasAttribute("data-src-from"));
+  assert.ok(!box.querySelector("blockquote p").hasAttribute("data-src-from"));
+});
+
+test("sanitizer validates source attributes", () => {
+  const html = sanitizeMarkdownHtml(
+    '<p data-src-from-k="x" data-src-to-k="3">a</p><p data-src-from-k="5" data-src-to-k="2">b</p>' +
+    '<p data-src-from-k="1" data-src-to-k="2">c</p><span data-src-from-k="1" data-src-to-k="2">d</span>' +
+    '<p data-src-from="1" data-src-to="2">e</p>',
+    "k"
+  );
+  assert.equal(html, '<p>a</p><p>b</p><p data-src-from="1" data-src-to="2">c</p>d<p>e</p>');
+});
+
+test("wrapped table tokens keep cell source attributes", () => {
+  const doc = "| h |\n|---|\n| 2026-09-30 |";
+  const td = rendered(doc).querySelector("td");
+  assert.ok(td.querySelector(".table-token"));
+  assert.equal(sliceOf(doc, td), "2026-09-30");
+});
+
+test("source positions written in the document never survive", () => {
+  const doc = '<p data-src-from="1" data-src-to="9999">x</p>\n\nhi <span data-src-from="1" data-src-to="2">s</span>\n';
+  assert.doesNotMatch(renderMarkdown(doc, "", marked), /data-src-/);
+  const html = renderMarkdown(doc, "", marked, { positions: true });
+  assert.doesNotMatch(html, /9999/);
+  assert.doesNotMatch(html, /data-src-from="1" data-src-to="2"/);
+  assert.doesNotMatch(html, /data-src-from-/);
 });

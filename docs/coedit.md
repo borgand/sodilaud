@@ -22,6 +22,18 @@ The commented text is tinted and marked in the margin. You can keep typing anywh
 box is open, including before the commented text; the comment stays on its text. Comments
 from the agent are shown in a different color.
 
+### Where you can comment
+
+- Live, Source and Reading mode, on prose, list items and code.
+- Table cells, in all three modes. In Live mode the box opens under the table and keeps focus.
+- Review hunk lines: click a line number to comment on that line's code.
+- In Reading mode, select text and press `Cmd+Option+M` (`Ctrl+Alt+M` on Windows and Linux),
+  click the floating **Comment** button next to the selection, or use the toolbar button.
+
+Limits: inline HTML can shift a Reading mode anchor by a few characters. Diagrams, images and
+checkboxes take no comments. Reading mode in a split-note view takes none; leave the split to
+comment.
+
 ## The comments panel
 
 The count in the status bar ("3 comments") appears once a document (a file or a note) has
