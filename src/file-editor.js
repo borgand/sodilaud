@@ -100,6 +100,13 @@ export function createFileEditor({
   // The buffer being handed to another window or to Quick Notes, or saved
   // under a new name: typing into it now would go to a document about to close.
   let lockedId = null;
+  // The buffers being handed to another window together.
+  const moving = new Set();
+  // Files picked in the Open files list with Cmd/Ctrl- or Shift-click, and
+  // where a Shift-click range starts.
+  let selectedIds = new Set();
+  let anchorId = null;
+  const busy = () => lockedId !== null || moving.size > 0;
   let recent = [];
   let drafts = [];
   let outlineTimer = null;
@@ -127,8 +134,11 @@ export function createFileEditor({
         ? livePreview({ onOpenLink: followLink, onFollowAnchor: jumpTo, mermaid })
         : livePreview({ onOpenLink: (href) => followLink(href, "secondary"), onFollowAnchor: scrollRightPane, mermaid }),
       sectionFolding(),
-      EditorState.changeFilter.of((tr) =>
-        lockedId === null || lockedId !== paneBufferId(pane) || tr.annotation(Transaction.userEvent) === undefined),
+      EditorState.changeFilter.of((tr) => {
+        const id = paneBufferId(pane);
+        return (lockedId === null || lockedId !== id) && !moving.has(id) ||
+          tr.annotation(Transaction.userEvent) === undefined;
+      }),
       commentsExtension({
         onSubmit: (view, comment) => comments.submit(view, comment),
         onSelect: id => comments.select(id)
@@ -237,18 +247,24 @@ export function createFileEditor({
     document,
     root: $("open-file-menu"),
     invoke,
-    onMove: (id, to) => keepFocus(id, () => moveFile(id, to)),
-    onClose: (id) => keepFocus(id, () => closeFile(id))
+    onMove: (ids, to) => keepFocus(ids, () => moveFiles(ids, to)),
+    onClose: (ids) => keepFocus(ids, () => closeFiles(ids))
+  });
+
+  openList.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || !clearSelection()) return;
+    event.preventDefault();
+    event.stopPropagation();
   });
 
   const folders = createFolderSidebar({ document, invoke, openPath, notify, onChange: renderSidebar });
 
   // The file's button disappears with the file, which would drop keyboard
   // focus onto the page; it goes to the neighbouring file or the start page.
-  async function keepFocus(id, action) {
+  async function keepFocus(gone, action) {
     const ids = model.list().map((buffer) => buffer.id);
-    const at = ids.indexOf(id);
-    const neighbours = [id, ...ids.slice(at + 1), ...ids.slice(0, at).reverse()];
+    const at = ids.indexOf(gone[0]);
+    const neighbours = [gone[0], ...ids.slice(at + 1), ...ids.slice(0, at).reverse()];
     await action();
     const active = document.activeElement;
     if (active && active !== document.body) return;
@@ -418,9 +434,12 @@ export function createFileEditor({
     $("files-sidebar-title").hidden = buffers.length === 0 && hasRoots;
     $("folders-section").hidden = !hasRoots;
     const active = showingStartPage ? null : model.active();
+    selectedIds = new Set(buffers.map((buffer) => buffer.id).filter((id) => selectedIds.has(id)));
+    const many = selectedIds.size > 1;
     openList.replaceChildren(...buffers.map((buffer) => {
       const item = document.createElement("li");
-      item.className = `open-file-item${buffer === active ? " active" : ""}`;
+      const selected = many && selectedIds.has(buffer.id);
+      item.className = `open-file-item${buffer === active ? " active" : ""}${selected ? " selected" : ""}`;
       item.dataset.fileId = buffer.id;
       const open = document.createElement("button");
       open.type = "button";
@@ -428,7 +447,8 @@ export function createFileEditor({
       open.textContent = `${buffer.name}${dirty(buffer) ? " •" : ""}`;
       open.title = buffer.path ?? "Not saved yet";
       open.setAttribute("aria-current", String(buffer === active));
-      open.addEventListener("click", () => activate(buffer.id));
+      if (many) open.setAttribute("aria-pressed", String(selected));
+      open.addEventListener("click", (event) => pickInList(buffer.id, event));
       const close = document.createElement("button");
       close.type = "button";
       close.className = "open-file-close";
@@ -441,14 +461,14 @@ export function createFileEditor({
         event.preventDefault();
         // The ContextMenu key opens the menu on keydown and then fires this event too.
         if (Date.now() - keyOpenedAt < 500 && fileMenu.isOpen()) return;
-        fileMenu.open(buffer, { x: event.clientX, y: event.clientY }, open);
+        fileMenu.open(menuBuffers(buffer.id), { x: event.clientX, y: event.clientY }, open);
       });
       open.addEventListener("keydown", (event) => {
         if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return;
         event.preventDefault();
         keyOpenedAt = Date.now();
         const rect = open.getBoundingClientRect();
-        fileMenu.open(buffer, { x: rect.left, y: rect.bottom }, open);
+        fileMenu.open(menuBuffers(buffer.id), { x: rect.left, y: rect.bottom }, open);
       });
       item.append(open);
       if (buffer.draft) {
@@ -460,6 +480,52 @@ export function createFileEditor({
       item.append(close);
       return item;
     }));
+  }
+
+  // Click shows one file; Cmd-click (Ctrl elsewhere) adds or removes a file
+  // from the selection, Shift-click selects a range. The shown file stays.
+  function pickInList(id, event) {
+    const ids = model.list().map((buffer) => buffer.id);
+    const shown = showingStartPage ? null : model.active()?.id ?? null;
+    if (event.shiftKey && !event.altKey) {
+      const from = ids.indexOf(anchorId ?? shown ?? id);
+      const to = ids.indexOf(id);
+      const [start, end] = from < 0 ? [to, to] : [Math.min(from, to), Math.max(from, to)];
+      selectedIds = new Set(ids.slice(start, end + 1));
+      renderSidebar();
+      return;
+    }
+    if (isCommandChord(event)) {
+      if (selectedIds.size < 2) selectedIds = new Set(shown === null ? [] : [shown]);
+      if (selectedIds.has(id)) selectedIds.delete(id);
+      else selectedIds.add(id);
+      anchorId = id;
+      renderSidebar();
+      return;
+    }
+    selectedIds = new Set([id]);
+    anchorId = id;
+    activate(id);
+  }
+
+  function clearSelection() {
+    if (selectedIds.size < 2) return false;
+    selectedIds = new Set();
+    renderSidebar();
+    return true;
+  }
+
+  // The files a context menu on `id` acts on: the selection when `id` is in
+  // it, otherwise just that file, which becomes the selection.
+  function menuBuffers(id) {
+    if (!(selectedIds.size > 1 && selectedIds.has(id))) {
+      if (selectedIds.size > 1) {
+        selectedIds = new Set([id]);
+        renderSidebar();
+      }
+      return [model.get(id)].filter(Boolean);
+    }
+    return model.list().filter((buffer) => selectedIds.has(buffer.id));
   }
 
   function renderRecent() {
@@ -733,7 +799,7 @@ export function createFileEditor({
 
   async function saveAs(id = focusedId()) {
     const buffer = model.get(id);
-    if (!buffer || lockedId !== null) return false;
+    if (!buffer || busy()) return false;
     lockedId = id;
     try {
       return await saveAsLocked(buffer);
@@ -815,7 +881,7 @@ export function createFileEditor({
 
   async function saveDraftToNotes(id = model.active()?.id) {
     const buffer = model.get(id);
-    if (!buffer?.draft || lockedId !== null) return false;
+    if (!buffer?.draft || busy()) return false;
     lockedId = buffer.id;
     try {
       if (!(await sync.flush((doc) => doc.docId === buffer.docId))) {
@@ -836,7 +902,7 @@ export function createFileEditor({
 
   async function discardDraft(id = model.active()?.id) {
     const buffer = model.get(id);
-    if (!buffer?.draft || lockedId !== null) return false;
+    if (!buffer?.draft || busy()) return false;
     try {
       if (!(await invoke("draft_discard", { path: buffer.path, ask: true }))) return false;
     } catch (error) {
@@ -1066,6 +1132,13 @@ export function createFileEditor({
     return true;
   }
 
+  async function closeFiles(ids) {
+    for (const id of ids) {
+      if (!(await closeFile(id))) return false;
+    }
+    return true;
+  }
+
   // Drops a buffer this window no longer edits. `detach` lets go of a
   // document that is gone or belongs to another window now.
   async function forget(id, { detach = false } = {}) {
@@ -1119,31 +1192,60 @@ export function createFileEditor({
     preview.scrollTop = Number.isFinite(state.previewTop) ? state.previewTop : 0;
   }
 
-  // The registry document stays open, so its text, save state and comments go
-  // along; only this window lets go of it.
-  async function moveFile(id, to = null) {
-    const buffer = model.get(id);
-    if (!buffer) return false;
-    if (buffer.path === null) {
-      notify(`Save ${buffer.name} first to move it.`);
+  // The registry documents stay open, so their text, save state and comments
+  // go along; only this window lets go of them. All files go to one window, or
+  // none does. The shown file goes last, so the other window opens on it.
+  async function moveFiles(ids, to = null) {
+    const buffers = ids.map((id) => model.get(id)).filter(Boolean);
+    if (!buffers.length) return false;
+    const unsaved = buffers.find((buffer) => buffer.path === null);
+    if (unsaved) {
+      notify(`Save ${unsaved.name} first to move it.`);
       return false;
     }
-    if (lockedId !== null) return false;
-    lockedId = buffer.id;
+    if (busy()) {
+      notify(`Could not move ${buffers.length === 1 ? buffers[0].name : `${buffers.length} files`} while another file action runs.`);
+      return false;
+    }
+    const ordered = [...buffers.filter((buffer) => buffer.id !== shownId), ...buffers.filter((buffer) => buffer.id === shownId)];
+    for (const buffer of buffers) moving.add(buffer.id);
     try {
-      if (!(await sync.flush((doc) => doc.docId === buffer.docId))) {
-        notify(`Could not move ${buffer.name}: unsaved changes could not be sent.`);
+      const docIds = new Set(buffers.map((buffer) => buffer.docId));
+      if (!(await sync.flush((doc) => docIds.has(doc.docId)))) {
+        const what = buffers.length === 1 ? buffers[0].name : `${buffers.length} files`;
+        notify(`Could not move ${what}: unsaved changes could not be sent.`);
         return false;
       }
-      await invoke("main_window_move_file", { path: buffer.path, to, view: viewState(buffer) });
+      const moved = ordered.map((buffer) => ({ path: buffer.path, view: viewState(buffer) }));
+      await invoke("main_window_move_files", { moved, to });
     } catch (error) {
+      moving.clear();
       notify(errorMessage(error));
       return false;
-    } finally {
-      lockedId = null;
     }
-    await forget(id, { detach: true });
+    // Typing stays blocked until every moved buffer is gone from this window.
+    try {
+      for (const buffer of buffers) await forget(buffer.id, { detach: true });
+    } finally {
+      moving.clear();
+    }
+    selectedIds = new Set();
     return true;
+  }
+
+  const moveFile = (id, to = null) => moveFiles([id], to);
+
+  // Rust asks for a move when an agent names another window for files open
+  // here. Another move, or a Save As dialog however long it stays open, is
+  // waited out: the agent was already told the files go there.
+  async function moveRequested(payload) {
+    const paths = Array.isArray(payload?.paths) ? payload.paths : [];
+    const to = typeof payload?.to === "string" ? payload.to : null;
+    const ids = model.list().filter((buffer) => paths.includes(buffer.path)).map((buffer) => buffer.id);
+    if (!to || !ids.length) return false;
+    while (busy()) await new Promise((resolve) => setTimeout(resolve, 100));
+    const still = ids.filter((id) => model.get(id));
+    return still.length ? moveFiles(still, to) : false;
   }
 
   function showStartPage() {
@@ -1463,6 +1565,9 @@ export function createFileEditor({
     saveAs,
     closeFile,
     moveFile,
+    moveFiles,
+    moveRequested,
+    clearSelection,
     saveDraftToNotes,
     discardDraft,
     showStartPage,

@@ -991,6 +991,9 @@ struct PushDraftArgs {
     /// Markdown content, at most 100000 UTF-8 bytes. Defaults to empty.
     #[serde(default)]
     content: String,
+    /// Optional window name, such as "Review feat/x" (1-80 characters). Every file opened with the same name goes to one window, created on first use and titled with the name; a file open in another window moves there. Omit it to use the window the user worked in last.
+    #[serde(default)]
+    window: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -998,6 +1001,9 @@ struct PushDraftArgs {
 struct OpenDocumentArgs {
     /// Absolute path to an existing .md, .markdown, .txt, .csv or .tsv file (UTF-8, at most 10 MB).
     path: String,
+    /// Optional window name, such as "Review feat/x" (1-80 characters). Every file opened with the same name goes to one window, created on first use and titled with the name; a file open in another window moves there. Omit it to use the window the user worked in last.
+    #[serde(default)]
+    window: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -1448,6 +1454,15 @@ fn get_note_data(
     })
 }
 
+/// The opened document, with the window name it went to when one was given.
+fn with_window(opened: crate::files::OpenedDocument, window: Option<String>) -> serde_json::Value {
+    let mut value = serde_json::to_value(opened).unwrap_or_default();
+    if let (Some(window), Some(object)) = (window, value.as_object_mut()) {
+        object.insert("window".into(), window.into());
+    }
+    value
+}
+
 fn successful_result<T: Serialize>(value: T) -> Result<CallToolResult, McpError> {
     serde_json::to_value(value)
         .map(CallToolResult::structured)
@@ -1692,7 +1707,7 @@ impl SodilaudServer {
         successful_result(result)
     }
 
-    /// Open a Markdown or text file in Sodilaud's main window so the user can read it there, or switch to it if it is already open. Takes an absolute path to an existing .md, .markdown, .txt, .csv or .tsv file. Returns the path, name and size, not the content. The returned path is the file's real path (symbolic links resolved, e.g. /tmp becomes /private/tmp on macOS); use it in later calls. Safe to repeat.
+    /// Open a Markdown or text file in a Sodilaud main window so the user can read it there, or switch to it if it is already open. Pass a window name to keep files that belong together (such as a review book) in their own window. Takes an absolute path to an existing .md, .markdown, .txt, .csv or .tsv file. Returns the path, name and size, not the content. The returned path is the file's real path (symbolic links resolved, e.g. /tmp becomes /private/tmp on macOS); use it in later calls. Safe to repeat.
     #[tool(annotations(
         title = "Open document",
         read_only_hint = false,
@@ -1710,21 +1725,21 @@ impl SodilaudServer {
             ));
         }
         let opened = match &self.app {
-            Some(app) => crate::files::open_for_agent(app, &args.path),
+            Some(app) => crate::files::open_for_agent(app, &args.path, args.window.as_deref()),
             None => crate::files::agent_document(&args.path)
                 .and_then(|_| Err(crate::files::FileError::not_granted(Path::new(&args.path)))),
         };
         match opened {
-            Ok(opened) => {
+            Ok((opened, window)) => {
                 self.registry
                     .coedit_mark_file(std::path::Path::new(&opened.path));
-                successful_result(opened)
+                successful_result(with_window(opened, window))
             }
             Err(error) => Ok(tool_error(error.message)),
         }
     }
 
-    /// Put a Markdown draft in front of the user for review: it opens in Sodilaud's main window (the one used last) and is kept in Sodilaud until the user saves it as a file or to Quick Notes, or discards it. Use it for a document the user should read and maybe keep, when there is no file to write to. The draft is co-edited: follow up with read_document and apply_edit using the returned path. Retry identical arguments after a failure; a requestId is never applied twice.
+    /// Put a Markdown draft in front of the user for review: it opens in Sodilaud's main window (the one used last, or the named window) and is kept in Sodilaud until the user saves it as a file or to Quick Notes, or discards it. Use it for a document the user should read and maybe keep, when there is no file to write to. The draft is co-edited: follow up with read_document and apply_edit using the returned path. Retry identical arguments after a failure; a requestId is never applied twice.
     #[tool(annotations(
         title = "Push draft",
         read_only_hint = false,
@@ -1758,12 +1773,17 @@ impl SodilaudServer {
         let Some(app) = &self.app else {
             return Ok(tool_error("Drafts need the Sodilaud app.".into()));
         };
-        match crate::files::open_draft_for_agent(app, &args.request_id, &args.title, &args.content)
-        {
-            Ok(opened) => {
+        match crate::files::open_draft_for_agent(
+            app,
+            &args.request_id,
+            &args.title,
+            &args.content,
+            args.window.as_deref(),
+        ) {
+            Ok((opened, window)) => {
                 self.registry
                     .coedit_mark_file(std::path::Path::new(&opened.path));
-                successful_result(opened)
+                successful_result(with_window(opened, window))
             }
             Err(error) => Ok(tool_error(error.message)),
         }
@@ -2289,7 +2309,7 @@ impl ServerHandler for SodilaudServer {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new("sodilaud-mcp", env!("CARGO_PKG_VERSION")))
             .with_instructions(
-                "Access to the notes collection currently open in Sodilaud, as the editor shows it. Each function requires its permission enabled in MCP Configuration. Read functions start enabled and write functions disabled until the user selects them; choices are remembered across restarts. push_quick_note puts a note into the user's Quick Notes (the From agents folder) and needs no collectionId. open_document opens an absolute .md, .markdown, .txt, .csv or .tsv path in the main window and returns no content. push_draft puts new Markdown in front of the user as a draft in the main window, kept in Sodilaud until they save it as a file or to Quick Notes; use its returned path with read_document and apply_edit. Co-editing: read_document returns a file's or note's live text and version and makes it co-edited; change it only with apply_edit (oldText/newText against that version; the user's typing wins conflicts), never with native file tools. get_pending_comments (with waitSeconds to wait) returns the user's comments anchored to text; address each, then resolve_comment with a one-line note, which closes the whole thread. reply_comment answers in a thread without resolving it, for discussion. add_comment asks the user a question on a passage; their answers arrive through get_pending_comments with the thread so far. delete_note moves a note to persistent trash and requires expectedRevision from get_note. delete_folder requires expectedRevision from list_folders and rejects nonempty folders. list_trash lists recovery metadata; only the user can restore or empty trash through the UI. rename_note and move_note require expectedRevision from get_note. rename_folder requires expectedRevision from list_folders. All edits preserve content except append_to_note, which requires the expectedRevision from get_note, appends exact text, and never adds separators; line breaks are stored as \\n. A revision conflict requires rereading; after a failure or timeout, retry identical arguments with the same requestId, which never applies a write twice. Get collectionId from a read result and supply a unique requestId for each write; reuse identical arguments on retries. Retry keys last for this collection session; a switch or app restart invalidates collectionId. Results are paginated; follow nextOffset until it is null. get_note offsets count Unicode characters, not bytes.",
+                "Access to the notes collection currently open in Sodilaud, as the editor shows it. Each function requires its permission enabled in MCP Configuration. Read functions start enabled and write functions disabled until the user selects them; choices are remembered across restarts. push_quick_note puts a note into the user's Quick Notes (the From agents folder) and needs no collectionId. open_document opens an absolute .md, .markdown, .txt, .csv or .tsv path in the main window and returns no content; give the same window name to files that belong together and they share one window. push_draft puts new Markdown in front of the user as a draft in the main window, kept in Sodilaud until they save it as a file or to Quick Notes; use its returned path with read_document and apply_edit. Co-editing: read_document returns a file's or note's live text and version and makes it co-edited; change it only with apply_edit (oldText/newText against that version; the user's typing wins conflicts), never with native file tools. get_pending_comments (with waitSeconds to wait) returns the user's comments anchored to text; address each, then resolve_comment with a one-line note, which closes the whole thread. reply_comment answers in a thread without resolving it, for discussion. add_comment asks the user a question on a passage; their answers arrive through get_pending_comments with the thread so far. delete_note moves a note to persistent trash and requires expectedRevision from get_note. delete_folder requires expectedRevision from list_folders and rejects nonempty folders. list_trash lists recovery metadata; only the user can restore or empty trash through the UI. rename_note and move_note require expectedRevision from get_note. rename_folder requires expectedRevision from list_folders. All edits preserve content except append_to_note, which requires the expectedRevision from get_note, appends exact text, and never adds separators; line breaks are stored as \\n. A revision conflict requires rereading; after a failure or timeout, retry identical arguments with the same requestId, which never applies a write twice. Get collectionId from a read result and supply a unique requestId for each write; reuse identical arguments on retries. Retry keys last for this collection session; a switch or app restart invalidates collectionId. Results are paginated; follow nextOffset until it is null. get_note offsets count Unicode characters, not bytes.",
             )
     }
 
@@ -2743,6 +2763,16 @@ pub(crate) mod tests {
         assert!(message(open("notes/x.md").await.unwrap()).contains("full path"));
         let missing = std::env::temp_dir().join(format!("sodilaud-missing-{}.md", Uuid::new_v4()));
         assert!(message(open(missing.to_str().unwrap()).await.unwrap()).contains("does not exist"));
+        let named = server
+            .open_document(Parameters(
+                serde_json::from_value(
+                    serde_json::json!({ "path": missing.to_str().unwrap(), "window": "Book" }),
+                )
+                .expect("open_document takes a window name"),
+            ))
+            .await
+            .unwrap();
+        assert!(message(named).contains("does not exist"));
         std::fs::remove_file(path).unwrap();
     }
 

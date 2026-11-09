@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// The context menu of a file in the open files list: move it to a new or to
-// another main window, or close it.
+// The context menu of a file, or of the selected files, in the open files
+// list: move them to a new or to another main window, or close them.
 
 const MARGIN = 8;
 
@@ -39,7 +39,7 @@ export function createOpenFileMenu({ document, root, invoke, onMove, onClose }) 
     group.firstElementChild.setAttribute("aria-expanded", String(open));
   }
 
-  function submenu(buffer, windows) {
+  function submenu(ids, windows, text) {
     const group = document.createElement("div");
     group.className = "context-menu-submenu";
     const trigger = document.createElement("button");
@@ -49,7 +49,7 @@ export function createOpenFileMenu({ document, root, invoke, onMove, onClose }) 
     trigger.setAttribute("aria-haspopup", "menu");
     trigger.setAttribute("aria-expanded", "false");
     const label = document.createElement("span");
-    label.textContent = "Move to Window";
+    label.textContent = text;
     const caret = document.createElement("span");
     caret.className = "context-menu-caret";
     caret.setAttribute("aria-hidden", "true");
@@ -58,8 +58,8 @@ export function createOpenFileMenu({ document, root, invoke, onMove, onClose }) 
     const content = document.createElement("div");
     content.className = "context-menu-submenu-content";
     content.setAttribute("role", "menu");
-    content.setAttribute("aria-label", "Move to Window");
-    content.append(...windows.map((entry) => item(`Window ${entry.number} - ${entry.title}`, () => onMove(buffer.id, entry.label))));
+    content.setAttribute("aria-label", text);
+    content.append(...windows.map((entry) => item(`Window ${entry.number} - ${entry.title}`, () => onMove(ids, entry.label))));
     trigger.addEventListener("click", (event) => {
       event.stopPropagation();
       setSubmenuOpen(group, true);
@@ -78,7 +78,8 @@ export function createOpenFileMenu({ document, root, invoke, onMove, onClose }) 
     root.classList.toggle("submenu-opens-left", left + rect.width * 2 > view.innerWidth);
   }
 
-  async function open(buffer, at, from) {
+  // `buffers` is one file, or the selection the menu acts on.
+  async function open(buffers, at, from) {
     const ticket = (opening += 1);
     let windows = [];
     try {
@@ -89,15 +90,18 @@ export function createOpenFileMenu({ document, root, invoke, onMove, onClose }) 
     }
     if (ticket !== opening) return;
     anchor = from ?? null;
-    const saved = buffer.path !== null;
-    const disabled = { disabled: !saved, title: saved ? "" : "Save the file first" };
-    const items = [item("Move to New Window", () => onMove(buffer.id, null), disabled)];
-    if (windows.length && saved) items.push(submenu(buffer, windows));
+    const ids = buffers.map((buffer) => buffer.id);
+    const many = buffers.length > 1;
+    const files = many ? ` ${buffers.length} Files` : "";
+    const saved = buffers.every((buffer) => buffer.path !== null);
+    const disabled = { disabled: !saved, title: saved ? "" : many ? "Save the files first" : "Save the file first" };
+    const items = [item(`Move${files} to New Window`, () => onMove(ids, null), disabled)];
+    if (windows.length && saved) items.push(submenu(ids, windows, `Move${files} to Window`));
     const divider = document.createElement("div");
     divider.className = "context-menu-divider";
-    items.push(divider, item("Close", () => onClose(buffer.id)));
+    items.push(divider, item(many ? `Close${files}` : "Close", () => onClose(ids)));
     root.replaceChildren(...items);
-    root.setAttribute("aria-label", `${buffer.name} actions`);
+    root.setAttribute("aria-label", many ? `${buffers.length} files actions` : `${buffers[0].name} actions`);
     root.hidden = false;
     place(at);
     enabledIn(root)[0]?.focus();

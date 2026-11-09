@@ -98,6 +98,7 @@
                 <div class="dropdown-section-title">File</div>
                 <button class="dropdown-item" id="menu-new-file-btn" title="New File (Cmd+N)">New File</button>
                 <button class="dropdown-item" id="menu-new-window-btn" title="New Window (Cmd+Alt+N)">New Window</button>
+                <button class="dropdown-item" id="menu-name-window-btn" aria-haspopup="dialog">Name Window…</button>
                 <button class="dropdown-item" id="menu-open-file-btn" title="Open File (Cmd+O)">Open File…</button>
                 <button class="dropdown-item" id="menu-open-folder-btn" title="Open Folder (Cmd+Shift+O)">Open Folder…</button>
                 <button class="dropdown-item" id="menu-browse-folder-btn" disabled>Show Folder in Sidebar</button>
@@ -790,12 +791,12 @@ function hello() {
               <div class="cheatsheet-card">
                 <div class="cheatsheet-card-title"><code>push_draft</code></div>
                 <p class="mcp-function-description">Opens Markdown in the main window as a draft that stays in Sodilaud until you save it as a file or to Quick Notes, or discard it. Returns the path, name and size.</p>
-                <p class="mcp-function-parameters"><strong>Required:</strong> <code>requestId</code>, <code>title</code><br><strong>Optional:</strong> <code>content</code></p>
+                <p class="mcp-function-parameters"><strong>Required:</strong> <code>requestId</code>, <code>title</code><br><strong>Optional:</strong> <code>content</code>, <code>window</code></p>
               </div>
               <div class="cheatsheet-card">
                 <div class="cheatsheet-card-title"><code>open_document</code></div>
-                <p class="mcp-function-description">Opens an existing <code>.md</code>, <code>.markdown</code>, <code>.txt</code>, <code>.csv</code> or <code>.tsv</code> file in this window, or switches to it. Returns the path, name and size, never the content.</p>
-                <p class="mcp-function-parameters"><strong>Required:</strong> <code>path</code> (absolute)</p>
+                <p class="mcp-function-description">Opens an existing <code>.md</code>, <code>.markdown</code>, <code>.txt</code>, <code>.csv</code> or <code>.tsv</code> file in the window you used last, or switches to it. With a <code>window</code> name, files that share the name open together in one window, created on first use. Returns the path, name and size, never the content.</p>
+                <p class="mcp-function-parameters"><strong>Required:</strong> <code>path</code> (absolute)<br><strong>Optional:</strong> <code>window</code></p>
               </div>
             </div>
           </div>
@@ -837,6 +838,23 @@ function hello() {
           <!-- Dynamically populated theme cards -->
         </div>
       </div>
+    </div>
+  </div>
+  <!-- Name Window Modal -->
+  <div class="help-modal-backdrop" id="window-name-modal-backdrop" style="display: none;" aria-hidden="true">
+    <div class="help-modal window-name-modal" id="window-name-modal" role="dialog" aria-modal="true" aria-labelledby="window-name-heading">
+      <div class="help-modal-header">
+        <h3 id="window-name-heading">Name Window</h3>
+      </div>
+      <form class="help-modal-body window-name-form" id="window-name-form">
+        <label class="window-name-label" for="window-name-input">The name shows in the title bar and in Move to Window. Agents open files in this window by its name. Leave it empty to remove the name.</label>
+        <input class="window-name-input" id="window-name-input" type="text" maxlength="80" autocomplete="off" spellcheck="false" aria-describedby="window-name-error" />
+        <p class="window-name-error" id="window-name-error" role="alert"></p>
+        <div class="window-name-actions">
+          <button class="theme-action-btn" id="window-name-cancel-btn" type="button">Cancel</button>
+          <button class="theme-action-btn" id="window-name-save-btn" type="submit">Save</button>
+        </div>
+      </form>
     </div>
   </div>
   <!-- About Modal -->

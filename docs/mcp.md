@@ -374,11 +374,12 @@ for review, as a file that has no place on disk yet.
 | `requestId` | Required, 1-128 characters. Reuse the same ID and arguments when retrying |
 | `title` | Required, 1-200 characters after trimming |
 | `content` | Optional Markdown, at most 100,000 UTF-8 bytes. Empty by default |
+| `window` | Optional window name, as for `open_document` |
 
-The draft opens in the main window used last, co-edited like any open file, with a **Draft**
+The draft opens in the main window used last, or in the named window, co-edited like any open file, with a **Draft**
 tag. It is kept in the app's data folder until you save it (**Save As…** or **Save to Quick
 Notes**) or discard it, and closing the window does not remove it. The result is
-`{ path, name, bytes }`.
+`{ path, name, bytes }`, plus `window` when a window name was given.
 
 ```json
 {
@@ -393,16 +394,37 @@ Notes**) or discard it, and closing the window does not remove it. The result is
 
 ## Opening a file in the main window
 
-Select **MCP Configuration → Write → Open document**. `open_document` takes one
-argument, `path`: the absolute path to an existing `.md`, `.markdown`, `.txt`,
-`.csv` or `.tsv` file. Sodilaud opens it in the main window, as Finder's **Open With** does, and
-brings the window forward. Opening a file that is already open switches to it.
+Select **MCP Configuration → Write → Open document**. `open_document` takes
+`path`: the absolute path to an existing `.md`, `.markdown`, `.txt`,
+`.csv` or `.tsv` file. Sodilaud opens it in the main window you used last, as Finder's **Open
+With** does, and brings the window forward. Opening a file that is already open switches to
+the window that has it.
+
+The optional `window` argument names a window, so files that belong together share one, such
+as the chapters of a review book:
+
+- The first call with a name opens a new window with that name, next to the window you used
+  last. Its title bar shows `Sodilaud - <name>`. Later calls with the same name reuse it.
+  Names are compared without case, after trimming.
+- A file already open in another window moves to the named window, with its unsaved edits,
+  comments and cursor.
+- A name has 1-80 characters and no line breaks, and at most 16 windows can have a name. A
+  call that breaks either rule fails without opening anything.
+- You can name a window yourself with **File → Name Window…**, and an agent can then open
+  files in it by that name. Names come back after a restart; closing a window drops its name.
+
+```json
+{
+  "name": "open_document",
+  "arguments": { "path": "/Users/me/repo/.claude/review/feat-x/00-overview.md", "window": "Review feat/x" }
+}
+```
 
 The file editor's rules apply: the file must be UTF-8 text of at most 10 MB.
 Relative paths, folders, missing files and other file types are rejected,
 including a symbolic link whose target has another extension. No function lists folders. The result is
-`{ path, name, bytes }`: the resolved path, the file name and its size. It does
-not contain the file's text. The resolved path follows symbolic links (on macOS,
+`{ path, name, bytes }`: the resolved path, the file name and its size, plus `window` when a
+window name was given. It does not contain the file's text. The resolved path follows symbolic links (on macOS,
 `/tmp/x.md` comes back as `/private/tmp/x.md`); use it in later calls.
 
 Opening a file grants the main window access to that one file, like opening it
