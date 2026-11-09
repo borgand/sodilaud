@@ -43,9 +43,9 @@ test("both editors expose their content element with an accessible name", async 
   assert.ok(app.editor().contentDOM.matches(".cm-content"));
 });
 
-test("help, theme, about, MCP, clipboard, and trash overlays expose modal dialog semantics", () => {
+test("help, theme, about, Name Window, MCP, clipboard, and trash overlays expose modal dialog semantics", () => {
   const ids = (page) => [...page.querySelectorAll("[role='dialog']")].map(dialog => dialog.id).sort();
-  assert.deepEqual(ids(document), ["about-modal", "clipboard-settings-modal", "help-modal", "theme-modal"]);
+  assert.deepEqual(ids(document), ["about-modal", "clipboard-settings-modal", "help-modal", "theme-modal", "window-name-modal"]);
   assert.deepEqual(ids(notesDocument), ["trash-modal"]);
   assert.deepEqual(ids(agentAccessDocument), ["mcp-config-modal"]);
   const dialogs = [document, notesDocument, agentAccessDocument].flatMap(page => [...page.querySelectorAll("[role='dialog']")]);

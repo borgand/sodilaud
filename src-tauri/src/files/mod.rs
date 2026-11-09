@@ -21,7 +21,7 @@ use std::thread;
 
 use serde::Serialize;
 use serde_json::json;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::docs::commands::SharedRegistry;
 use crate::docs::files::{Disk, Due};
@@ -675,26 +675,93 @@ pub struct OpenedDocument {
 
 /// Opens a file an agent named, the way Finder's "Open With" does: grants that
 /// one file, then shows it in the window that has it open, or the focused one.
-/// Opening an open file switches to it.
-pub fn open_for_agent(app: &AppHandle, path: &str) -> Result<OpenedDocument, FileError> {
+/// Opening an open file switches to it. With a `window` name the file goes to
+/// that window instead (see `present_in_named`). Returns the document and the
+/// cleaned window name.
+pub fn open_for_agent(
+    app: &AppHandle,
+    path: &str,
+    window: Option<&str>,
+) -> Result<(OpenedDocument, Option<String>), FileError> {
     let (resolved, bytes) = agent_document(path)?;
     let files = app
         .try_state::<Files>()
         .ok_or_else(|| FileError::not_granted(&resolved))?;
+    let window = checked_window(&files, window)?;
     let granted = files.grant(&resolved)?;
     let opened = OpenedDocument {
         path: granted.to_string_lossy().to_string(),
         name: io::file_name(&granted),
         bytes,
     };
+    show_for_agent(app, opened.path.clone(), window.clone());
+    Ok((opened, window))
+}
+
+/// A window name an agent gave, cleaned, or why no window can have it.
+fn checked_window(files: &Files, window: Option<&str>) -> Result<Option<String>, FileError> {
+    window
+        .map(|name| {
+            files
+                .read(|lists| lists.windows.check_named(name))
+                .map_err(|message| FileError::new(FileErrorCode::Unsupported, message))
+        })
+        .transpose()
+}
+
+fn show_for_agent(app: &AppHandle, path: String, window: Option<String>) {
     let handle = app.clone();
-    let pending = opened.path.clone();
     let _ = app.run_on_main_thread(move || {
-        if let Some(files) = handle.try_state::<Files>() {
-            present_pending(&handle, &files, vec![pending]);
+        let Some(files) = handle.try_state::<Files>() else {
+            return;
+        };
+        match window {
+            Some(name) => present_in_named(&handle, &files, &name, vec![path]),
+            None => present_pending(&handle, &files, vec![path]),
         }
     });
-    Ok(opened)
+}
+
+/// Asks a main window's page to move open files to another window, the way
+/// its Move to Window menu does, so typing not yet sent goes along.
+pub const MOVE_REQUEST_EVENT: &str = "main-window-move-request";
+
+/// Shows granted files in the window named `name`, built if needed. A file
+/// open in another window moves there: its window is asked to hand it over.
+/// When the window cannot be built, the files open as `present_pending` would.
+pub fn present_in_named(app: &AppHandle, files: &Files, name: &str, granted: Vec<String>) {
+    let target = match crate::main_window::open_named(app, files, name) {
+        Ok(label) => label,
+        Err(error) => {
+            eprintln!("Could not open the window {name}: {}", error.message);
+            present_pending(app, files, granted);
+            return;
+        }
+    };
+    let mut here = Vec::new();
+    let mut elsewhere: Vec<(String, Vec<String>)> = Vec::new();
+    for path in granted {
+        match files.read(|lists| lists.windows.owner(&path)) {
+            Some(owner) if owner != target => {
+                match elsewhere.iter_mut().find(|(label, _)| *label == owner) {
+                    Some((_, paths)) => paths.push(path),
+                    None => elsewhere.push((owner, vec![path])),
+                }
+            }
+            _ => here.push(PendingOpen { path, view: None }),
+        }
+    }
+    if !here.is_empty() {
+        files.queue(&target, here);
+        crate::main_window::present(app, &target);
+    }
+    for (owner, paths) in elsewhere {
+        let _ = app.emit_to(
+            owner.as_str(),
+            MOVE_REQUEST_EVENT,
+            json!({ "paths": paths, "to": target }),
+        );
+    }
 }
 
 /// Puts an agent's Markdown into a new draft (or finds the one an identical
@@ -704,10 +771,12 @@ pub fn open_draft_for_agent(
     request_id: &str,
     title: &str,
     content: &str,
-) -> Result<OpenedDocument, FileError> {
+    window: Option<&str>,
+) -> Result<(OpenedDocument, Option<String>), FileError> {
     let files = app
         .try_state::<Files>()
         .ok_or_else(|| FileError::other("Drafts need the Sodilaud app.".to_string()))?;
+    let window = checked_window(&files, window)?;
     let dir = files.drafts_dir().ok_or_else(|| {
         FileError::other("Sodilaud has no app data folder to keep drafts in.".to_string())
     })?;
@@ -724,14 +793,8 @@ pub fn open_draft_for_agent(
         name: io::file_name(&granted),
         bytes,
     };
-    let handle = app.clone();
-    let pending = opened.path.clone();
-    let _ = app.run_on_main_thread(move || {
-        if let Some(files) = handle.try_state::<Files>() {
-            present_pending(&handle, &files, vec![pending]);
-        }
-    });
-    Ok(opened)
+    show_for_agent(app, opened.path.clone(), window.clone());
+    Ok((opened, window))
 }
 
 /// The files named on a command line, skipping flags and the program itself.

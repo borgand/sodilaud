@@ -281,6 +281,15 @@
   background: var(--bg-note-hover);
 }
 
+.open-file-item.selected {
+  background: var(--bg-note-hover);
+  box-shadow: inset 0 0 0 1px var(--accent-color);
+}
+
+.open-file-item.selected.active {
+  box-shadow: inset 2px 0 0 var(--accent-color), inset 0 0 0 1px var(--accent-color);
+}
+
 .open-file-name {
   flex: 1;
   min-width: 0;
@@ -742,4 +751,47 @@ html:not(.editor-line-numbers-enabled) #file-editor.compare-mode .editor-host .c
   height: 2px;
   background: var(--accent-color);
   pointer-events: none;
+}
+
+.window-name-modal {
+  max-width: 420px;
+}
+
+.window-name-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.window-name-label {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.window-name-input {
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background-color: var(--bg-input);
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.window-name-input:focus {
+  outline: 2px solid var(--accent-color);
+  outline-offset: -1px;
+}
+
+.window-name-error {
+  min-height: 1em;
+  margin: 0;
+  color: var(--danger-color, #c0392b);
+  font-size: 0.8rem;
+}
+
+.window-name-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }

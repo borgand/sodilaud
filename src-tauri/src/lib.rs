@@ -490,7 +490,9 @@ pub fn run(context: tauri::Context<tauri::Wry>) {
             files::commands::draft_discard,
             files::commands::draft_save_to_notes,
             main_window::main_window_new,
-            main_window::main_window_move_file,
+            main_window::main_window_move_files,
+            main_window::main_window_name,
+            main_window::main_window_set_name,
             main_window::main_window_list,
             main_window::main_window_close_done
         ])

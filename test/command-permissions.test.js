@@ -119,7 +119,7 @@ test("only the main window can reach user files", async () => {
 test("only main windows can open, move between, list and close main windows", async () => {
   const caps = await capabilities();
   const holders = (command) => caps.filter(cap => cap.permissions.includes(grant(command))).map(cap => cap.identifier);
-  for (const command of ["main_window_new", "main_window_move_file", "main_window_list", "main_window_close_done"]) {
+  for (const command of ["main_window_new", "main_window_move_files", "main_window_name", "main_window_set_name", "main_window_list", "main_window_close_done"]) {
     assert.deepEqual(holders(command), ["default"], command);
   }
 });

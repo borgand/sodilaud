@@ -135,7 +135,7 @@ test("closing the file shown on the right shows the next one or closes the split
 });
 
 test("moving the file shown on the right lets go of it there", async () => {
-  const app = await bootSplit(6, { handlers: { main_window_list: () => [], main_window_move_file: () => "main-2" } });
+  const app = await bootSplit(6, { handlers: { main_window_list: () => [], main_window_move_files: () => "main-2" } });
   const menu = byId(app, "open-file-menu");
   fileItem(app, "b.md").dispatchEvent(new app.dom.window.MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 40, clientY: 80 }));
   await app.until(() => !menu.hidden);
@@ -263,7 +263,7 @@ test("moving a file waits while Save As asks where to save it", async () => {
     handlers: {
       file_save_as_dialog: () => new Promise((resolve) => { answer = resolve; }),
       main_window_list: () => [],
-      main_window_move_file: () => "main-2"
+      main_window_move_files: () => "main-2"
     }
   });
   app.click("menu-save-as-btn");
@@ -273,7 +273,7 @@ test("moving a file waits while Save As asks where to save it", async () => {
   await app.until(() => !menu.hidden);
   [...menu.querySelectorAll(".context-menu-item")].find((item) => item.textContent.trim().startsWith("Move to New Window")).click();
   await app.settle();
-  assert.equal(calls(app, "main_window_move_file").length, 0);
+  assert.equal(calls(app, "main_window_move_files").length, 0);
   typeAt(app.editor("primary"), "late ");
   assert.equal(app.editorText("primary"), A, "Save As still holds the edit lock");
   answer(null);

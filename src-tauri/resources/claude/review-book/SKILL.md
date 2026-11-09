@@ -59,7 +59,10 @@ When the feature is done and its tests pass:
 5. `$CHECK manifest <book> --base <base>`, then `$CHECK check <book>`. Fix every problem and
    repeat until it passes. Do not open the book before it passes.
 6. `mcp__sodilaud__open_document` on `00-overview.md`, then on every chapter in reading order,
-   so the sidebar lists the book in that order. Then enter the loop.
+   so the sidebar lists the book in that order. Pass `window: "Review <branch>"` (the branch
+   name, or the short hash for a detached range) on every call, so the book gets a window of
+   its own. If Sodilaud rejects the `window` argument, it predates named windows: call again
+   without it. Then enter the loop.
 
 ## Files
 
@@ -188,7 +191,8 @@ When the user writes "sign off" (or plainly asks to finish) in a comment on the 
 Running the skill again on a branch that has a book: read `manifest.json` for the base (and
 `ref`), run `$CHECK check <book>`, and fix only what it reports: regenerate changed hunks,
 place new ones, drop stale ones, keep every reviewed mark and thread that still applies. Then
-`$CHECK manifest <book>`, open the documents again in reading order, and enter the loop.
+`$CHECK manifest <book>`, open the documents again in reading order with the same `window`
+name, and enter the loop.
 
 ## Rules
 

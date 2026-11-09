@@ -9,6 +9,26 @@ use super::store::SavedWindow;
 use crate::quicknotes::config::Frame;
 
 pub const MAIN_LABEL: &str = "main";
+/// The longest window name, in characters.
+pub const NAME_LIMIT: usize = 80;
+/// The most windows that may carry a name at once.
+pub const NAMED_LIMIT: usize = 16;
+
+/// A window name as given, trimmed, or why it is not one.
+pub fn clean_name(name: &str) -> Result<String, String> {
+    let name = name.trim();
+    let length = name.chars().count();
+    if length == 0 || length > NAME_LIMIT || name.chars().any(char::is_control) {
+        return Err(format!(
+            "A window name must have 1-{NAME_LIMIT} characters and no line breaks."
+        ));
+    }
+    Ok(name.to_string())
+}
+
+fn same_name(a: &str, b: &str) -> bool {
+    a.to_lowercase() == b.to_lowercase()
+}
 
 pub fn is_main_label(label: &str) -> bool {
     label == MAIN_LABEL
@@ -33,6 +53,7 @@ pub struct WindowEntry {
     pub frame: Option<Frame>,
     pub folders: Vec<String>,
     pub expanded: Vec<String>,
+    pub name: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -66,6 +87,7 @@ impl WindowSet {
                 frame: window.frame,
                 folders: window.folders,
                 expanded: window.expanded,
+                name: window.name.and_then(|name| clean_name(&name).ok()),
             })
             .collect();
         let mut set = Self {
@@ -78,6 +100,15 @@ impl WindowSet {
             if let Some(entry) = set.entry(&label) {
                 let (open, active) = (entry.open.clone(), entry.active.clone());
                 set.set_open(&label, open, active);
+            }
+        }
+        // ... or two windows with one name; the first keeps it.
+        for index in 1..set.windows.len() {
+            let taken = set.windows[..index].iter().any(|earlier| {
+                matches!((&earlier.name, &set.windows[index].name), (Some(a), Some(b)) if same_name(a, b))
+            });
+            if taken {
+                set.windows[index].name = None;
             }
         }
         set
@@ -112,9 +143,76 @@ impl WindowSet {
             frame: None,
             folders: Vec::new(),
             expanded: Vec::new(),
+            name: None,
         });
         self.focus.insert(0, label.clone());
         label
+    }
+
+    /// The window with this name, compared without case after trimming.
+    pub fn named(&self, name: &str) -> Option<String> {
+        let name = name.trim();
+        self.windows
+            .iter()
+            .find(|w| w.name.as_deref().is_some_and(|own| same_name(own, name)))
+            .map(|w| w.label.clone())
+    }
+
+    pub fn name_of(&self, label: &str) -> Option<String> {
+        self.entry(label)?.name.clone()
+    }
+
+    /// Names a window, or clears its name with `None`. Returns the cleaned name.
+    pub fn set_name(&mut self, label: &str, name: Option<&str>) -> Result<Option<String>, String> {
+        if self.entry(label).is_none() {
+            return Err("That window is closed.".to_string());
+        }
+        let name = match name.filter(|name| !name.trim().is_empty()) {
+            None => None,
+            Some(name) => {
+                let name = clean_name(name)?;
+                match self.named(&name) {
+                    Some(owner) if owner != label => {
+                        return Err(format!("Another window is named \"{name}\"."));
+                    }
+                    Some(_) => {}
+                    None if self.name_of(label).is_none() && self.named_count() >= NAMED_LIMIT => {
+                        return Err(format!("At most {NAMED_LIMIT} windows can have a name."));
+                    }
+                    None => {}
+                }
+                Some(name)
+            }
+        };
+        if let Some(entry) = self.entry_mut(label) {
+            entry.name = name.clone();
+        }
+        Ok(name)
+    }
+
+    fn named_count(&self) -> usize {
+        self.windows.iter().filter(|w| w.name.is_some()).count()
+    }
+
+    /// The cleaned name, when a window has it or one could be added with it.
+    pub fn check_named(&self, name: &str) -> Result<String, String> {
+        let name = clean_name(name)?;
+        if self.named(&name).is_none() && self.named_count() >= NAMED_LIMIT {
+            return Err(format!("At most {NAMED_LIMIT} windows can have a name."));
+        }
+        Ok(name)
+    }
+
+    /// The window named `name`, adding one with that name when there is none.
+    /// Returns its label and whether it was added.
+    pub fn find_or_add_named(&mut self, name: &str) -> Result<(String, bool), String> {
+        let name = self.check_named(name)?;
+        if let Some(label) = self.named(&name) {
+            return Ok((label, false));
+        }
+        let label = self.add();
+        self.set_name(&label, Some(&name))?;
+        Ok((label, true))
     }
 
     /// Removes a window and returns its open files, or `None` when the window
@@ -227,6 +325,28 @@ impl WindowSet {
         Ok(())
     }
 
+    /// Moves every path to `to`, or none of them: each must be open in `from`.
+    pub fn move_all(&mut self, paths: &[String], from: &str, to: &str) -> Result<(), String> {
+        if to == from || self.entry(to).is_none() {
+            return Err("That window is closed.".to_string());
+        }
+        if let Some(path) = paths
+            .iter()
+            .find(|path| self.owner(path).as_deref() != Some(from))
+        {
+            return Err(format!(
+                "{} is not open in this window.",
+                Path::new(path)
+                    .file_name()
+                    .map_or_else(|| path.clone(), |name| name.to_string_lossy().to_string())
+            ));
+        }
+        for path in paths {
+            self.move_to(path, to)?;
+        }
+        Ok(())
+    }
+
     /// Groups `paths` by the window that should show them: the owner, or the
     /// focused window. Nothing is claimed; the window claims a file when its
     /// page opens it, so a file that fails to open is never left owned.
@@ -325,6 +445,7 @@ impl WindowSet {
                 frame: w.frame,
                 folders: w.folders.clone(),
                 expanded: w.expanded.clone(),
+                name: w.name.clone(),
             })
             .collect()
     }
@@ -563,5 +684,105 @@ mod tests {
         assert_eq!(out[0].expanded, ["/r/a"]);
         let again = WindowSet::from_saved(out);
         assert_eq!(again.folders("main"), ["/r"]);
+    }
+
+    #[test]
+    fn names_are_unique_trimmed_and_survive_saving() {
+        let mut set = WindowSet::from_saved(vec![saved(&[]), saved(&[])]);
+        assert_eq!(
+            set.set_name("main", Some("  Review feat/x ")).unwrap(),
+            Some("Review feat/x".to_string())
+        );
+        assert_eq!(set.named("review FEAT/x").as_deref(), Some("main"));
+        assert_eq!(
+            set.set_name("main-2", Some("REVIEW feat/x")).unwrap_err(),
+            "Another window is named \"REVIEW feat/x\"."
+        );
+        assert!(
+            set.set_name("main", Some("Review Feat/X")).is_ok(),
+            "renaming itself is fine"
+        );
+        assert!(set
+            .set_name("main-2", Some(&"x".repeat(NAME_LIMIT + 1)))
+            .is_err());
+        assert!(set.set_name("main-2", Some("a\nb")).is_err());
+        assert_eq!(
+            set.set_name("main-9", Some("x")).unwrap_err(),
+            "That window is closed."
+        );
+        let again = WindowSet::from_saved(set.saved());
+        assert_eq!(again.name_of("main").as_deref(), Some("Review Feat/X"));
+        assert_eq!(
+            set.set_name("main", Some("   ")).unwrap(),
+            None,
+            "blank clears"
+        );
+        assert_eq!(set.name_of("main"), None);
+    }
+
+    #[test]
+    fn a_duplicate_saved_name_is_dropped_on_load() {
+        let named = |name: &str| SavedWindow {
+            name: Some(name.to_string()),
+            ..Default::default()
+        };
+        let set = WindowSet::from_saved(vec![named("Book"), named("book"), named("\n")]);
+        assert_eq!(set.name_of("main").as_deref(), Some("Book"));
+        assert_eq!(set.name_of("main-2"), None);
+        assert_eq!(set.name_of("main-3"), None);
+    }
+
+    #[test]
+    fn a_named_window_is_found_or_added_once_and_capped() {
+        let mut set = WindowSet::from_saved(vec![saved(&[])]);
+        assert_eq!(
+            set.find_or_add_named("Book").unwrap(),
+            ("main-2".to_string(), true)
+        );
+        assert_eq!(
+            set.find_or_add_named(" book ").unwrap(),
+            ("main-2".to_string(), false)
+        );
+        assert_eq!(set.target(), "main-2");
+        for index in 1..NAMED_LIMIT {
+            set.find_or_add_named(&format!("w{index}")).unwrap();
+        }
+        assert!(set.find_or_add_named("one more").is_err());
+        assert!(
+            set.set_name("main-2", Some("Book 2")).is_ok(),
+            "renaming a named window adds no name"
+        );
+        assert!(set.set_name("main", Some("unnamed")).is_err());
+        assert_eq!(
+            set.labels().len(),
+            NAMED_LIMIT + 1,
+            "nothing added past the cap"
+        );
+        assert!(set.find_or_add_named("").is_err());
+    }
+
+    #[test]
+    fn moving_several_files_is_all_or_nothing() {
+        let mut set =
+            WindowSet::from_saved(vec![saved(&["/a.md", "/b.md", "/c.md"]), saved(&["/d.md"])]);
+        let paths = |list: &[&str]| list.iter().map(|p| p.to_string()).collect::<Vec<_>>();
+        assert_eq!(
+            set.move_all(&paths(&["/a.md", "/d.md"]), "main", "main-2")
+                .unwrap_err(),
+            "d.md is not open in this window."
+        );
+        assert_eq!(set.entry("main").unwrap().open, ["/a.md", "/b.md", "/c.md"]);
+        assert!(set.move_all(&paths(&["/a.md"]), "main", "main").is_err());
+        set.move_all(&paths(&["/c.md", "/a.md"]), "main", "main-2")
+            .unwrap();
+        assert_eq!(set.entry("main").unwrap().open, ["/b.md"]);
+        assert_eq!(
+            set.entry("main-2").unwrap().open,
+            ["/d.md", "/c.md", "/a.md"]
+        );
+        assert_eq!(
+            set.entry("main-2").unwrap().active.as_deref(),
+            Some("/a.md")
+        );
     }
 }

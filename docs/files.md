@@ -116,8 +116,20 @@ belongs to one window, so a review book can stay in one window while you work in
 
 To move a file, right-click it in the open files list (or press the Menu key, or `Shift+F10`)
 and choose **Move to New Window**, or **Move to Window** and then a window. A file that has not
-been saved yet must be saved first. Unsaved edits, comments, the cursor, the scroll position
+been saved yet must be saved first.
+
+To move several files at once, select them first: `Cmd`-click (`Ctrl`-click on Windows and
+Linux) adds or removes a file, `Shift`-click selects a range, and `Escape` or a plain click
+clears the selection. Right-click a selected file and choose **Move N Files to New Window**,
+**Move N Files to Window**, or **Close N Files**. The files land in one window together, and
+it shows the file you were reading. Right-clicking a file outside the selection acts on that
+file only. Unsaved edits, comments, the cursor, the scroll position
 and folded sections move with the file. The undo history does not.
+
+**File → Name Window…** names the current window. The name shows in its title bar and in
+other windows' **Move to Window** menu, and an agent can open files in that window by its name
+(see [MCP](mcp.md#opening-a-file-in-the-main-window)). An agent can also name a new window
+itself, so a review book opens in a window of its own. Leave the name empty to remove it.
 
 Files opened from Finder, the `sodilaud` command or an agent open in the window you used last.
 A file that is already open in another window is not opened twice: that window comes to the

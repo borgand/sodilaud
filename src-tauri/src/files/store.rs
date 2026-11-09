@@ -27,6 +27,8 @@ pub struct SavedWindow {
     pub folders: Vec<String>,
     #[serde(default)]
     pub expanded: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
 }
 
 /// `open` is the union of the windows' open files. Releases before multiple

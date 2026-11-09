@@ -18,6 +18,7 @@ import { createFileEditor } from "./file-editor.js";
 import { createMermaidRenderer, themeVariablesFrom } from "./mermaid.js";
 import { isMacLikePlatform, isWindowsPlatform } from "./platform-labels.js";
 import { createAgentAccess } from "./agent-access.js";
+import { createWindowNameDialog } from "./window-name.js";
 
 const HOTKEY_MESSAGES = {
   HotkeyInvalid: "That shortcut is not supported. The previous hotkey is still active.",
@@ -95,6 +96,7 @@ function openExternalHref(href) {
   });
 }
 
+const windowName = createWindowNameDialog({ document, invoke });
 const fileEditor = createFileEditor({
   document,
   invoke,
@@ -361,6 +363,7 @@ function attachListeners() {
   });
   $("open-quicknotes-menu-btn").addEventListener("click", closeMenuThen(() => showQuickNotes()));
   $("menu-new-window-btn").addEventListener("click", closeMenuThen(openNewWindow));
+  $("menu-name-window-btn").addEventListener("click", closeMenuThen(() => windowName.open()));
   $("menu-open-folder-btn").addEventListener("click", closeMenuThen(() => fileEditor.openFolderDialog()));
   $("menu-browse-folder-btn").addEventListener("click", closeMenuThen(() => fileEditor.browseFolder()));
   $("start-open-folder-btn").addEventListener("click", () => fileEditor.openFolderDialog());
@@ -414,6 +417,8 @@ function handleKeydown(event) {
   const plainTab = event.key === "Tab" && !isMeta && !event.altKey;
 
   if (agentAccess.handleKeydown(event)) return;
+  // The dialog handles its own keys; shortcuts wait until it closes.
+  if (windowName.isOpen()) return;
   if (themes.isModalOpen() && plainTab) {
     trapModalFocus(event, themes.modal);
     return;
@@ -553,6 +558,7 @@ async function registerNativeHandlers() {
     await listen("file-doc-saved", ({ payload }) => fileEditor.handleSaved(payload));
     await listen("file-doc-external", ({ payload }) => fileEditor.handleExternal(payload));
     await listen("file-open-request", () => fileEditor.takePending());
+    await listen("main-window-move-request", ({ payload }) => fileEditor.moveRequested(payload));
     await listen("folder-changed", ({ payload }) => fileEditor.folderChanged(payload));
     await listen("comments-changed", ({ payload }) => fileEditor.receiveComments(payload));
     await listen("coedit-state", ({ payload }) => fileEditor.setCoeditState(payload));

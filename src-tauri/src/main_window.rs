@@ -4,7 +4,7 @@
 
 use std::path::Path;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{
     AppHandle, CloseRequestApi, Emitter, Manager, PhysicalPosition, PhysicalSize, State,
     WebviewUrl, WebviewWindow, WebviewWindowBuilder, Window,
@@ -54,6 +54,22 @@ pub fn show(app: &AppHandle, label: &str) {
 pub fn present(app: &AppHandle, label: &str) {
     show(app, label);
     let _ = app.emit_to(label, OPEN_REQUEST_EVENT, ());
+}
+
+/// The title bar text: the app name, then the window's name when it has one.
+pub fn title_for(name: Option<&str>) -> String {
+    name.map_or_else(
+        || "Sodilaud".to_string(),
+        |name| format!("Sodilaud - {name}"),
+    )
+}
+
+/// Shows the window's name, if any, in its title bar.
+fn apply_title(app: &AppHandle, files: &Files, label: &str) {
+    let name = files.read(|lists| lists.windows.name_of(label));
+    if let Some(window) = app.get_webview_window(label) {
+        let _ = window.set_title(&title_for(name.as_deref()));
+    }
 }
 
 /// Shows the main window an app-wide action belongs to: the one focused last.
@@ -285,6 +301,9 @@ pub fn restore(app: &AppHandle, visible: bool) {
             }
         }
     }
+    for label in labels(app) {
+        apply_title(app, &files, &label);
+    }
     if visible {
         for label in labels(app) {
             if let Some(window) = app.get_webview_window(&label) {
@@ -334,12 +353,16 @@ pub fn summaries(set: &WindowSet, except: &str) -> Vec<WindowSummary> {
         .filter_map(|label| {
             let entry = set.entry(&label)?;
             let shown = entry.active.as_ref().or(entry.open.first());
-            Some(WindowSummary {
-                number: set.number(&label)?,
-                title: shown.map_or_else(
+            let title = match &entry.name {
+                Some(name) => name.clone(),
+                None => shown.map_or_else(
                     || "Start Page".to_string(),
                     |path| io::file_name(Path::new(path)),
                 ),
+            };
+            Some(WindowSummary {
+                number: set.number(&label)?,
+                title,
                 label,
             })
         })
@@ -367,6 +390,28 @@ fn open_new(app: &AppHandle, files: &Files, source: &WebviewWindow) -> Result<St
     Ok(label)
 }
 
+/// The window named `name`, built now when there is none yet. A new window
+/// opens next to the focused one. Runs on the main thread.
+pub fn open_named(app: &AppHandle, files: &Files, name: &str) -> Result<String, FileError> {
+    let source = files.read(|lists| lists.windows.target());
+    let (label, added) = files
+        .update(|lists| lists.windows.find_or_add_named(name))
+        .map_err(FileError::other)?;
+    if !added {
+        return Ok(label);
+    }
+    let frame = app
+        .get_webview_window(&source)
+        .and_then(|window| cascade_from(&window));
+    if create(app, &label, frame, true).is_none() {
+        abandon(app, files, &label);
+        return Err(FileError::other("Could not open a new window.".to_string()));
+    }
+    apply_title(app, files, &label);
+    show(app, &label);
+    Ok(label)
+}
+
 /// New Window: an empty window showing the start page.
 #[tauri::command]
 pub async fn main_window_new(app: AppHandle, window: WebviewWindow) -> Result<String, FileError> {
@@ -375,35 +420,53 @@ pub async fn main_window_new(app: AppHandle, window: WebviewWindow) -> Result<St
     open_new(&app, &files, &window)
 }
 
-/// Hands an open file, with its view state, to another window (`to`) or to a
-/// new one. The registry document stays open, so the target takes it as it is.
-/// Returns the target window's label.
+#[derive(Deserialize, Debug)]
+pub struct MovedFile {
+    pub path: String,
+    #[serde(default)]
+    pub view: Option<serde_json::Value>,
+}
+
+/// Hands open files, with their view state, to another window (`to`) or to
+/// one new window. Every file must be open here, or none moves. The registry
+/// documents stay open, so the target takes them as they are. The target opens
+/// them in the given order and shows the last. Returns the target's label.
 #[tauri::command]
-pub async fn main_window_move_file(
+pub async fn main_window_move_files(
     app: AppHandle,
     window: WebviewWindow,
-    path: String,
+    moved: Vec<MovedFile>,
     to: Option<String>,
-    view: Option<serde_json::Value>,
 ) -> Result<String, FileError> {
     require_main(window.label())?;
+    if moved.is_empty() {
+        return Err(FileError::other("No files to move.".to_string()));
+    }
     let files = app.state::<Files>();
     let registry = app.state::<SharedRegistry>();
-    let path = files.require(&path)?;
-    let path_text = path.to_string_lossy().to_string();
     let source = window.label().to_string();
-    let owned_here = |files: &Files| {
-        files
+    let open_docs = registry.file_doc_ids();
+    let mut entries = Vec::with_capacity(moved.len());
+    for file in moved {
+        let path = files.require(&file.path)?;
+        let path_text = path.to_string_lossy().to_string();
+        let is_open = open_docs.iter().any(|(open, _)| *open == path);
+        let owned_here = files
             .read(|lists| lists.windows.owner(&path_text))
             .as_deref()
-            == Some(source.as_str())
-    };
-    let is_open = registry
-        .file_doc_ids()
-        .iter()
-        .any(|(open, _)| *open == path);
-    if !is_open || !owned_here(&files) {
-        return Err(FileError::not_open(&path));
+            == Some(source.as_str());
+        if !is_open || !owned_here {
+            return Err(FileError::not_open(&path));
+        }
+        if !entries
+            .iter()
+            .any(|entry: &PendingOpen| entry.path == path_text)
+        {
+            entries.push(PendingOpen {
+                path: path_text,
+                view: limited_view(file.view),
+            });
+        }
     }
     let target = match to {
         Some(to) => {
@@ -415,24 +478,41 @@ pub async fn main_window_move_file(
         }
         None => open_new(&app, &files, &window)?,
     };
-    files.update(|lists| {
-        if lists.windows.owner(&path_text).as_deref() != Some(source.as_str()) {
-            return Err(FileError::not_open(&path));
-        }
-        lists
-            .windows
-            .move_to(&path_text, &target)
-            .map_err(FileError::other)
-    })?;
-    files.queue(
-        &target,
-        vec![PendingOpen {
-            path: path_text,
-            view: limited_view(view),
-        }],
-    );
+    let paths: Vec<String> = entries.iter().map(|entry| entry.path.clone()).collect();
+    files
+        .update(|lists| lists.windows.move_all(&paths, &source, &target))
+        .map_err(FileError::other)?;
+    files.queue(&target, entries);
     present(&app, &target);
     Ok(target)
+}
+
+/// This window's name, if it has one.
+#[tauri::command]
+pub fn main_window_name(
+    window: tauri::Window,
+    files: State<'_, Files>,
+) -> Result<Option<String>, FileError> {
+    require_main(window.label())?;
+    Ok(files.read(|lists| lists.windows.name_of(window.label())))
+}
+
+/// Names this window, or clears its name with an empty `name`. Returns the
+/// name it now has.
+#[tauri::command]
+pub fn main_window_set_name(
+    app: AppHandle,
+    window: tauri::Window,
+    files: State<'_, Files>,
+    name: String,
+) -> Result<Option<String>, FileError> {
+    require_main(window.label())?;
+    let label = window.label();
+    let named = files
+        .update(|lists| lists.windows.set_name(label, Some(&name)))
+        .map_err(FileError::other)?;
+    apply_title(&app, &files, label);
+    Ok(named)
 }
 
 /// The other main windows, for this window's Move to Window menu.
@@ -478,6 +558,15 @@ mod tests {
             vec![("main-2", 2, "Start Page"), ("main-3", 3, "b.md")]
         );
         assert_eq!(summaries(&set, "main-3")[0].title, "a.md");
+    }
+
+    #[test]
+    fn a_named_window_is_listed_by_its_name() {
+        let mut set = WindowSet::from_saved(vec![saved(&[], None), saved(&["/d/b.md"], None)]);
+        set.set_name("main-2", Some("Review feat/x")).unwrap();
+        assert_eq!(summaries(&set, "main")[0].title, "Review feat/x");
+        assert_eq!(title_for(Some("Book")), "Sodilaud - Book");
+        assert_eq!(title_for(None), "Sodilaud");
     }
 
     #[test]

@@ -18,13 +18,14 @@ function handlers({ open = ["/book/01.md", "/book/02.md"], pending = () => [], w
     file_set_open: ({ paths }) => { open = paths; },
     file_take_pending: pending,
     main_window_list: () => windows,
-    main_window_move_file: move ?? (({ to }) => to ?? "main-2")
+    main_window_move_files: move ?? (({ to }) => to ?? "main-2")
   };
 }
 
 const doc = (app) => app.dom.window.document;
-const moveCalls = (app) => app.invocations.filter((call) => call.command === "main_window_move_file");
+const moveCalls = (app) => app.invocations.filter((call) => call.command === "main_window_move_files");
 const moveArgs = (app) => moveCalls(app).at(-1).args;
+const movedPaths = (app) => moveArgs(app).moved.map((file) => file.path);
 const lastSetOpen = (app) => app.invocations.findLast((call) => call.command === "file_set_open").args;
 const fileItem = (app, name) => [...doc(app).querySelectorAll(".open-file-item")]
   .find((item) => item.querySelector(".open-file-name").textContent.replace(" •", "") === name);
@@ -53,14 +54,14 @@ test("moving sends the last keystrokes first and never closes the document", asy
   await until(() => listed(app).length === 1);
 
   const names = app.invocations.map((call) => call.command);
-  assert.ok(names.lastIndexOf("file_doc_push") < names.indexOf("main_window_move_file"));
+  assert.ok(names.lastIndexOf("file_doc_push") < names.indexOf("main_window_move_files"));
   assert.ok(!app.invocations.some((call) => call.command === "file_doc_close" && call.args.path === "/book/01.md"));
   assert.equal(app.fileDocs.text("/book/01.md").startsWith("x"), true);
   assert.equal(app.fileDocs.isOpen("/book/01.md"), true);
   assert.deepEqual(lastSetOpen(app).paths, ["/book/02.md"]);
   assert.equal(moveArgs(app).to, null);
-  assert.deepEqual(Object.keys(moveArgs(app).view).sort(), ["folds", "previewTop", "selection", "top"]);
-  assert.deepEqual(moveArgs(app).view.selection, { start: 1, end: 1 });
+  assert.deepEqual(Object.keys(moveArgs(app).moved[0].view).sort(), ["folds", "previewTop", "selection", "top"]);
+  assert.deepEqual(moveArgs(app).moved[0].view.selection, { start: 1, end: 1 });
   assert.equal(menu(app).hidden, true);
   assert.deepEqual(listed(app), ["02.md"]);
 });
@@ -78,7 +79,7 @@ test("the menu lists the other windows by number and file", async () => {
   assert.ok(doc(app).activeElement === menuItem(app, "Move to New Window"), "the first item has focus");
   menuItem(app, "Window 2 - notes.md").click();
   await until(() => moveCalls(app).length > 0);
-  assert.equal(moveArgs(app).path, "/book/02.md");
+  assert.deepEqual(movedPaths(app), ["/book/02.md"]);
   assert.equal(moveArgs(app).to, "main-2");
 });
 
@@ -265,4 +266,150 @@ test("typing into a file while it moves is blocked, and allowed again after a fa
   release();
   await until(() => listed(app).length === 1);
   assert.equal(app.fileDocs.text("/book/01.md"), `z${BOOK["/book/01.md"]}`);
+});
+
+const THREE = { ...BOOK, "/book/03.md": "# Three\n\nthird chapter\n" };
+const ALL = ["/book/01.md", "/book/02.md", "/book/03.md"];
+const nameButton = (app, name) => fileItem(app, name).querySelector(".open-file-name");
+const pick = (app, name, modifiers = {}) => nameButton(app, name).dispatchEvent(
+  new app.dom.window.MouseEvent("click", { bubbles: true, cancelable: true, ...modifiers })
+);
+const selectedNames = (app) => [...doc(app).querySelectorAll(".open-file-item.selected .open-file-name")]
+  .map((button) => button.textContent.replace(" •", ""));
+
+test("Cmd-click selects several files and the menu moves them to one new window", async () => {
+  const app = await bootMainWindow({ instance: 13, platform: "MacIntel", disk: THREE, handlers: handlers({ open: ALL }) });
+  pick(app, "02.md");
+  await app.settle();
+  pick(app, "03.md", { metaKey: true });
+  await app.settle();
+  assert.deepEqual(selectedNames(app), ["02.md", "03.md"]);
+  assert.equal(app.editorText(), THREE["/book/02.md"], "the shown file stays");
+
+  await openMenu(app, "03.md");
+  assert.ok(menuItem(app, "Move 2 Files to New Window"));
+  assert.ok(menuItem(app, "Close 2 Files"));
+  menuItem(app, "Move 2 Files to New Window").click();
+  await until(() => listed(app).length === 1);
+  assert.equal(moveCalls(app).length, 1, "one call, so one new window");
+  assert.equal(moveArgs(app).to, null);
+  assert.deepEqual(movedPaths(app), ["/book/03.md", "/book/02.md"], "the shown file goes last");
+  assert.deepEqual(listed(app), ["01.md"]);
+  assert.ok(app.fileDocs.isOpen("/book/02.md") && app.fileDocs.isOpen("/book/03.md"));
+});
+
+test("Shift-click selects a range, a plain click and Escape clear it", async () => {
+  const app = await bootMainWindow({ instance: 14, platform: "MacIntel", disk: THREE, handlers: handlers({ open: ALL }) });
+  pick(app, "01.md");
+  await app.settle();
+  pick(app, "03.md", { shiftKey: true });
+  await app.settle();
+  assert.deepEqual(selectedNames(app), ["01.md", "02.md", "03.md"]);
+  nameButton(app, "02.md").dispatchEvent(new app.dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+  await app.settle();
+  assert.deepEqual(selectedNames(app), []);
+
+  pick(app, "03.md", { shiftKey: true });
+  await app.settle();
+  assert.equal(selectedNames(app).length, 3);
+  pick(app, "02.md");
+  await app.settle();
+  assert.deepEqual(selectedNames(app), []);
+  assert.equal(app.editorText(), THREE["/book/02.md"]);
+});
+
+test("Ctrl-click selects on Windows, where Cmd does not exist", async () => {
+  const app = await bootMainWindow({ instance: 15, platform: "Win32", disk: THREE, handlers: handlers({ open: ALL }) });
+  pick(app, "01.md");
+  await app.settle();
+  pick(app, "02.md", { ctrlKey: true });
+  await app.settle();
+  assert.deepEqual(selectedNames(app), ["01.md", "02.md"]);
+  pick(app, "01.md", { ctrlKey: true });
+  await app.settle();
+  assert.deepEqual(selectedNames(app), [], "one file left is no selection");
+});
+
+test("a right-click outside the selection acts on that file only", async () => {
+  const app = await bootMainWindow({ instance: 16, platform: "MacIntel", disk: THREE, handlers: handlers({ open: ALL }) });
+  pick(app, "01.md");
+  await app.settle();
+  pick(app, "02.md", { metaKey: true });
+  await app.settle();
+  await openMenu(app, "03.md");
+  assert.ok(menuItem(app, "Move to New Window"));
+  assert.ok(!menuItem(app, "Move 2 Files"));
+  assert.deepEqual(selectedNames(app), []);
+});
+
+test("Close on a selection closes every selected file", async () => {
+  const app = await bootMainWindow({ instance: 17, platform: "MacIntel", disk: THREE, handlers: handlers({ open: ALL }) });
+  pick(app, "01.md");
+  await app.settle();
+  pick(app, "03.md", { metaKey: true });
+  await app.settle();
+  await openMenu(app, "01.md");
+  menuItem(app, "Close 2 Files").click();
+  await until(() => listed(app).length === 1);
+  assert.deepEqual(listed(app), ["02.md"]);
+  assert.equal(moveCalls(app).length, 0);
+});
+
+test("a selected group moves to another window from the submenu", async () => {
+  const app = await bootMainWindow({
+    instance: 18,
+    platform: "MacIntel",
+    disk: THREE,
+    handlers: handlers({ open: ALL, windows: [{ label: "main-2", number: 2, title: "Review feat/x" }] })
+  });
+  pick(app, "01.md");
+  await app.settle();
+  pick(app, "02.md", { shiftKey: true });
+  await app.settle();
+  await openMenu(app, "02.md");
+  assert.ok(menuItem(app, "Move 2 Files to Window"));
+  menuItem(app, "Window 2 - Review feat/x").click();
+  await until(() => listed(app).length === 1);
+  assert.equal(moveArgs(app).to, "main-2");
+  assert.deepEqual(movedPaths(app), ["/book/02.md", "/book/01.md"]);
+});
+
+test("Rust asks this window to move files an agent opened in a named window", async () => {
+  const app = await bootMainWindow({ instance: 19, platform: "MacIntel", disk: THREE, handlers: handlers({ open: ALL }) });
+  pick(app, "02.md");
+  await app.settle();
+  app.editor().dispatch({ changes: { from: 0, insert: "x" }, userEvent: "input.type" });
+  await app.emit("main-window-move-request", { paths: ["/book/02.md", "/book/03.md", "/elsewhere.md"], to: "main-4" });
+  await until(() => listed(app).length === 1);
+  assert.equal(moveArgs(app).to, "main-4");
+  assert.deepEqual(movedPaths(app), ["/book/03.md", "/book/02.md"]);
+  assert.equal(app.fileDocs.text("/book/02.md").startsWith("x"), true, "typing went along");
+  await app.emit("main-window-move-request", { paths: ["/book/02.md"], to: "main-4" });
+  await app.settle();
+  assert.equal(moveCalls(app).length, 1, "a file not open here is ignored");
+});
+
+test("Save As waits out a move in flight, so it cannot close a file another window took", async () => {
+  let release;
+  const app = await bootMainWindow({
+    instance: 20,
+    platform: "MacIntel",
+    disk: BOOK,
+    handlers: {
+      ...handlers({ move: () => new Promise((resolve) => { release = () => resolve("main-2"); }) }),
+      file_save_as_dialog: () => "/book/elsewhere.md"
+    }
+  });
+  pick(app, "01.md");
+  await app.settle();
+  // Not awaited: the move waits for release().
+  const requested = app.emit("main-window-move-request", { paths: ["/book/01.md"], to: "main-2" });
+  await until(() => moveCalls(app).length === 1);
+  app.click("menu-save-as-btn");
+  await app.settle();
+  assert.equal(app.invocations.filter((call) => call.command === "file_save_as_dialog").length, 0);
+  release();
+  await requested;
+  await until(() => listed(app).length === 1);
+  assert.equal(app.fileDocs.isOpen("/book/01.md"), true);
 });
