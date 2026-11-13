@@ -28,6 +28,7 @@ import { commentsExtension, startComment } from "./editor-comments.js";
 import { createComments } from "./comments-panel.js";
 import { createOpenFileMenu } from "./open-file-menu.js";
 import { createFolderSidebar } from "./folder-sidebar.js";
+import { createSidebarTabs } from "./sidebar-tabs.js";
 import { createFindBar } from "./find-bar.js";
 import { createFileSplit } from "./file-split.js";
 import { createPaneCompare } from "./pane-compare.js";
@@ -191,7 +192,7 @@ export function createFileEditor({
   const outline = createOutlinePanel({
     section: $("outline-section"),
     list: $("outline-list"),
-    toggle: $("outline-toggle-btn"),
+    empty: $("outline-empty"),
     view: () => editor.view,
     preview,
     isReading: () => layoutMode === "reading",
@@ -250,7 +251,23 @@ export function createFileEditor({
     event.stopPropagation();
   });
 
-  const folders = createFolderSidebar({ document, invoke, openPath, notify, onChange: renderSidebar });
+  const folders = createFolderSidebar({
+    document,
+    invoke,
+    openPath,
+    notify,
+    onChange: renderSidebar,
+    onAdd: () => sidebarTabs.select("files")
+  });
+  const sidebarTabs = createSidebarTabs({
+    document,
+    onShow: (tab) => {
+      if (tab === "outline") outline.revealCurrent();
+    },
+    onChange: (tab) => {
+      invoke("sidebar_set_tab", { tab }).catch((error) => console.error("Could not remember the sidebar tab", error));
+    }
+  });
 
   // The file's button disappears with the file, which would drop keyboard
   // focus onto the page; it goes to the neighbouring file or the start page.
@@ -650,6 +667,16 @@ export function createFileEditor({
   }
 
   const scheduleOutline = () => outline.schedule(renderOutline);
+
+  // The review count and anything else that points at the outline: shows the
+  // sidebar if it was hidden, on its Outline tab.
+  function showOutline() {
+    if (sidebarHidden) {
+      sidebarHidden = false;
+      renderSidebar();
+    }
+    sidebarTabs.select("outline");
+  }
 
   function renderMenu() {
     const buffer = showingStartPage ? null : model.active();
@@ -1354,6 +1381,7 @@ export function createFileEditor({
       console.error("Could not read the file lists", error);
     }
     takeLists(lists);
+    sidebarTabs.restore(lists?.sidebarTab);
     for (const path of Array.isArray(lists?.open) ? lists.open : []) {
       try {
         model.openFile(await invoke("file_doc_open", { path }));
@@ -1379,6 +1407,7 @@ export function createFileEditor({
     }
     outline.attach();
     sidebarToggle.addEventListener("click", toggleSidebar);
+    reviewStatus.addEventListener("click", showOutline);
     reviewNext.addEventListener("click", goToNextUnreviewed);
     backButton.addEventListener("click", goBack);
     forwardButton.addEventListener("click", goForward);

@@ -16,14 +16,14 @@ export const TOP_SLACK_PX = 8;
 
 /**
  * @param {{
- *   section: HTMLElement, list: HTMLElement, toggle: HTMLElement,
+ *   section: HTMLElement, list: HTMLElement, toggle?: HTMLElement, empty?: HTMLElement,
  *   view: () => import("@codemirror/view").EditorView,
  *   preview: HTMLElement,
  *   isReading: () => boolean,
  *   onSelect: (id: string) => void
  * }} options
  */
-export function createOutlinePanel({ section, list, toggle, view, preview, isReading, onSelect, delay = OUTLINE_DELAY_MS }) {
+export function createOutlinePanel({ section, list, toggle, empty, view, preview, isReading, onSelect, delay = OUTLINE_DELAY_MS }) {
   let shown = [];
   let currentId = null;
   let timer = null;
@@ -56,6 +56,7 @@ export function createOutlinePanel({ section, list, toggle, view, preview, isRea
     const hunks = enabled ? reviewHunkFences(state) : [];
     shown = enabled ? outlineEntries(documentAnchors(state), hunks, state.doc.length) : [];
     section.hidden = shown.length === 0;
+    if (empty) empty.hidden = shown.length > 0;
     if (shown.length) {
       renderOutlineList(list, shown, onSelect);
       markCurrentOutline(list, currentId);
@@ -79,7 +80,7 @@ export function createOutlinePanel({ section, list, toggle, view, preview, isRea
   function attach() {
     view().scrollDOM.addEventListener("scroll", updateCurrent, { passive: true });
     preview.addEventListener("scroll", updateCurrent, { passive: true });
-    toggle.addEventListener("click", toggleList);
+    toggle?.addEventListener("click", toggleList);
   }
 
   return {
@@ -87,6 +88,8 @@ export function createOutlinePanel({ section, list, toggle, view, preview, isRea
     render,
     schedule,
     updateCurrent,
+    // Scrolls the marked row into view, e.g. when its sidebar tab is shown.
+    revealCurrent: () => markCurrentOutline(list, currentId)?.scrollIntoView?.({ block: "nearest" }),
     // Another document is shown: nothing is current until it is measured.
     reset: () => { currentId = null; },
     cancel: () => { clearTimeout(timer); timer = null; }

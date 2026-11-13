@@ -10,7 +10,8 @@ const MISSING_TEXT = "Folder not found";
 const MOVE_KEYS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End"]);
 const expandable = (row) => row.kind === "root" || row.kind === "folder";
 
-export function createFolderSidebar({ document, invoke, openPath, notify = () => {}, onChange = () => {} }) {
+// `onAdd` is told when the user adds a root, so the section can be brought into view.
+export function createFolderSidebar({ document, invoke, openPath, notify = () => {}, onChange = () => {}, onAdd = () => {} }) {
   const section = document.getElementById("folders-section");
   const treeElement = document.getElementById("folder-tree");
   const tree = createFolderTree();
@@ -183,6 +184,7 @@ export function createFolderSidebar({ document, invoke, openPath, notify = () =>
   async function addRoot(root) {
     if (!root) return;
     tree.addRoot(root);
+    onAdd();
     render();
     await fill();
     await report();

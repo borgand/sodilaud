@@ -486,6 +486,7 @@ pub fn run(context: tauri::Context<tauri::Wry>) {
             files::commands::folder_remove,
             files::commands::folder_list,
             files::commands::folder_set_expanded,
+            files::commands::sidebar_set_tab,
             files::commands::folder_open_file,
             files::commands::draft_discard,
             files::commands::draft_save_to_notes,
