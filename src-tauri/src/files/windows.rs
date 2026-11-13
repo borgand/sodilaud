@@ -13,6 +13,13 @@ pub const MAIN_LABEL: &str = "main";
 pub const NAME_LIMIT: usize = 80;
 /// The most windows that may carry a name at once.
 pub const NAMED_LIMIT: usize = 16;
+/// The sidebar tabs; the first is the default and is not stored.
+const SIDEBAR_TABS: [&str; 2] = ["files", "outline"];
+
+/// A sidebar tab worth storing: a known one other than the default.
+fn stored_sidebar_tab(tab: &str) -> Option<String> {
+    SIDEBAR_TABS[1..].contains(&tab).then(|| tab.to_string())
+}
 
 /// A window name as given, trimmed, or why it is not one.
 pub fn clean_name(name: &str) -> Result<String, String> {
@@ -54,6 +61,7 @@ pub struct WindowEntry {
     pub folders: Vec<String>,
     pub expanded: Vec<String>,
     pub name: Option<String>,
+    pub sidebar_tab: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -88,6 +96,7 @@ impl WindowSet {
                 folders: window.folders,
                 expanded: window.expanded,
                 name: window.name.and_then(|name| clean_name(&name).ok()),
+                sidebar_tab: window.sidebar_tab.as_deref().and_then(stored_sidebar_tab),
             })
             .collect();
         let mut set = Self {
@@ -144,6 +153,7 @@ impl WindowSet {
             folders: Vec::new(),
             expanded: Vec::new(),
             name: None,
+            sidebar_tab: None,
         });
         self.focus.insert(0, label.clone());
         label
@@ -403,6 +413,18 @@ impl WindowSet {
             .unwrap_or_default()
     }
 
+    /// The tab the window's sidebar shows; false for an unknown window or tab.
+    pub fn set_sidebar_tab(&mut self, label: &str, tab: &str) -> bool {
+        if !SIDEBAR_TABS.contains(&tab) {
+            return false;
+        }
+        let Some(entry) = self.entry_mut(label) else {
+            return false;
+        };
+        entry.sidebar_tab = stored_sidebar_tab(tab);
+        true
+    }
+
     /// Keeps only paths equal to or below one of the window's roots (component-wise prefix), without
     /// duplicates, in the given order.
     pub fn set_expanded(&mut self, label: &str, paths: Vec<String>) {
@@ -446,6 +468,7 @@ impl WindowSet {
                 folders: w.folders.clone(),
                 expanded: w.expanded.clone(),
                 name: w.name.clone(),
+                sidebar_tab: w.sidebar_tab.clone(),
             })
             .collect()
     }
@@ -784,5 +807,33 @@ mod tests {
             set.entry("main-2").unwrap().active.as_deref(),
             Some("/a.md")
         );
+    }
+
+    #[test]
+    fn the_sidebar_tab_is_kept_per_window_and_survives_saving() {
+        let mut set = WindowSet::from_saved(vec![saved(&[]), saved(&[])]);
+        assert_eq!(set.entry("main").unwrap().sidebar_tab, None);
+        assert!(set.set_sidebar_tab("main-2", "outline"));
+        assert!(!set.set_sidebar_tab("main", "bookmarks"));
+        assert!(!set.set_sidebar_tab("main-9", "outline"));
+        assert_eq!(set.entry("main").unwrap().sidebar_tab, None);
+        let out = set.saved();
+        assert_eq!(out[1].sidebar_tab.as_deref(), Some("outline"));
+        let mut again = WindowSet::from_saved(out);
+        assert_eq!(
+            again.entry("main-2").unwrap().sidebar_tab.as_deref(),
+            Some("outline")
+        );
+        assert!(again.set_sidebar_tab("main-2", "files"));
+        assert_eq!(again.entry("main-2").unwrap().sidebar_tab, None);
+    }
+
+    #[test]
+    fn an_unknown_saved_sidebar_tab_is_dropped() {
+        let set = WindowSet::from_saved(vec![SavedWindow {
+            sidebar_tab: Some("bookmarks".into()),
+            ..Default::default()
+        }]);
+        assert_eq!(set.entry("main").unwrap().sidebar_tab, None);
     }
 }

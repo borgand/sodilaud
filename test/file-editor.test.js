@@ -383,8 +383,6 @@ test("the outline lists headings with review progress and the status bar counts 
 
   app.click("mode-live");
   assert.ok(page.querySelector(".cm-section-folded"), "Live mode keeps the Engine fold");
-  page.getElementById("outline-toggle-btn").click();
-  assert.equal(page.getElementById("outline-list").hidden, true);
 });
 
 test("a file without headings or hunks shows no outline and no review count", async () => {

@@ -38,6 +38,7 @@ import { commentsExtension, startComment } from "./editor-comments.js";
 import { createComments } from "./comments-panel.js";
 import { createOpenFileMenu } from "./open-file-menu.js";
 import { createFolderSidebar } from "./folder-sidebar.js";
+import { createSidebarTabs } from "./sidebar-tabs.js";
 import { createFindBar } from "./find-bar.js";
 import { createFileSplit } from "./file-split.js";
 import { createPaneCompare } from "./pane-compare.js";
@@ -75,7 +76,7 @@ export function createFileEditor({
   const statusPath = $("file-status-path");
   const preview = $("markdown-preview");
   const outlineSection = $("outline-section");
-  const outlineToggle = $("outline-toggle-btn");
+  const outlineEmpty = $("outline-empty");
   const outlineList = $("outline-list");
   const reviewStatus = $("review-progress");
   const reviewNext = $("review-next-btn");
@@ -257,7 +258,23 @@ export function createFileEditor({
     event.stopPropagation();
   });
 
-  const folders = createFolderSidebar({ document, invoke, openPath, notify, onChange: renderSidebar });
+  const folders = createFolderSidebar({
+    document,
+    invoke,
+    openPath,
+    notify,
+    onChange: renderSidebar,
+    onAdd: () => sidebarTabs.select("files")
+  });
+  const sidebarTabs = createSidebarTabs({
+    document,
+    onShow: (tab) => {
+      if (tab === "outline") markCurrentOutline(outlineList, currentOutlineId)?.scrollIntoView?.({ block: "nearest" });
+    },
+    onChange: (tab) => {
+      invoke("sidebar_set_tab", { tab }).catch((error) => console.error("Could not remember the sidebar tab", error));
+    }
+  });
 
   // The file's button disappears with the file, which would drop keyboard
   // focus onto the page; it goes to the neighbouring file or the start page.
@@ -653,6 +670,7 @@ export function createFileEditor({
     const entries = markdown ? outlineEntries(documentAnchors(state), hunks, state.doc.length) : [];
     outlineShown = entries;
     outlineSection.hidden = entries.length === 0;
+    outlineEmpty.hidden = entries.length > 0;
     if (entries.length) {
       renderOutlineList(outlineList, entries, jumpTo);
       markCurrentOutline(outlineList, currentOutlineId);
@@ -699,10 +717,14 @@ export function createFileEditor({
     outlineTimer = setTimeout(renderOutline, OUTLINE_DELAY_MS);
   }
 
-  function toggleOutline() {
-    const expanded = outlineToggle.getAttribute("aria-expanded") !== "true";
-    outlineToggle.setAttribute("aria-expanded", String(expanded));
-    outlineList.hidden = !expanded;
+  // The review count and anything else that points at the outline: shows the
+  // sidebar if it was hidden, on its Outline tab.
+  function showOutline() {
+    if (sidebarHidden) {
+      sidebarHidden = false;
+      renderSidebar();
+    }
+    sidebarTabs.select("outline");
   }
 
   function renderMenu() {
@@ -1405,6 +1427,7 @@ export function createFileEditor({
       console.error("Could not read the file lists", error);
     }
     takeLists(lists);
+    sidebarTabs.restore(lists?.sidebarTab);
     for (const path of Array.isArray(lists?.open) ? lists.open : []) {
       try {
         model.openFile(await invoke("file_doc_open", { path }));
@@ -1431,7 +1454,7 @@ export function createFileEditor({
     editor.view.scrollDOM.addEventListener("scroll", updateCurrentOutline, { passive: true });
     preview.addEventListener("scroll", updateCurrentOutline, { passive: true });
     sidebarToggle.addEventListener("click", toggleSidebar);
-    outlineToggle.addEventListener("click", toggleOutline);
+    reviewStatus.addEventListener("click", showOutline);
     reviewNext.addEventListener("click", goToNextUnreviewed);
     backButton.addEventListener("click", goBack);
     forwardButton.addEventListener("click", goForward);

@@ -40,6 +40,7 @@
     "allow-folder-remove",
     "allow-folder-list",
     "allow-folder-set-expanded",
+    "allow-sidebar-set-tab",
     "allow-folder-open-file",
     "allow-draft-discard",
     "allow-draft-save-to-notes",

@@ -215,17 +215,25 @@
       </div>
     </header>
     <div class="main-body">
-    <aside class="files-sidebar" id="files-sidebar" aria-labelledby="files-sidebar-title" hidden>
-      <h2 class="files-sidebar-title" id="files-sidebar-title">Open files</h2>
-      <ul class="open-files-list" id="open-files-list"></ul>
-      <section class="folders-section" id="folders-section" aria-labelledby="folders-title" hidden>
-        <h2 class="files-sidebar-title" id="folders-title">Folders</h2>
-        <ul class="folder-tree" id="folder-tree" role="tree" aria-labelledby="folders-title"></ul>
-      </section>
-      <section class="outline-section" id="outline-section" aria-label="Outline" hidden>
-        <button class="files-sidebar-title outline-toggle" id="outline-toggle-btn" type="button" aria-expanded="true" aria-controls="outline-list">Outline</button>
-        <ul class="outline-list" id="outline-list"></ul>
-      </section>
+    <aside class="files-sidebar" id="files-sidebar" aria-label="Sidebar" hidden>
+      <div class="sidebar-tabs" role="tablist" aria-label="Sidebar">
+        <button class="sidebar-tab" id="sidebar-tab-files" type="button" role="tab" aria-selected="true" aria-controls="sidebar-panel-files">Files</button>
+        <button class="sidebar-tab" id="sidebar-tab-outline" type="button" role="tab" aria-selected="false" aria-controls="sidebar-panel-outline" tabindex="-1">Outline</button>
+      </div>
+      <div class="sidebar-panel" id="sidebar-panel-files" role="tabpanel" aria-labelledby="sidebar-tab-files">
+        <h2 class="files-sidebar-title" id="files-sidebar-title">Open files</h2>
+        <ul class="open-files-list" id="open-files-list" aria-labelledby="files-sidebar-title"></ul>
+        <section class="folders-section" id="folders-section" aria-labelledby="folders-title" hidden>
+          <h2 class="files-sidebar-title" id="folders-title">Folders</h2>
+          <ul class="folder-tree" id="folder-tree" role="tree" aria-labelledby="folders-title"></ul>
+        </section>
+      </div>
+      <div class="sidebar-panel" id="sidebar-panel-outline" role="tabpanel" aria-labelledby="sidebar-tab-outline" hidden>
+        <p class="outline-empty" id="outline-empty">No headings in this file.</p>
+        <section class="outline-section" id="outline-section" aria-label="Outline" hidden>
+          <ul class="outline-list" id="outline-list"></ul>
+        </section>
+      </div>
     </aside>
     <div class="main-content">
     <main class="start-page" id="start-page" aria-labelledby="start-title">
@@ -333,7 +341,7 @@
       <footer class="file-status" id="file-status-bar">
         <span class="file-status-text" id="file-status" aria-live="polite"></span>
         <span class="sr-only" id="file-status-path"></span>
-        <span class="review-progress" id="review-progress" title="Review hunks marked reviewed" hidden></span>
+        <button class="review-progress" id="review-progress" type="button" title="Review hunks marked reviewed. Click to show the outline." hidden></button>
         <button class="review-next" id="review-next-btn" type="button" title="Scroll to the next hunk not marked reviewed" hidden>Next unreviewed</button>
         <button class="comments-count" id="comments-count-btn" type="button" aria-controls="comments-panel" aria-expanded="false" hidden>No comments</button>
       </footer>

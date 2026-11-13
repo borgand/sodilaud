@@ -60,12 +60,20 @@ Open files are listed in the sidebar; click one to switch to it, or its **×** t
 Each file keeps its own undo history while it is open. The files that were open when you quit
 reopen at the next launch.
 
+The sidebar has two tabs, each using its full height. **Files** lists the open files and, below
+them, the [folders](#folders). **Outline** lists the headings of the shown Markdown file, marks
+the section you are reading, and for a review book shows how many hunks of each section are
+reviewed; click a heading to go to it. Switch tabs by clicking them, or focus a tab and use the
+arrow keys, `Home` and `End`. Each window remembers its tab across restarts; a new window starts
+on **Files**. Clicking the "n/m reviewed" count in the status bar switches to **Outline** and
+shows the sidebar if it was hidden; adding a folder switches to **Files**.
+
 The status bar shows the save state ("Saved" fades after a moment) and, on hover, the file's path.
 
 ## Folders
 
 **File → Open Folder…** (`Cmd+Shift+O`, `Ctrl+Shift+O` on Windows and Linux), the start page's
-**Open Folder…**, and **Show Folder in Sidebar** (File menu, for the shown file) add a folder to the **Folders** section of the sidebar. Each window has its own folders;
+**Open Folder…**, and **Show Folder in Sidebar** (File menu, for the shown file) add a folder to the **Folders** section of the sidebar's **Files** tab. Each window has its own folders;
 they come back after a restart with the folders you had expanded. Remove a folder with its
 **×** button ("Remove <name> from the sidebar"); nothing on disk changes.
 
