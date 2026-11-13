@@ -136,6 +136,23 @@ function toggleActionsDropdown(show) {
   actionsBtn.setAttribute("aria-expanded", String(open));
 }
 
+// Focus mode hides the sidebar, formatting toolbar and status bar with one
+// class, as Quick Notes does. Nothing else changes, so leaving it brings back
+// the layout as it was. Per window and not remembered.
+function toggleFocusMode() {
+  const on = $("app").classList.toggle("focus-mode");
+  $("menu-focus-mode-btn").setAttribute("aria-pressed", String(on));
+}
+
+// Cmd+Shift+F on macOS, Ctrl+Shift+F elsewhere, as in Quick Notes.
+function isFocusModeShortcut(event) {
+  if (!event.shiftKey || event.altKey) return false;
+  if (event.code !== "KeyF" && event.key.toLowerCase() !== "f") return false;
+  return isMacLikePlatform(navigator)
+    ? event.metaKey && !event.ctrlKey
+    : event.ctrlKey && !event.metaKey;
+}
+
 function closeMenuThen(action) {
   return () => {
     toggleActionsDropdown(false);
@@ -363,6 +380,7 @@ function attachListeners() {
   });
   $("open-quicknotes-menu-btn").addEventListener("click", closeMenuThen(() => showQuickNotes()));
   $("menu-new-window-btn").addEventListener("click", closeMenuThen(openNewWindow));
+  $("menu-focus-mode-btn").addEventListener("click", closeMenuThen(toggleFocusMode));
   $("menu-name-window-btn").addEventListener("click", closeMenuThen(() => windowName.open()));
   $("menu-open-folder-btn").addEventListener("click", closeMenuThen(() => fileEditor.openFolderDialog()));
   $("menu-browse-folder-btn").addEventListener("click", closeMenuThen(() => fileEditor.browseFolder()));
@@ -436,6 +454,11 @@ function handleKeydown(event) {
   if (isSidebarShortcut(event)) {
     event.preventDefault();
     fileEditor.toggleSidebar();
+    return;
+  }
+  if (isFocusModeShortcut(event)) {
+    event.preventDefault();
+    toggleFocusMode();
     return;
   }
   if (isNewWindowShortcut(event)) {

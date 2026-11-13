@@ -225,6 +225,24 @@
   justify-content: flex-end;
 }
 
+/* Focus mode, as in Quick Notes: only the document column and a faded top bar. */
+.main-window.focus-mode .files-sidebar,
+.main-window.focus-mode .main-topbar .topbar-center,
+.main-window.focus-mode #toggle-files-sidebar,
+.main-window.focus-mode .file-status {
+  display: none !important;
+}
+
+.main-window.focus-mode .main-topbar {
+  opacity: 0.15;
+  transition: opacity 0.3s;
+}
+
+.main-window.focus-mode .main-topbar:hover,
+.main-window.focus-mode .main-topbar:focus-within {
+  opacity: 1;
+}
+
 .main-body {
   display: flex;
   flex: 1;

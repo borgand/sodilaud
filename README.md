@@ -63,7 +63,7 @@ Clipboard history is off by default. Turn it on in **Sodilaud menu → Clipboard
 ## Features
 
 - Quick Notes: a floating, always-on-top notes panel on a global hotkey that stays open while you work in other apps
-- A Markdown file editor with autosave, recent files, Finder "Open With", and outside-edit detection
+- A Markdown file editor with autosave, recent files, Finder "Open With", outside-edit detection, and a Focus Mode that leaves only the document
 - Clipboard history on macOS: press `⌘⇧V` in any app to pick from your recent copies, with secrets masked, entries kept in memory only, and automatic expiry
 - Optional local MCP agent access with five read tools, ten individually enabled write tools, and a live listening indicator; access and permissions are remembered across restarts
 - Agents can push a note into Quick Notes (a **From agents** folder) and open a Markdown or text file in the main window
@@ -177,7 +177,7 @@ The app displays `Cmd` on macOS and `Ctrl` on Windows or Linux.
 | `Home` | Move to list-item content first, then the beginning of the line |
 | `Cmd/Ctrl + +` / `Cmd/Ctrl + -` | Zoom the editor in or out |
 | `Cmd/Ctrl + 0` | Reset editor zoom to 100% |
-| `Cmd/Ctrl + Shift + F` | Toggle Focus Mode |
+| `Cmd/Ctrl + Shift + F` | Toggle Focus Mode; in the main window it hides the sidebar, formatting toolbar and status bar, and toggling again restores the layout |
 | `Cmd/Ctrl + B` / `I` / `E` | Toggle bold, italic, or inline code |
 | `Cmd/Ctrl + Shift + X` | Toggle strikethrough |
 | `Cmd/Ctrl + K` | Make the selection a link, or insert a link; inside an existing link, select its URL |
@@ -187,7 +187,7 @@ The app displays `Cmd` on macOS and `Ctrl` on Windows or Linux.
 | `Cmd/Ctrl + Alt + C` | Insert a code block, or fence the selected lines |
 | `Cmd/Ctrl + /` or `F1` | Open or close Help and Reference |
 | `Tab` / `Shift + Tab` | Switch topics while Help is open |
-| `Escape` | Close the active modal or Find bar, or leave Focus Mode; it never hides Quick Notes |
+| `Escape` | Close the active modal or Find bar, or leave Focus Mode in Quick Notes; it never hides Quick Notes |
 
 ## Markdown editing
 
