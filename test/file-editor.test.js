@@ -227,6 +227,27 @@ test("Cmd+W closes files and the last one brings back the start page", async () 
   assert.deepEqual(app.invocations.findLast((call) => call.command === "file_set_open").args, { paths: [], active: null });
 });
 
+test("closing a file writes it before the open list Rust tells sodilaud --wait about drops it", async () => {
+  const fake = lists({ open: ["/repo/COMMIT_EDITMSG.md", "/docs/other.md"] });
+  const app = await bootMainWindow({
+    instance: 44,
+    platform: "MacIntel",
+    disk: { "/repo/COMMIT_EDITMSG.md": "", "/docs/other.md": "other" },
+    handlers: fake.handlers
+  });
+  [...doc(app).querySelectorAll(".open-file-name")].find((item) => item.textContent === "COMMIT_EDITMSG.md").click();
+  await app.settle();
+  assert.equal(doc(app).getElementById("main-title").textContent, "COMMIT_EDITMSG.md");
+  typeAt(app, 0, "fix: wait for the editor");
+  key(app, { key: "w", code: "KeyW", metaKey: true });
+  await app.settle();
+  assert.deepEqual(app.fileDocs.writes.at(-1), { path: "/repo/COMMIT_EDITMSG.md", text: "fix: wait for the editor" });
+  const closed = app.invocations.findIndex((call) => call.command === "file_doc_close" && call.args.path === "/repo/COMMIT_EDITMSG.md");
+  const dropped = app.invocations.findIndex((call) => call.command === "file_set_open" && !call.args.paths.includes("/repo/COMMIT_EDITMSG.md"));
+  assert.ok(closed >= 0 && dropped > closed, "the open list drops the file only after it was written and closed");
+  assert.deepEqual(app.invocations.findLast((call) => call.command === "file_set_open").args.paths, ["/docs/other.md"]);
+});
+
 test("a new file is saved with Save As, then autosaved; closing an unsaved one asks first", async () => {
   const fake = lists();
   const answers = ["cancel", "discard"];
@@ -383,8 +404,6 @@ test("the outline lists headings with review progress and the status bar counts 
 
   app.click("mode-live");
   assert.ok(page.querySelector(".cm-section-folded"), "Live mode keeps the Engine fold");
-  page.getElementById("outline-toggle-btn").click();
-  assert.equal(page.getElementById("outline-list").hidden, true);
 });
 
 test("a file without headings or hunks shows no outline and no review count", async () => {
@@ -516,4 +535,30 @@ test("Save As onto the file's own path right after typing keeps every change", a
   } finally {
     console.error = consoleError;
   }
+});
+
+test("the status bar counts words like Quick Notes: totals, or the selection's", async () => {
+  const fake = lists({ open: ["/docs/a.md", "/docs/b.md"] });
+  const app = await bootMainWindow({
+    instance: 47,
+    disk: { "/docs/a.md": "alpha beta\ngamma", "/docs/b.md": "one" },
+    handlers: fake.handlers
+  });
+  const text = (id) => doc(app).getElementById(id).textContent;
+  await app.until(() => doc(app).querySelector(".open-file-item.active .open-file-name"));
+  const active = doc(app).querySelector(".open-file-item.active .open-file-name").textContent;
+  if (active !== "a.md") {
+    [...doc(app).querySelectorAll(".open-file-name")].find((item) => item.textContent === "a.md").click();
+  }
+  await app.until(() => text("word-char-count") === "3 words • 16 characters");
+  assert.equal(text("word-char-count"), "3 words • 16 characters");
+
+  app.editor().dispatch({ selection: { anchor: 0, head: 13 } });
+  assert.equal(text("cursor-position"), "Ln 2, Col 3", "the cursor follows at once");
+  await app.until(() => text("word-char-count") === "3 words • 13 characters selected");
+  assert.equal(text("word-char-count"), "3 words • 13 characters selected");
+
+  [...doc(app).querySelectorAll(".open-file-name")].find((item) => item.textContent === "b.md").click();
+  await app.until(() => text("word-char-count") === "1 word • 3 characters");
+  assert.equal(text("word-char-count"), "1 word • 3 characters", "another file shows its own totals");
 });

@@ -46,6 +46,22 @@ once. Relative paths are taken from the terminal's current folder. A file that d
 yet is created empty, but only in a folder that exists. Only `.md`, `.markdown`, `.txt`, `.csv`
 and `.tsv` files are accepted; anything else is refused with a message and nothing is opened.
 
+With `--wait` (or `-w`), the command returns only when you have closed every file it opened, so
+it can serve as `$EDITOR` for tools that hand it a Markdown or text file (GitHub's `gh` writes
+pull request and issue bodies to `.md` files, for example):
+
+```sh
+export EDITOR="sodilaud --wait"
+```
+
+Close a file with its **×** or `Cmd+W` (`Ctrl+W` on Windows and Linux): it is saved first, then
+the command returns. A file that was already open is waited for too, and moving a file to another
+window keeps it open. Closing a window closes its files; hiding the last window does not. The
+command reaches Sodilaud through the same local connection as agents, so it needs **Agent access**
+**On** (see [MCP agent access](mcp.md)). If Sodilaud quits or Agent access is turned off before
+the files are closed, the command prints why and exits with an error. The extension rule above
+still applies, so Git's `COMMIT_EDITMSG`, which has none, is refused.
+
 To install it, choose **Command Line Tool…** in the **Sodilaud menu** (on macOS also in the
 application menu, under **About Sodilaud**). It writes a small script to
 `~/.local/bin/sodilaud`; no administrator password is needed. If `~/.local/bin` is not on your
@@ -60,12 +76,35 @@ Open files are listed in the sidebar; click one to switch to it, or its **×** t
 Each file keeps its own undo history while it is open. The files that were open when you quit
 reopen at the next launch.
 
-The status bar shows the save state ("Saved" fades after a moment) and, on hover, the file's path.
+The sidebar has two tabs, each using its full height. **Files** lists the open files and, below
+them, the [folders](#folders). **Outline** lists the headings of the shown Markdown file, marks
+the section you are reading, and for a review book shows how many hunks of each section are
+reviewed; click a heading to go to it. Switch tabs by clicking them, or focus a tab and use the
+arrow keys, `Home` and `End`. Each window remembers its tab across restarts; a new window starts
+on **Files**. Clicking the "n/m reviewed" count in the status bar switches to **Outline** and
+shows the sidebar if it was hidden; adding a folder switches to **Files**.
+
+Drag the edge between the sidebar and the editor to make the sidebar wider or narrower; the
+comments panel's edge works the same way. With the edge focused (Tab), the arrow keys move it
+(Shift for bigger steps), Home and End jump to the narrowest and widest, and Enter or a
+double-click puts back the default width. A sidebar can take up to half the window. The widths
+are remembered for the next launch.
+
+The status bar shows the word and character count, the cursor position (`Ln 3, Col 12`), the
+save state ("Saved" fades after a moment) and, on hover, the file's path. While text is
+selected, the count is the selection's ("2 words • 10 characters selected") instead of the
+file's. Quick Notes' status bar works the same way.
+
+To copy a file's name or path, right-click it in the open files list (or press the Menu key, or
+`Shift+F10`) and choose **Copy File Name** or **Copy Full Path**. When the file is inside a
+folder in the **Folders** section, **Copy Relative Path** copies its path from that folder (the
+innermost one, when folders are nested). A file in the folder tree has the same menu. A new file
+that has not been saved has no path to copy yet.
 
 ## Folders
 
 **File → Open Folder…** (`Cmd+Shift+O`, `Ctrl+Shift+O` on Windows and Linux), the start page's
-**Open Folder…**, and **Show Folder in Sidebar** (File menu, for the shown file) add a folder to the **Folders** section of the sidebar. Each window has its own folders;
+**Open Folder…**, and **Show Folder in Sidebar** (File menu, for the shown file) add a folder to the **Folders** section of the sidebar's **Files** tab. Each window has its own folders;
 they come back after a restart with the folders you had expanded. Remove a folder with its
 **×** button ("Remove <name> from the sidebar"); nothing on disk changes.
 
@@ -108,6 +147,11 @@ restart.
 
 In split view, Save, Save As and Close act on the pane that has focus.
 
+The **Full Width** button in the toolbar (a two-way arrow between two bars) lets the text use the
+whole window width instead of the readable column, for wide tables and code. It is the same
+setting as **Sodilaud menu → Appearance → Readable width** (Full Width on = Readable width off),
+applies to every window and Quick Notes, and is remembered between launches.
+
 ## Windows
 
 **File → New Window** (`Cmd+Alt+N`, `Ctrl+Alt+N` on Windows and Linux) opens another main
@@ -125,6 +169,11 @@ clears the selection. Right-click a selected file and choose **Move N Files to N
 it shows the file you were reading. Right-clicking a file outside the selection acts on that
 file only. Unsaved edits, comments, the cursor, the scroll position
 and folded sections move with the file. The undo history does not.
+
+A window is titled after the file it shows, which is what Mission Control and the Window menu
+list. On macOS the toolbar is the title bar: the file name sits small in the toolbar row,
+dragging the row's empty space moves the window, and double-clicking it zooms the window.
+Windows and Linux keep their system title bar above the toolbar.
 
 **File → Name Window…** names the current window. The name shows in its title bar and in
 other windows' **Move to Window** menu, and an agent can open files in that window by its name

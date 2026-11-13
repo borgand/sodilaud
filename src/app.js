@@ -19,6 +19,8 @@ import { createMermaidRenderer, themeVariablesFrom } from "./mermaid.js";
 import { isMacLikePlatform, isWindowsPlatform } from "./platform-labels.js";
 import { createAgentAccess } from "./agent-access.js";
 import { createWindowNameDialog } from "./window-name.js";
+import { TITLE_MIN_WIDTH, applyTitleBarLayout, createWindowTitle } from "./title-bar.js";
+import { createSidebarResizer } from "./sidebar-resize.js";
 
 const HOTKEY_MESSAGES = {
   HotkeyInvalid: "That shortcut is not supported. The previous hotkey is still active.",
@@ -46,6 +48,12 @@ const hotkeyBtn = $("quicknotes-hotkey-btn");
 const hotkeyStatus = $("quicknotes-hotkey-status");
 
 const isMac = isMacPlatform(navigator);
+const overlayTitleBar = isMac && Boolean(window.__TAURI__);
+if (overlayTitleBar) applyTitleBarLayout(document);
+const windowTitle = createWindowTitle({
+  document,
+  setNativeTitle: (text) => window.__TAURI__?.window?.getCurrentWindow?.().setTitle?.(text)
+});
 let quickNotesConfig = { hotkey: "", requested: "", hotkeyError: null, upgradeIntro: false };
 let capturingHotkey = false;
 let isHelpModalOpen = false;
@@ -59,7 +67,8 @@ const appearance = createAppearance({
   storage: localStorage,
   broadcast: (key) => broadcastPreference(window, key),
   onLineNumbers: (enabled) => fileEditor?.setLineNumbers(enabled),
-  onSyntaxHighlighting: (enabled) => fileEditor?.setSyntaxHighlighting(enabled)
+  onSyntaxHighlighting: (enabled) => fileEditor?.setSyntaxHighlighting(enabled),
+  onVimMode: (enabled) => fileEditor?.setVimMode(enabled)
 });
 const mermaid = createMermaidRenderer({ document });
 const fonts = createDocumentFonts({
@@ -96,10 +105,12 @@ function openExternalHref(href) {
   });
 }
 
-const windowName = createWindowNameDialog({ document, invoke });
+const windowName = createWindowNameDialog({ document, invoke, onNamed: (name) => windowTitle.setWindowName(name) });
 const fileEditor = createFileEditor({
   document,
   invoke,
+  onTitle: (name) => windowTitle.setFile(name),
+  titleMinWidth: overlayTitleBar ? TITLE_MIN_WIDTH : 0,
   storage: localStorage,
   appearance,
   broadcast: (key) => broadcastPreference(window, key),
@@ -107,6 +118,26 @@ const fileEditor = createFileEditor({
   closeMenus: () => toggleActionsDropdown(false),
   openExternal: openExternalHref,
   mermaid
+});
+
+createSidebarResizer({
+  document,
+  panel: $("files-sidebar"),
+  side: "left",
+  storage: localStorage,
+  storageKey: "sodilaud_files_sidebar_width",
+  defaultWidth: 240,
+  label: "Resize the sidebar"
+});
+createSidebarResizer({
+  document,
+  panel: $("comments-panel"),
+  side: "right",
+  storage: localStorage,
+  storageKey: "sodilaud_comments_panel_width",
+  defaultWidth: 300,
+  min: 220,
+  label: "Resize the comments panel"
 });
 
 const agentAccess = createAgentAccess({
@@ -134,6 +165,23 @@ function toggleActionsDropdown(show) {
   const open = show === undefined ? !actionsDropdown.classList.contains("show") : show;
   actionsDropdown.classList.toggle("show", open);
   actionsBtn.setAttribute("aria-expanded", String(open));
+}
+
+// Focus mode hides the sidebar, formatting toolbar and status bar with one
+// class, as Quick Notes does. Nothing else changes, so leaving it brings back
+// the layout as it was. Per window and not remembered.
+function toggleFocusMode() {
+  const on = $("app").classList.toggle("focus-mode");
+  $("menu-focus-mode-btn").setAttribute("aria-pressed", String(on));
+}
+
+// Cmd+Shift+F on macOS, Ctrl+Shift+F elsewhere, as in Quick Notes.
+function isFocusModeShortcut(event) {
+  if (!event.shiftKey || event.altKey) return false;
+  if (event.code !== "KeyF" && event.key.toLowerCase() !== "f") return false;
+  return isMacLikePlatform(navigator)
+    ? event.metaKey && !event.ctrlKey
+    : event.ctrlKey && !event.metaKey;
 }
 
 function closeMenuThen(action) {
@@ -363,6 +411,7 @@ function attachListeners() {
   });
   $("open-quicknotes-menu-btn").addEventListener("click", closeMenuThen(() => showQuickNotes()));
   $("menu-new-window-btn").addEventListener("click", closeMenuThen(openNewWindow));
+  $("menu-focus-mode-btn").addEventListener("click", closeMenuThen(toggleFocusMode));
   $("menu-name-window-btn").addEventListener("click", closeMenuThen(() => windowName.open()));
   $("menu-open-folder-btn").addEventListener("click", closeMenuThen(() => fileEditor.openFolderDialog()));
   $("menu-browse-folder-btn").addEventListener("click", closeMenuThen(() => fileEditor.browseFolder()));
@@ -436,6 +485,11 @@ function handleKeydown(event) {
   if (isSidebarShortcut(event)) {
     event.preventDefault();
     fileEditor.toggleSidebar();
+    return;
+  }
+  if (isFocusModeShortcut(event)) {
+    event.preventDefault();
+    toggleFocusMode();
     return;
   }
   if (isNewWindowShortcut(event)) {
@@ -577,6 +631,9 @@ async function startApp() {
   appearance.load();
   fonts.load();
   await registerNativeHandlers();
+  invoke("main_window_name")
+    .then((name) => windowTitle.setWindowName(name))
+    .catch((error) => console.error("Could not read the window name", error));
   await onPreferenceChange(window, followPreferenceChange);
   try {
     clipboard = await setupClipboardHistory({

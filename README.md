@@ -63,7 +63,7 @@ Clipboard history is off by default. Turn it on in **Sodilaud menu → Clipboard
 ## Features
 
 - Quick Notes: a floating, always-on-top notes panel on a global hotkey that stays open while you work in other apps
-- A Markdown file editor with autosave, recent files, Finder "Open With", and outside-edit detection
+- A Markdown file editor with autosave, recent files, Finder "Open With", outside-edit detection, and a Focus Mode that leaves only the document
 - Clipboard history on macOS: press `⌘⇧V` in any app to pick from your recent copies, with secrets masked, entries kept in memory only, and automatic expiry
 - Optional local MCP agent access with five read tools, ten individually enabled write tools, and a live listening indicator; access and permissions are remembered across restarts
 - Agents can push a note into Quick Notes (a **From agents** folder) and open a Markdown or text file in the main window
@@ -73,6 +73,7 @@ Clipboard history is off by default. Turn it on in **Sodilaud menu → Clipboard
 - Review books: diff hunks with line numbers and highlighting, a Reviewed toggle, folding by heading, an outline that wraps long headings, marks the section you are reading and shows review progress; links between files with Back and Forward
 - Mermaid diagrams from ` ```mermaid ` blocks in Live and Reading modes and in copied HTML, in the active theme's colors, rendered offline
 - Optional, theme-aware source line numbers in either editor pane
+- Optional Vim keys in the file editor and Quick Notes, with the mode in the status bar
 - Markdown-aware continuation for lists, task lists, blockquotes, code fences, and tables
 - Pair completion, selection wrapping, and smart URL or spreadsheet paste
 - Right-click Markdown starter templates for tables, task lists, code blocks, and links
@@ -177,7 +178,7 @@ The app displays `Cmd` on macOS and `Ctrl` on Windows or Linux.
 | `Home` | Move to list-item content first, then the beginning of the line |
 | `Cmd/Ctrl + +` / `Cmd/Ctrl + -` | Zoom the editor in or out |
 | `Cmd/Ctrl + 0` | Reset editor zoom to 100% |
-| `Cmd/Ctrl + Shift + F` | Toggle Focus Mode |
+| `Cmd/Ctrl + Shift + F` | Toggle Focus Mode; in the main window it hides the sidebar, formatting toolbar and status bar, and toggling again restores the layout |
 | `Cmd/Ctrl + B` / `I` / `E` | Toggle bold, italic, or inline code |
 | `Cmd/Ctrl + Shift + X` | Toggle strikethrough |
 | `Cmd/Ctrl + K` | Make the selection a link, or insert a link; inside an existing link, select its URL |
@@ -187,7 +188,7 @@ The app displays `Cmd` on macOS and `Ctrl` on Windows or Linux.
 | `Cmd/Ctrl + Alt + C` | Insert a code block, or fence the selected lines |
 | `Cmd/Ctrl + /` or `F1` | Open or close Help and Reference |
 | `Tab` / `Shift + Tab` | Switch topics while Help is open |
-| `Escape` | Close the active modal or Find bar, or leave Focus Mode; it never hides Quick Notes |
+| `Escape` | Close the active modal or Find bar, or leave Focus Mode in Quick Notes; it never hides Quick Notes |
 
 ## Markdown editing
 
@@ -206,9 +207,11 @@ Sodilaud keeps its Markdown assistance lightweight and works directly in the nat
 
 Syntax highlighting is enabled by default. Open **Sodilaud menu → Appearance → Syntax highlighting** to toggle both the editor’s Markdown coloring and language-aware code highlighting. Code highlighting requires a supported language after the opening fence, such as <code>```javascript</code>, or in Live mode a file name with a known extension, such as <code>```path=src/app.js</code>; unknown and unlabeled fences remain plain code. In Live mode each fenced block shows a header with its file name (<code>path=</code>, <code>file=</code>, <code>filename=</code> or <code>title=</code>), else its language, else “code”.
 
-Source line numbers are off by default. Open **Sodilaud menu → Appearance → Line numbers** to show a subtle, theme-aware gutter, on the page background, in both editor panes; the preference is remembered between launches.
+Source line numbers are off by default. Open **Sodilaud menu → Appearance → Line numbers** to show a subtle, theme-aware gutter, on the page background, in both editor panes; the preference is remembered between launches. In Live mode the numbers are dimmed, and a rendered table or diagram shows only the number of its first source line, level with its top.
 
-Open **Sodilaud menu → Appearance → Paragraph spacing** to adjust the space between blocks. **Readable width** is on by default and limits the text column to 80 characters; code blocks and tables share the column's edges, and wide tables scroll inside it. **Body font**, **Heading font** and **Code font** each offer Theme default, the bundled fonts, or **System font…**, where you type an installed font's name. A system font that is not installed falls back to the bundled default font (Inter, or JetBrains Mono for code). All of these are remembered between launches.
+Vim keys are off by default. Open **Sodilaud menu → Appearance → Vim keys** to edit with Vim motions and commands in the file editor and in Quick Notes, in Live and Source mode; the status bar shows the mode (NORMAL, INSERT, VISUAL). Insert mode types as usual, dead keys and accented letters included. The app's shortcuts (`⌘⌥M` comment, `⌘⌥E` raw block, `⌘F` find, `⌘S` save, formatting) keep working in normal mode, and off macOS `Ctrl+F` stays find rather than paging. List continuation and bracket pairing apply in insert mode only. In a rendered table cell the cell keys (Tab, Enter, arrows) still move between cells; `Escape` first leaves insert mode, then the table.
+
+Open **Sodilaud menu → Appearance → Paragraph spacing** to adjust the space between blocks. **Readable width** is on by default and limits the text column to 80 characters; code blocks and tables share the column's edges, and wide tables scroll inside it. The **Full Width** button in the toolbar (a two-way arrow between two bars) turns readable width off and on from both windows, so wide tables and code use the whole window; it and the Appearance toggle are the same setting. **Body font**, **Heading font** and **Code font** each offer Theme default, the bundled fonts, or **System font…**, where you type an installed font's name. A system font that is not installed falls back to the bundled default font (Inter, or JetBrains Mono for code). All of these are remembered between launches.
 
 Open two notes side by side, then choose **Compare** in the toolbar to highlight source differences without changing either note. Removed text is marked on the left, added text on the right, and related words receive contiguous substring detail. The toolbar reports the total number of changed lines across both notes. Comparison refreshes after a brief pause in typing, showing **Updating comparison…** while pending, and turns off when split view closes.
 

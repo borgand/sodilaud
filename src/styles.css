@@ -1795,6 +1795,11 @@ html.readable-width .editor-host .cm-editor .cm-content {
   padding: 0 8px 0 12px;
 }
 
+/* Live mode renders the text, so its numbers step back; Source keeps them. */
+.editor-host .cm-editor.cm-mode-live:not(.cm-plain) .cm-lineNumbers .cm-gutterElement {
+  color: color-mix(in srgb, var(--text-muted) 55%, var(--editor-bg));
+}
+
 .editor-host .cm-editor .cm-placeholder {
   color: var(--text-muted);
 }
@@ -2256,13 +2261,149 @@ html.readable-width .markdown-preview {
   white-space: nowrap;
 }
 
-.selection-count-text {
-  margin-right: 12px;
+/* "Saved" fades once seen, in both windows (editor-status.js adds .settled);
+   hovering the status bar brings it back. */
+.file-status-text,
+#save-status {
+  transition: opacity 0.6s;
+}
+
+.file-status-text.settled,
+#save-status.settled {
+  opacity: 0;
+}
+
+.file-status:hover .file-status-text.settled,
+.file-status:focus-within .file-status-text.settled,
+.statusbar:hover #save-status.settled,
+.statusbar:focus-within #save-status.settled {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .file-status-text,
+  #save-status {
+    transition: none;
+  }
+}
+
+/* ----------------------------------------------------
+   Outline (file editor and Quick Notes sidebars)
+   ---------------------------------------------------- */
+
+.outline-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: calc(100% - 16px);
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.outline-toggle::before {
+  content: "";
+  border-left: 4px solid currentColor;
+  border-top: 3.5px solid transparent;
+  border-bottom: 3.5px solid transparent;
+  transform: rotate(90deg);
+  transition: transform 0.12s;
+}
+
+.outline-toggle[aria-expanded="false"]::before {
+  transform: none;
+}
+
+.outline-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.outline-item {
+  display: flex;
+  align-items: baseline;
+  padding-left: calc(var(--outline-depth, 0) * 16px);
+  border-radius: 6px;
+}
+
+.outline-item.current {
+  box-shadow: inset 2px 0 0 var(--accent-color);
+}
+
+.outline-item.current .outline-link {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.outline-item:hover {
+  background: var(--bg-note-hover);
+}
+
+.outline-link {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px 6px calc(8px + 0.75em);
+  border: 0;
+  background: none;
   color: var(--text-secondary);
-  border-right: 1px solid var(--border-color);
-  padding-right: 12px;
+  font: inherit;
+  font-size: 0.9rem;
+  line-height: 1.35;
+  text-align: left;
+  text-indent: -0.75em;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.outline-progress {
+  flex-shrink: 0;
+  margin-right: 8px;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Quick Notes: the outline sits below the note list and scrolls on its own. */
+.sidebar > .outline-section {
+  flex-shrink: 0;
+  max-height: 40%;
+  overflow-y: auto;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border-color);
+}
+
+.sidebar > .outline-section[hidden],
+.outline-list[hidden] {
   display: none;
-  font-weight: 400;
+}
+
+.sidebar-section-title {
+  margin: 0 8px 8px;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.vim-mode-indicator {
+  display: none;
+  flex-shrink: 0;
+  margin-left: 12px;
+  padding-left: 12px;
+  border-left: 1px solid var(--border-color);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.editor-vim-enabled .vim-mode-indicator:not(:empty) {
+  display: inline;
 }
 
 #mcp-status,
@@ -4497,7 +4638,7 @@ kbd {
   vertical-align: middle;
 }
 .comments-panel {
-  flex: 0 0 300px;
+  flex: 0 0 var(--sidebar-width, 300px);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -4535,3 +4676,5 @@ kbd {
 .comment-thread-unread { box-shadow: 0 0 0 1px color-mix(in srgb, #b07cd8 55%, transparent); }
 .comments-empty { margin: 0; color: var(--text-muted); }
 .comment-controls { display: flex; align-items: center; }
+.view-controls { display: flex; align-items: center; flex-shrink: 0; }
+#full-width-btn[aria-pressed="true"] { background-color: var(--accent-color); color: #ffffff; }

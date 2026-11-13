@@ -12,6 +12,9 @@ import { createTrashUi } from "./trash-ui.js";
 import { applyUpdatesToText, createNoteSync } from "./note-sync.js";
 import { renderMarkdown, resolveLinkAction, sanitizeMarkdownHtml } from "./markdown.js";
 import { scrollToReadingAnchor } from "./anchors.js";
+import { scrollToAnchor } from "./editor-anchors.js";
+import { createEditorStatus, createSavedFade } from "./editor-status.js";
+import { createOutlinePanel } from "./editor-outline.js";
 import { getNotePreview } from "./note-preview.js";
 import { createThemes } from "./themes.js";
 import { createAppearance } from "./appearance.js";
@@ -82,7 +85,6 @@ const editorHost = document.getElementById("editor-host");
 const markdownPreview = document.getElementById("markdown-preview");
 const wordCharCount = document.getElementById("word-char-count");
 const cursorPosition = document.getElementById("cursor-position");
-const selectionCount = document.getElementById("selection-count");
 const saveStatus = document.getElementById("save-status");
 const focusBtn = document.getElementById("focus-btn");
 const splitNoteBtn = document.getElementById("split-note-btn");
@@ -220,6 +222,10 @@ const appearance = createAppearance({
   onLineNumbers: (enabled) => {
     primaryEditor.setLineNumbers(enabled);
     secondaryEditor.setLineNumbers(enabled);
+  },
+  onVimMode: (enabled) => {
+    primaryEditor.setVimMode(enabled);
+    secondaryEditor.setVimMode(enabled);
   },
   onSyntaxHighlighting: (enabled) => {
     primaryEditor.setSyntaxHighlighting(enabled);
@@ -545,6 +551,7 @@ function refreshOpenNoteViews(noteId) {
       if (note && document.activeElement !== noteTitleInput) noteTitleInput.value = note.title;
       updateMarkdownPreview();
       updateWordCharCountForText(primaryEditor);
+      outline.schedule();
     }
     if (isSplitNoteMode && secondaryNoteId === noteId) {
       if (note && document.activeElement !== secondaryNoteTitle) secondaryNoteTitle.value = note.title;
@@ -641,18 +648,29 @@ const comments = createComments({
   startComment: view => readingComments() ? reading.start() : startComment(view)
 });
 
-const WORD_COUNT_DEBOUNCE_MS = 150;
-let wordCountTimer = null;
+const editorStatus = createEditorStatus({ countsElement: wordCharCount, cursorElement: cursorPosition });
 
-// Counting words walks the whole document, so it trails typing; the cursor
-// position stays immediate.
-function scheduleWordCharCount(pane, editor) {
-  clearTimeout(wordCountTimer);
-  wordCountTimer = setTimeout(() => {
-    wordCountTimer = null;
-    if (activePane === pane) updateWordCharCountForText(editor);
-  }, WORD_COUNT_DEBOUNCE_MS);
-}
+// Every path that writes the save label (saving, saved, failed, a passing
+// notification) goes through its text, so the fade watches the text.
+const savedFade = createSavedFade(saveStatus);
+const followSaveStatus = () => savedFade.update(saveStatus.textContent, saveStatus.textContent.startsWith("Saved"));
+new MutationObserver(followSaveStatus).observe(saveStatus, { childList: true, characterData: true, subtree: true });
+followSaveStatus();
+
+// The outline follows the primary pane, whose note is the active one.
+const outlineReading = () => currentLayoutMode === "reading" && !isSplitNoteMode;
+const outline = createOutlinePanel({
+  section: document.getElementById("outline-section"),
+  list: document.getElementById("outline-list"),
+  toggle: document.getElementById("outline-toggle-btn"),
+  view: () => primaryEditor.view,
+  preview: markdownPreview,
+  isReading: outlineReading,
+  onSelect: id => {
+    if (outlineReading()) scrollToReadingAnchor(markdownPreview, id);
+    else scrollToAnchor(primaryEditor.view, id);
+  }
+});
 
 const editorModeFor = mode => mode === "source" ? "source" : "live";
 
@@ -664,6 +682,8 @@ function createAppEditor(host, { ariaLabel, pane, extensions = [] }) {
     mode: editorModeFor(currentLayoutMode),
     syntaxHighlighting: appearance.syntaxHighlighting,
     lineNumbers: appearance.lineNumbers,
+    vimMode: appearance.vimMode,
+    onVimStatus: (mode) => { document.getElementById("vim-mode-indicator").textContent = mode; },
     extensions: [
       markdownEditingCommands(),
       livePreview({ onOpenLink: openExternalHref, mermaid }),
@@ -678,9 +698,7 @@ function createAppEditor(host, { ariaLabel, pane, extensions = [] }) {
     ],
     onChange: pane === "primary" ? handleEditorInput : handleSecondaryEditorInput,
     onSelectionChange: () => {
-      if (activePane !== pane) return;
-      updateCursorPositionForText(editor);
-      scheduleWordCharCount(pane, editor);
+      if (activePane === pane) editorStatus.schedule(editor.view);
     },
     onFocus: () => setActivePane(pane)
   });
@@ -755,6 +773,7 @@ async function init() {
     ariaLabel: "Secondary scratchpad content",
     pane: "secondary"
   });
+  outline.attach();
   attachEventListeners();
   await registerQuitHandler();
   await registerQuickNotesHandlers();
@@ -879,6 +898,8 @@ function loadActiveNote() {
   updateWordCharCountForText(primaryEditor);
   updateMarkdownPreview();
   markdownPreview.scrollTop = 0;
+  outline.reset();
+  outline.render();
   refreshComparison();
   if (findBar.isOpen()) {
     findBar.run({ selectActive: false });
@@ -1530,6 +1551,7 @@ function handleEditorInput(text) {
   // The collab client sends the change; this only shows it is on its way.
   triggerSavingState();
   scheduleNoteListRender();
+  outline.schedule();
 }
 
 function handleTitleInput() {
@@ -1636,6 +1658,7 @@ function setLayoutMode(value, { persist = true } = {}) {
   setFormatControlsEnabled(mode !== "reading");
   updateCommentControls();
   if (mode === "reading") updateMarkdownPreview();
+  outline.updateCurrent();
 
   if (persist) localStorage.setItem("sodilaud_layout_mode", mode);
 }
@@ -2310,7 +2333,7 @@ function handleFindUpdate(find, { selected = false } = {}) {
     toggleFindResults(false);
     return;
   }
-  if (selected) updateCursorPositionForText(primaryEditor);
+  if (selected) editorStatus.schedule(primaryEditor.view);
   renderFindResults();
   updateFindResultsToggle();
 }
@@ -3038,37 +3061,7 @@ function setActivePane(pane) {
 }
 
 function updateWordCharCountForText(editor) {
-  clearTimeout(wordCountTimer);
-  wordCountTimer = null;
-  const text = editor.getText();
-  const totalWords = text.trim() ? text.trim().split(/\s+/).filter(Boolean).length : 0;
-  const totalChars = text.length;
-  
-  wordCharCount.textContent = `${totalWords} word${totalWords !== 1 ? 's' : ''} • ${totalChars} character${totalChars !== 1 ? 's' : ''}`;
-  updateCursorPositionForText(editor);
-
-  const { start, end } = editor.getSelection();
-  
-  if (start !== end) {
-    const selectedText = text.substring(start, end);
-    const selectedWords = selectedText.trim() ? selectedText.trim().split(/\s+/).filter(Boolean).length : 0;
-    const selectedChars = selectedText.length;
-    
-    selectionCount.textContent = `${selectedWords} word${selectedWords !== 1 ? 's' : ''} • ${selectedChars} character${selectedChars !== 1 ? 's' : ''} selected`;
-    selectionCount.style.display = "inline-block";
-  } else {
-    selectionCount.style.display = "none";
-  }
-}
-
-function updateCursorPositionForText(editor) {
-  const { state } = editor.view;
-  const head = state.selection.main.head;
-  const line = state.doc.lineAt(head);
-  const position = { line: line.number, column: head - line.from + 1 };
-
-  cursorPosition.textContent = `Ln ${position.line}, Col ${position.column}`;
-  cursorPosition.title = `Line ${position.line}, column ${position.column}`;
+  editorStatus.update(editor.view);
 }
 
 function moveNoteUp(noteId) {

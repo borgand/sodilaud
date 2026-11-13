@@ -14,9 +14,9 @@ import {
   EditorView,
   GutterMarker,
   drawSelection,
+  gutter,
   gutterLineClass,
   keymap,
-  lineNumbers,
   placeholder,
   HighlightStyle,
   Language,
@@ -31,6 +31,7 @@ import {
 } from "./vendor/codemirror.js";
 import { getChangedRange } from "./editor-edit.js";
 import { applyPureEdit } from "./editor-commands.js";
+import { vimKeys } from "./editor-vim.js";
 
 export const markdownLanguage = new Language(
   defineLanguageFacet(),
@@ -211,6 +212,45 @@ const diffField = StateField.define({
   ]
 });
 
+class LineNumberMarker extends GutterMarker {
+  constructor(number) {
+    super();
+    this.number = number;
+  }
+
+  eq(other) {
+    return other instanceof LineNumberMarker && other.number === this.number;
+  }
+
+  toDOM() {
+    return document.createTextNode(this.number);
+  }
+}
+
+const lineNumberMarker = (state, pos) => new LineNumberMarker(String(state.doc.lineAt(pos).number));
+
+// CodeMirror's line numbers, plus one number for a block widget that replaces
+// lines (a Live table or diagram): the number of its first source line, at its
+// top, and none for the lines it hides. A widget that replaces nothing, such as
+// a diagram preview under its source, gets no number.
+const lineNumberGutter = gutter({
+  class: "cm-lineNumbers",
+  renderEmptyElements: false,
+  lineMarker: (view, line, others) => others.some(marker => marker.toDOM) ? null : lineNumberMarker(view.state, line.from),
+  widgetMarker: (view, _widget, block) => block.to > block.from ? lineNumberMarker(view.state, block.from) : null,
+  initialSpacer: view => new LineNumberMarker(widestLineNumber(view.state.doc.lines)),
+  updateSpacer: (spacer, update) => {
+    const widest = widestLineNumber(update.state.doc.lines);
+    return widest === spacer.number ? spacer : new LineNumberMarker(widest);
+  }
+});
+
+function widestLineNumber(lines) {
+  let widest = 9;
+  while (widest < lines) widest = widest * 10 + 9;
+  return String(widest);
+}
+
 function modeExtension(mode) {
   return [
     modeFacet.of(mode),
@@ -241,6 +281,8 @@ function selectionDirection(range) {
  * @param {boolean} [options.syntaxHighlighting=true]
  * @param {boolean} [options.plainText=false]
  * @param {boolean} [options.lineNumbers=false]
+ * @param {boolean} [options.vimMode=false]
+ * @param {(mode: string) => void} [options.onVimStatus] Vim's mode ("NORMAL", "INSERT", ...) when it changes or the editor gains focus
  * @param {(text: string) => void} [options.onChange] user edits only, never setText/loadText or a remote update
  * @param {() => void} [options.onSelectionChange] selection or doc changed, from any source
  * @param {() => void} [options.onFocus]
@@ -260,6 +302,7 @@ export function createMarkdownEditor(options) {
   let highlighting = options.syntaxHighlighting !== false;
   let plain = options.plainText === true;
   let showLineNumbers = options.lineNumbers === true;
+  let vimOn = options.vimMode === true;
   let diff = null;
 
   const modeCompartment = new Compartment();
@@ -267,6 +310,7 @@ export function createMarkdownEditor(options) {
   const plainCompartment = new Compartment();
   const gutterCompartment = new Compartment();
   const extraCompartment = new Compartment();
+  const vimCompartment = new Compartment();
 
   const plainExtension = () => plain
     ? [plainTextFacet.of(true), EditorView.editorAttributes.of({ class: "cm-plain" })]
@@ -274,7 +318,8 @@ export function createMarkdownEditor(options) {
   const highlightExtension = () => highlighting && !plain
     ? [syntaxHighlighting(markdownHighlightStyle), syntaxHighlightingFacet.of(true)]
     : [];
-  const gutterExtension = () => showLineNumbers || diff !== null ? lineNumbers() : [];
+  const gutterExtension = () => showLineNumbers || diff !== null ? lineNumberGutter : [];
+  const vimExtension = () => vimOn ? vimKeys({ onMode: options.onVimStatus }) : [];
 
   const updateListener = EditorView.updateListener.of(update => {
     if (
@@ -289,6 +334,8 @@ export function createMarkdownEditor(options) {
 
   function currentExtensions() {
     return [
+      // First, so Vim reads keys ahead of the default keymaps below.
+      vimCompartment.of(vimExtension()),
       markdownLanguage,
       history(),
       drawSelection(),
@@ -335,7 +382,8 @@ export function createMarkdownEditor(options) {
         modeCompartment.reconfigure(modeExtension(mode)),
         plainCompartment.reconfigure(plainExtension()),
         highlightCompartment.reconfigure(highlightExtension()),
-        gutterCompartment.reconfigure(gutterExtension())
+        gutterCompartment.reconfigure(gutterExtension()),
+        vimCompartment.reconfigure(vimExtension())
       ]
     });
     onSelectionChange?.();
@@ -416,6 +464,11 @@ export function createMarkdownEditor(options) {
     view.dispatch({ effects: gutterCompartment.reconfigure(gutterExtension()) });
   }
 
+  function setVimMode(enabled) {
+    vimOn = Boolean(enabled);
+    view.dispatch({ effects: vimCompartment.reconfigure(vimExtension()) });
+  }
+
   function setFindMatches(matches, activeIndex) {
     view.dispatch({
       effects: setFindEffect.of({ matches: Array.isArray(matches) ? matches : [], activeIndex })
@@ -456,6 +509,7 @@ export function createMarkdownEditor(options) {
     setPlainText,
     isPlainText: () => plain,
     setLineNumbers,
+    setVimMode,
     setFindMatches,
     setDiff,
     scrollToRange,

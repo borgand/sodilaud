@@ -29,6 +29,19 @@ Linux it is an ordinary window that stays on top of other windows and has no tas
 
 The tray menu (macOS) has a **Quick Notes** item that shows or hides the panel too.
 
+## Status bar and outline
+
+The status bar works as in the main window's file editor: the word and character count of the
+note, or of the selection while text is selected ("2 words • 10 characters selected"), the
+cursor position (`Ln 3, Col 12`), and the save state. "Saved" fades after two seconds; hover
+over the status bar to see it again. Saving, a failed save and messages stay visible.
+
+When the note has headings, the sidebar shows its **Outline** below the note list, the same
+one the main window shows for a file: long headings wrap, the section you are reading is
+marked as you scroll, and clicking a heading scrolls to it. The outline follows the note in
+the left pane, updates as you type and when you switch notes, and collapses with a click on
+**Outline**. A note without headings shows no outline.
+
 ## Settings
 
 Quick Notes settings are in the main window's **Sodilaud menu → Quick Notes**. Click the
@@ -37,10 +50,11 @@ A chord that is invalid, or already taken by another app or by the clipboard his
 is refused with a message in the menu; the previous hotkey stays active. The requested chord is
 remembered, so Sodilaud tries it again at the next launch.
 
-Themes, editor zoom, line spacing, syntax highlighting, line numbers and the Live, Source or
+Themes, editor zoom, line spacing, syntax highlighting, line numbers, Vim keys and the Live, Source or
 Reading mode are shared by both windows. Change them in the main window's **Sodilaud menu →
 Appearance**; the panel follows at once. `Cmd/Ctrl` with `+`, `-` or `0` zooms in either
-window. The number of preview lines in the note list is set in the panel's own menu.
+window, and the **Full Width** button in either toolbar switches readable width for both. The
+number of preview lines in the note list is set in the panel's own menu.
 
 The panel's menu (top right) keeps what acts on notes: the workspace file, copying and
 exporting the current note, importing a text file, sidebar preview lines, and agent access.

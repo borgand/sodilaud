@@ -404,7 +404,7 @@ The optional `window` argument names a window, so files that belong together sha
 as the chapters of a review book:
 
 - The first call with a name opens a new window with that name, next to the window you used
-  last. Its title bar shows `Sodilaud - <name>`. Later calls with the same name reuse it.
+  last. Its title shows `<file> - <name>`, or `Sodilaud - <name>` before a file opens. Later calls with the same name reuse it.
   Names are compared without case, after trimming.
 - A file already open in another window moves to the named window, with its unsaved edits,
   comments and cursor.
@@ -551,6 +551,11 @@ timeout, and the app limits simultaneous connections and incoming messages
 computer, but processes running as your user can
 still obtain local app data. The menu toggle grants access to local agents as
 a group; there are no separate permissions per client.
+
+The `sodilaud --wait` command (see [Files](files.md#open-from-a-terminal)) uses
+the same channel and token. It does not speak MCP: after authenticating it names
+the files it opened and learns only when they are closed, so it needs agent
+access on but no function permission.
 
 Sodilaud itself does not send notes anywhere. The agent or MCP client you
 connect can send tool results—including note contents—to its model provider.

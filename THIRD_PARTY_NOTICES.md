@@ -132,16 +132,20 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 Sodilaud includes [CodeMirror 6](https://codemirror.net/) (`@codemirror/state`,
 `@codemirror/view`, `@codemirror/language`, `@codemirror/commands`,
-`@codemirror/collab`) and
+`@codemirror/collab`, `@codemirror/search`),
 [Lezer](https://lezer.codemirror.net/) (`@lezer/markdown`, `@lezer/highlight`,
 and their dependencies `@lezer/common`, `@lezer/lr`, `style-mod`,
-`w3c-keyname`, `crelt`, and `@marijn/find-cluster-break`), under the MIT
-License:
+`w3c-keyname`, `crelt`, and `@marijn/find-cluster-break`), and the Vim keymap
+[`@replit/codemirror-vim`](https://github.com/replit/codemirror-vim) with its
+`@replit/codemirror-vim-core`, under the MIT License:
 
 Copyright (C) 2018-2021 by Marijn Haverbeke <marijn@haverbeke.berlin> and others
 
 `@marijn/find-cluster-break`: Copyright (C) 2024 by Marijn Haverbeke
 <marijn@haverbeke.berlin>
+
+`@replit/codemirror-vim` and `@replit/codemirror-vim-core`: Copyright (C)
+2018-2021 by Marijn Haverbeke <marijnh@gmail.com> and others
 
 > Permission is hereby granted, free of charge, to any person obtaining a copy
 > of this software and associated documentation files (the "Software"), to deal

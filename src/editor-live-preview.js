@@ -35,7 +35,7 @@ import {
   rawBlocksField,
   setLiveFocus
 } from "./editor-live-blocks.js";
-import { focusedCell, gridExtension, gridTable, tableMouseStyle } from "./editor-table-grid.js";
+import { focusedCell, gridExtension, gridSwapScroll, gridTable, tableMouseStyle } from "./editor-table-grid.js";
 import { isSafeMarkdownUrl, renderMarkdown, resolveLinkAction } from "./markdown.js";
 import { scrollToAnchor } from "./editor-anchors.js";
 import { buildHunkElement, languageForPath, reviewHunkMeta } from "./diff-hunk.js";
@@ -1052,7 +1052,8 @@ const blockFocusSync = EditorView.updateListener.of(update => {
   queueMicrotask(() => {
     const focused = view.state.field(liveFocusField, false);
     if (focused !== undefined && focused !== view.hasFocus) {
-      view.dispatch({ effects: setLiveFocus.of(view.hasFocus) });
+      const effect = setLiveFocus.of(view.hasFocus);
+      view.dispatch({ effects: [effect, ...gridSwapScroll(view, view.state.update({ effects: effect }).state)] });
     }
   });
 });

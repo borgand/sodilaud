@@ -225,10 +225,104 @@
   justify-content: flex-end;
 }
 
+/* Focus mode, as in Quick Notes: only the document column and a faded top bar. */
+.main-window.focus-mode .files-sidebar,
+.main-window.focus-mode .sidebar-resizer-left,
+.main-window.focus-mode .main-topbar .topbar-center,
+.main-window.focus-mode #toggle-files-sidebar,
+.main-window.focus-mode .file-status {
+  display: none !important;
+}
+
+.main-window.focus-mode .main-topbar {
+  opacity: 0.15;
+  transition: opacity 0.3s;
+}
+
+.main-window.focus-mode .main-topbar:hover,
+.main-window.focus-mode .main-topbar:focus-within {
+  opacity: 1;
+}
+
+/* The native title bar shows the window name outside macOS. */
+.main-topbar-window-name {
+  display: none;
+  margin-left: 0.6em;
+  opacity: 0.75;
+}
+
+/* macOS: an overlay title bar makes this row the top strip. It leaves room for
+   the traffic lights and shows the file name small and centred: beside the
+   toolbar while a file is open, in the middle of the row on the start page. */
+.platform-mac .main-topbar {
+  position: relative;
+  padding-left: 80px;
+}
+
+.platform-mac .main-topbar-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+.platform-mac .main-topbar:has(> .topbar-center[hidden]) .main-topbar-title {
+  position: absolute;
+  left: 50%;
+  max-width: calc(100% - 320px);
+  transform: translateX(-50%);
+}
+
+.platform-mac .main-topbar-window-name:not([hidden]) {
+  display: inline;
+}
+
 .main-body {
   display: flex;
   flex: 1;
   min-height: 0;
+}
+
+/* The draggable edge between a sidebar and the editor (sidebar-resize.js). It
+   overlaps the panel border without taking room of its own. */
+.sidebar-resizer {
+  position: relative;
+  z-index: 5;
+  flex: 0 0 8px;
+  margin-inline: -4px;
+  cursor: col-resize;
+  touch-action: none;
+  outline: none;
+}
+
+.sidebar-resizer[hidden] {
+  display: none;
+}
+
+.sidebar-resizer::after {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  left: 3px;
+  width: 2px;
+  background: transparent;
+  transition: background-color 0.12s ease;
+}
+
+.sidebar-resizer:hover::after,
+.sidebar-resizer:focus-visible::after,
+.sidebar-resizer.dragging::after {
+  background: var(--accent-color);
+}
+
+.main-window .comments-panel {
+  max-width: 50%;
+}
+
+html.sidebar-resizing,
+html.sidebar-resizing * {
+  cursor: col-resize !important;
+  user-select: none;
 }
 
 .main-content {
@@ -239,12 +333,56 @@
 }
 
 .files-sidebar {
-  width: 240px;
+  width: var(--sidebar-width, 240px);
+  max-width: 50%;
   flex-shrink: 0;
-  overflow-y: auto;
-  padding: 12px 8px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   border-right: 1px solid var(--border-color);
   background: var(--sidebar-bg, var(--bg-sidebar));
+}
+
+.sidebar-tabs {
+  display: flex;
+  flex-shrink: 0;
+  gap: 4px;
+  padding: 8px 8px 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.sidebar-tab {
+  flex: 1;
+  padding: 6px 8px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.sidebar-tab:hover {
+  color: var(--text-primary);
+}
+
+.sidebar-tab[aria-selected="true"] {
+  border-bottom-color: var(--accent-color);
+  color: var(--text-primary);
+}
+
+.sidebar-panel {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 8px;
+}
+
+.sidebar-panel[hidden] {
+  display: none;
 }
 
 .files-sidebar-title {
@@ -587,27 +725,16 @@ html:not(.editor-line-numbers-enabled) #file-editor.compare-mode .editor-host .c
   white-space: nowrap;
 }
 
+.file-status .cursor-position-text {
+  margin-left: 0;
+}
+
 .file-status-text {
   flex: 1;
   min-width: 0;
   overflow: hidden;
+  text-align: right;
   text-overflow: ellipsis;
-  transition: opacity 0.6s;
-}
-
-.file-status-text.settled {
-  opacity: 0;
-}
-
-.file-status:hover .file-status-text.settled,
-.file-status:focus-within .file-status-text.settled {
-  opacity: 1;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .file-status-text {
-    transition: none;
-  }
 }
 
 .sr-only {
@@ -621,7 +748,17 @@ html:not(.editor-line-numbers-enabled) #file-editor.compare-mode .editor-host .c
 
 .review-progress {
   flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
   font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.review-progress:hover {
+  color: var(--text-primary);
 }
 
 .review-next {
@@ -641,92 +778,17 @@ html:not(.editor-line-numbers-enabled) #file-editor.compare-mode .editor-host .c
   color: var(--text-primary);
 }
 
-.outline-section {
-  margin-top: 16px;
+.outline-empty {
+  margin: 0 8px;
+  color: var(--text-muted);
+  font-size: 0.85rem;
 }
 
 .outline-section[hidden],
-.outline-list[hidden],
+.outline-empty[hidden],
 .review-progress[hidden],
 .review-next[hidden] {
   display: none;
-}
-
-.outline-toggle {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: calc(100% - 16px);
-  padding: 0;
-  border: 0;
-  background: none;
-  font-family: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.outline-toggle::before {
-  content: "";
-  border-left: 4px solid currentColor;
-  border-top: 3.5px solid transparent;
-  border-bottom: 3.5px solid transparent;
-  transform: rotate(90deg);
-  transition: transform 0.12s;
-}
-
-.outline-toggle[aria-expanded="false"]::before {
-  transform: none;
-}
-
-.outline-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.outline-item {
-  display: flex;
-  align-items: baseline;
-  padding-left: calc(var(--outline-depth, 0) * 16px);
-  border-radius: 6px;
-}
-
-.outline-item.current {
-  box-shadow: inset 2px 0 0 var(--accent-color);
-}
-
-.outline-item.current .outline-link {
-  color: var(--text-primary);
-  font-weight: 600;
-}
-
-.outline-item:hover {
-  background: var(--bg-note-hover);
-}
-
-.outline-link {
-  flex: 1;
-  min-width: 0;
-  padding: 6px 8px 6px calc(8px + 0.75em);
-  border: 0;
-  background: none;
-  color: var(--text-secondary);
-  font: inherit;
-  font-size: 0.9rem;
-  line-height: 1.35;
-  text-align: left;
-  text-indent: -0.75em;
-  white-space: normal;
-  overflow-wrap: anywhere;
-  cursor: pointer;
-}
-
-.outline-progress {
-  flex-shrink: 0;
-  margin-right: 8px;
-  color: var(--text-muted);
-  font-size: 0.72rem;
-  font-variant-numeric: tabular-nums;
 }
 
 .outline-progress.complete,
