@@ -19,6 +19,7 @@ import { createMermaidRenderer, themeVariablesFrom } from "./mermaid.js";
 import { isMacLikePlatform, isWindowsPlatform } from "./platform-labels.js";
 import { createAgentAccess } from "./agent-access.js";
 import { createWindowNameDialog } from "./window-name.js";
+import { TITLE_MIN_WIDTH, applyTitleBarLayout, createWindowTitle } from "./title-bar.js";
 
 const HOTKEY_MESSAGES = {
   HotkeyInvalid: "That shortcut is not supported. The previous hotkey is still active.",
@@ -46,6 +47,12 @@ const hotkeyBtn = $("quicknotes-hotkey-btn");
 const hotkeyStatus = $("quicknotes-hotkey-status");
 
 const isMac = isMacPlatform(navigator);
+const overlayTitleBar = isMac && Boolean(window.__TAURI__);
+if (overlayTitleBar) applyTitleBarLayout(document);
+const windowTitle = createWindowTitle({
+  document,
+  setNativeTitle: (text) => window.__TAURI__?.window?.getCurrentWindow?.().setTitle?.(text)
+});
 let quickNotesConfig = { hotkey: "", requested: "", hotkeyError: null, upgradeIntro: false };
 let capturingHotkey = false;
 let isHelpModalOpen = false;
@@ -96,10 +103,12 @@ function openExternalHref(href) {
   });
 }
 
-const windowName = createWindowNameDialog({ document, invoke });
+const windowName = createWindowNameDialog({ document, invoke, onNamed: (name) => windowTitle.setWindowName(name) });
 const fileEditor = createFileEditor({
   document,
   invoke,
+  onTitle: (name) => windowTitle.setFile(name),
+  titleMinWidth: overlayTitleBar ? TITLE_MIN_WIDTH : 0,
   storage: localStorage,
   appearance,
   broadcast: (key) => broadcastPreference(window, key),
@@ -600,6 +609,9 @@ async function startApp() {
   appearance.load();
   fonts.load();
   await registerNativeHandlers();
+  invoke("main_window_name")
+    .then((name) => windowTitle.setWindowName(name))
+    .catch((error) => console.error("Could not read the window name", error));
   await onPreferenceChange(window, followPreferenceChange);
   try {
     clipboard = await setupClipboardHistory({

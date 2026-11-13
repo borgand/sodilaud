@@ -49,6 +49,8 @@ export function createFileEditor({
   notify = () => {},
   closeMenus = () => {},
   openExternal = () => {},
+  onTitle = () => {},
+  titleMinWidth = 0,
   mermaid = null
 }) {
   const $ = (id) => document.getElementById(id);
@@ -404,7 +406,9 @@ export function createFileEditor({
       target.focus();
     },
     onMenuOpen: closeMenus,
-    observe: [".main-topbar", ".layout-controls"]
+    observe: [".main-topbar", ".layout-controls"],
+    title: document.querySelector(".main-topbar-title"),
+    titleMinWidth
   });
 
   // ----------------------------------------------------
@@ -422,6 +426,7 @@ export function createFileEditor({
     title.textContent = buffer ? `${buffer.name}${dirty(buffer) ? " •" : ""}` : "Sodilaud";
     title.title = buffer?.path ?? "";
     document.title = buffer ? `${buffer.name} - Sodilaud` : "Sodilaud";
+    onTitle(buffer?.name ?? null);
     const text = buffer ? statusText(buffer) : "";
     status.textContent = text;
     status.title = buffer?.path ?? "";

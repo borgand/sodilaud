@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getVisibleItemCount } from "../src/format-toolbar-fit.js";
+import { getVisibleItemCount, roomBesideTitle } from "../src/format-toolbar-fit.js";
 
 test("every item is visible when they all fit", () => {
   assert.equal(getVisibleItemCount(100, [30, 30, 40], 20), 3);
@@ -29,4 +29,26 @@ test("without layout every item counts as visible", () => {
 
 test("non-finite widths count as zero", () => {
   assert.equal(getVisibleItemCount(50, [30, Number.NaN, 30], 10), 2);
+});
+
+test("a title squeezed below its minimum takes the shortfall from the toolbar", () => {
+  assert.equal(roomBesideTitle(300, 40, 120), 220);
+  assert.equal(roomBesideTitle(300, 0, 120), 180);
+});
+
+test("a title at or above its minimum leaves the toolbar its room", () => {
+  assert.equal(roomBesideTitle(300, 120, 120), 300);
+  assert.equal(roomBesideTitle(300, 400, 120), 300);
+  assert.equal(roomBesideTitle(300, 0, 0), 300);
+});
+
+test("without a reserve or a measured width the room is unchanged", () => {
+  assert.equal(roomBesideTitle(300, Number.NaN, 0), 300);
+  assert.equal(roomBesideTitle(300, 50, Number.NaN), 300);
+  assert.equal(roomBesideTitle(0, 0, 120), 0);
+});
+
+test("a laid-out toolbar never reads as unlaid, so everything overflows", () => {
+  assert.equal(roomBesideTitle(60, 0, 120), 1);
+  assert.equal(getVisibleItemCount(roomBesideTitle(60, 0, 120), [30, 30], 20), 0);
 });
