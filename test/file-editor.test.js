@@ -517,3 +517,28 @@ test("Save As onto the file's own path right after typing keeps every change", a
     console.error = consoleError;
   }
 });
+
+test("the status bar counts words like Quick Notes: totals, or the selection's", async () => {
+  const fake = lists({ open: ["/docs/a.md", "/docs/b.md"] });
+  const app = await bootMainWindow({
+    instance: 44,
+    disk: { "/docs/a.md": "alpha beta\ngamma", "/docs/b.md": "one" },
+    handlers: fake.handlers
+  });
+  const text = (id) => doc(app).getElementById(id).textContent;
+  const active = doc(app).querySelector(".open-file-item.active .open-file-name").textContent;
+  if (active !== "a.md") {
+    [...doc(app).querySelectorAll(".open-file-name")].find((item) => item.textContent === "a.md").click();
+  }
+  await app.until(() => text("word-char-count") === "3 words • 16 characters");
+  assert.equal(text("word-char-count"), "3 words • 16 characters");
+
+  app.editor().dispatch({ selection: { anchor: 0, head: 13 } });
+  assert.equal(text("cursor-position"), "Ln 2, Col 3", "the cursor follows at once");
+  await app.until(() => text("word-char-count") === "3 words • 13 characters selected");
+  assert.equal(text("word-char-count"), "3 words • 13 characters selected");
+
+  [...doc(app).querySelectorAll(".open-file-name")].find((item) => item.textContent === "b.md").click();
+  await app.until(() => text("word-char-count") === "1 word • 3 characters");
+  assert.equal(text("word-char-count"), "1 word • 3 characters", "another file shows its own totals");
+});

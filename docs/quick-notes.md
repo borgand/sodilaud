@@ -29,6 +29,19 @@ Linux it is an ordinary window that stays on top of other windows and has no tas
 
 The tray menu (macOS) has a **Quick Notes** item that shows or hides the panel too.
 
+## Status bar and outline
+
+The status bar works as in the main window's file editor: the word and character count of the
+note, or of the selection while text is selected ("2 words • 10 characters selected"), the
+cursor position (`Ln 3, Col 12`), and the save state. "Saved" fades after two seconds; hover
+over the status bar to see it again. Saving, a failed save and messages stay visible.
+
+When the note has headings, the sidebar shows its **Outline** below the note list, the same
+one the main window shows for a file: long headings wrap, the section you are reading is
+marked as you scroll, and clicking a heading scrolls to it. The outline follows the note in
+the left pane, updates as you type and when you switch notes, and collapses with a click on
+**Outline**. A note without headings shows no outline.
+
 ## Settings
 
 Quick Notes settings are in the main window's **Sodilaud menu → Quick Notes**. Click the
