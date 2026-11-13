@@ -14,9 +14,9 @@ import {
   EditorView,
   GutterMarker,
   drawSelection,
+  gutter,
   gutterLineClass,
   keymap,
-  lineNumbers,
   placeholder,
   HighlightStyle,
   Language,
@@ -211,6 +211,45 @@ const diffField = StateField.define({
   ]
 });
 
+class LineNumberMarker extends GutterMarker {
+  constructor(number) {
+    super();
+    this.number = number;
+  }
+
+  eq(other) {
+    return other instanceof LineNumberMarker && other.number === this.number;
+  }
+
+  toDOM() {
+    return document.createTextNode(this.number);
+  }
+}
+
+const lineNumberMarker = (state, pos) => new LineNumberMarker(String(state.doc.lineAt(pos).number));
+
+// CodeMirror's line numbers, plus one number for a block widget that replaces
+// lines (a Live table or diagram): the number of its first source line, at its
+// top, and none for the lines it hides. A widget that replaces nothing, such as
+// a diagram preview under its source, gets no number.
+const lineNumberGutter = gutter({
+  class: "cm-lineNumbers",
+  renderEmptyElements: false,
+  lineMarker: (view, line, others) => others.some(marker => marker.toDOM) ? null : lineNumberMarker(view.state, line.from),
+  widgetMarker: (view, _widget, block) => block.to > block.from ? lineNumberMarker(view.state, block.from) : null,
+  initialSpacer: view => new LineNumberMarker(widestLineNumber(view.state.doc.lines)),
+  updateSpacer: (spacer, update) => {
+    const widest = widestLineNumber(update.state.doc.lines);
+    return widest === spacer.number ? spacer : new LineNumberMarker(widest);
+  }
+});
+
+function widestLineNumber(lines) {
+  let widest = 9;
+  while (widest < lines) widest = widest * 10 + 9;
+  return String(widest);
+}
+
 function modeExtension(mode) {
   return [
     modeFacet.of(mode),
@@ -274,7 +313,7 @@ export function createMarkdownEditor(options) {
   const highlightExtension = () => highlighting && !plain
     ? [syntaxHighlighting(markdownHighlightStyle), syntaxHighlightingFacet.of(true)]
     : [];
-  const gutterExtension = () => showLineNumbers || diff !== null ? lineNumbers() : [];
+  const gutterExtension = () => showLineNumbers || diff !== null ? lineNumberGutter : [];
 
   const updateListener = EditorView.updateListener.of(update => {
     if (
