@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // Editor appearance shared by both windows: zoom, line spacing, line numbers,
-// syntax highlighting and sidebar preview lines. Each page applies the stored
-// values; the page that has the controls (looked up by id, any may be missing)
-// changes them and tells the other window.
+// readable width (also the toolbar's Full Width button), syntax highlighting
+// and sidebar preview lines. Each page applies the stored values; the page
+// that has the controls (looked up by id, any may be missing) changes them and
+// tells the other window.
 
 import {
   DEFAULT_CONTENT_WIDTH,
@@ -80,6 +81,7 @@ export function createAppearance({
     contentWidthValue: byId("content-width-value"),
     contentWidthIncrease: byId("content-width-increase-btn"),
     readableWidth: byId("readable-width-toggle"),
+    fullWidth: byId("full-width-btn"),
     previewLinesDecrease: byId("preview-lines-decrease-btn"),
     previewLinesValue: byId("preview-lines-value"),
     previewLinesIncrease: byId("preview-lines-increase-btn"),
@@ -139,6 +141,7 @@ export function createAppearance({
     state.readableWidth = normalizeReadableWidth(value);
     root.classList.toggle("readable-width", state.readableWidth);
     setToggle(controls.readableWidth, state.readableWidth);
+    controls.fullWidth?.setAttribute("aria-pressed", String(!state.readableWidth));
     syncContentWidthControls();
     if (save) persist("readableWidth", state.readableWidth);
   }
@@ -222,6 +225,7 @@ export function createAppearance({
     on(controls.contentWidthValue, () => applyContentWidth(DEFAULT_CONTENT_WIDTH));
     on(controls.contentWidthIncrease, () => applyContentWidth(stepContentWidth(state.contentWidth, 1)));
     on(controls.readableWidth, () => applyReadableWidth(!state.readableWidth));
+    on(controls.fullWidth, () => applyReadableWidth(!state.readableWidth));
     on(controls.previewLinesDecrease, () => applyPreviewLines(stepNotePreviewLines(state.previewLines, -1)));
     on(controls.previewLinesValue, () => applyPreviewLines(DEFAULT_NOTE_PREVIEW_LINES));
     on(controls.previewLinesIncrease, () => applyPreviewLines(stepNotePreviewLines(state.previewLines, 1)));

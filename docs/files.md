@@ -108,6 +108,11 @@ restart.
 
 In split view, Save, Save As and Close act on the pane that has focus.
 
+The **Full Width** button in the toolbar (a two-way arrow between two bars) lets the text use the
+whole window width instead of the readable column, for wide tables and code. It is the same
+setting as **Sodilaud menu → Appearance → Readable width** (Full Width on = Readable width off),
+applies to every window and Quick Notes, and is remembered between launches.
+
 ## Windows
 
 **File → New Window** (`Cmd+Alt+N`, `Ctrl+Alt+N` on Windows and Linux) opens another main
