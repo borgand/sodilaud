@@ -65,6 +65,9 @@
           <button class="layout-btn" id="split-file-btn" type="button" title="Split View (Cmd+\)" aria-label="Split view" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M12 3v18" /></svg></button>
           <button class="layout-btn compare-notes-btn" id="compare-files-btn" type="button" title="Compare the two files" aria-pressed="false" hidden>Compare <span class="compare-notes-count" id="compare-files-count" hidden></span></button>
         </div>
+        <div class="view-controls">
+          <button class="layout-btn" id="full-width-btn" type="button" title="Full Width" aria-label="Full Width" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5v14M21 5v14M7 12h10M10 9l-3 3 3 3M14 9l3 3-3 3" /></svg></button>
+        </div>
         <div class="format-menu format-heading-menu" id="format-heading-menu" role="menu" aria-label="Heading level" hidden>
           <button class="dropdown-item format-heading-item" id="format-heading-1" data-format="heading-1" type="button" role="menuitem" tabindex="-1" title="Heading 1 (Cmd+Alt+1)"><span class="format-heading-sample format-heading-sample-1">Heading 1</span></button>
           <button class="dropdown-item format-heading-item" id="format-heading-2" data-format="heading-2" type="button" role="menuitem" tabindex="-1" title="Heading 2 (Cmd+Alt+2)"><span class="format-heading-sample format-heading-sample-2">Heading 2</span></button>
@@ -701,7 +704,7 @@ function hello() {
 
             <div class="cheatsheet-card full-width">
               <div class="cheatsheet-card-title">Editor Assistance</div>
-              <p class="cheatsheet-note">Right-click in the editor and choose <strong>Insert</strong> for starter tables, task lists, code blocks, and links. Select text and type <span class="code-mono">*</span>, <span class="code-mono">_</span>, a backtick, or <span class="code-mono">~</span> to wrap it. Escape a Markdown trigger with a backslash when you want it to remain literal. Syntax highlighting and line numbers can be toggled under <strong>Sodilaud menu → Appearance</strong>.</p>
+              <p class="cheatsheet-note">Right-click in the editor and choose <strong>Insert</strong> for starter tables, task lists, code blocks, and links. Select text and type <span class="code-mono">*</span>, <span class="code-mono">_</span>, a backtick, or <span class="code-mono">~</span> to wrap it. Escape a Markdown trigger with a backslash when you want it to remain literal. Syntax highlighting and line numbers can be toggled under <strong>Sodilaud menu → Appearance</strong>. <strong>Readable width</strong> there limits the text column; the <strong>Full Width</strong> button in the toolbar turns it off so wide tables and code use the whole window, and turns it back on.</p>
             </div>
           </div>
         </div>

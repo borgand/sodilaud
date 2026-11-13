@@ -53,7 +53,8 @@ remembered, so Sodilaud tries it again at the next launch.
 Themes, editor zoom, line spacing, syntax highlighting, line numbers and the Live, Source or
 Reading mode are shared by both windows. Change them in the main window's **Sodilaud menu →
 Appearance**; the panel follows at once. `Cmd/Ctrl` with `+`, `-` or `0` zooms in either
-window. The number of preview lines in the note list is set in the panel's own menu.
+window, and the **Full Width** button in either toolbar switches readable width for both. The
+number of preview lines in the note list is set in the panel's own menu.
 
 The panel's menu (top right) keeps what acts on notes: the workspace file, copying and
 exporting the current note, importing a text file, sidebar preview lines, and agent access.

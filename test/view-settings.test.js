@@ -148,6 +148,48 @@ test("Quick Notes follows readable width changed in the main window", async () =
   assert.equal(root.classList.contains("readable-width"), false);
 });
 
+test("the Full Width toolbar button turns readable width off and stays in sync with Appearance", async () => {
+  const app = await bootMainWindow({ storage, instance: 7 });
+  const root = document.documentElement;
+  const button = document.getElementById("full-width-btn");
+  const toggle = document.getElementById("readable-width-toggle");
+  assert.ok(button.closest("#file-toolbar"));
+  assert.equal(button.closest("#format-controls"), null);
+  assert.equal(button.getAttribute("aria-label"), "Full Width");
+  assert.equal(button.title, "Full Width");
+  assert.equal(button.getAttribute("aria-pressed"), "false");
+
+  button.click();
+  assert.equal(root.classList.contains("readable-width"), false);
+  assert.equal(button.getAttribute("aria-pressed"), "true");
+  assert.equal(toggle.textContent, "Off");
+  assert.equal(app.storage.getItem("sodilaud_readable_width"), "false");
+  await app.settle();
+  assert.ok(app.emitted.some(event => event.name === "prefs-changed" && event.payload.key === "sodilaud_readable_width"));
+
+  toggle.click();
+  assert.equal(root.classList.contains("readable-width"), true);
+  assert.equal(button.getAttribute("aria-pressed"), "false");
+
+  app.storage.setItem("sodilaud_readable_width", "false");
+  await app.emit("prefs-changed", { key: "sodilaud_readable_width", source: "notes" });
+  assert.equal(button.getAttribute("aria-pressed"), "true");
+});
+
+test("Quick Notes has the same Full Width button on the shared setting", async () => {
+  const app = await bootApp({ storage, instance: 8 });
+  const root = document.documentElement;
+  const button = document.getElementById("full-width-btn");
+  assert.equal(button.closest("#format-controls"), null);
+  assert.equal(button.getAttribute("aria-pressed"), "false");
+  button.click();
+  assert.equal(root.classList.contains("readable-width"), false);
+  assert.equal(app.storage.getItem("sodilaud_readable_width"), "false");
+  app.storage.setItem("sodilaud_readable_width", "true");
+  await app.emit("prefs-changed", { key: "sodilaud_readable_width", source: "main" });
+  assert.equal(button.getAttribute("aria-pressed"), "false");
+});
+
 test("Quick Notes follows paragraph spacing changed in the main window", async () => {
   const app = await bootApp({ storage, instance: 4 });
   const root = document.documentElement;

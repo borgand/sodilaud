@@ -4656,3 +4656,5 @@ kbd {
 .comment-thread-unread { box-shadow: 0 0 0 1px color-mix(in srgb, #b07cd8 55%, transparent); }
 .comments-empty { margin: 0; color: var(--text-muted); }
 .comment-controls { display: flex; align-items: center; }
+.view-controls { display: flex; align-items: center; flex-shrink: 0; }
+#full-width-btn[aria-pressed="true"] { background-color: var(--accent-color); color: #ffffff; }
