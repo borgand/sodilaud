@@ -9,7 +9,7 @@ test("the vendored bundle exposes the pinned API and no dynamic code", async () 
   const source = await readFile(new URL("../src/vendor/codemirror.js", import.meta.url), "utf8");
   assert.doesNotMatch(source, /\bnew Function\s*\(|\beval\s*\(/);
   const cm = await import("../src/vendor/codemirror.js");
-  for (const name of ["EditorState", "EditorView", "Decoration", "WidgetType", "StateField", "StateEffect", "Compartment", "Language", "markdownParser", "GFM", "history", "lineNumbers", "HighlightStyle", "tags"]) {
+  for (const name of ["EditorState", "EditorView", "Decoration", "WidgetType", "StateField", "StateEffect", "Compartment", "Language", "markdownParser", "GFM", "history", "lineNumbers", "HighlightStyle", "tags", "vim", "Vim", "getCM"]) {
     assert.ok(cm[name], `missing export ${name}`);
   }
 });

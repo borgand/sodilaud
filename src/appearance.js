@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // Editor appearance shared by both windows: zoom, line spacing, line numbers,
-// syntax highlighting and sidebar preview lines. Each page applies the stored
+// syntax highlighting, Vim keys and sidebar preview lines. Each page applies the stored
 // values; the page that has the controls (looked up by id, any may be missing)
 // changes them and tells the other window.
 
@@ -14,6 +14,7 @@ import {
   DEFAULT_EDITOR_ZOOM,
   DEFAULT_NOTE_PREVIEW_LINES,
   DEFAULT_SYNTAX_HIGHLIGHTING,
+  DEFAULT_VIM_MODE,
   MAX_EDITOR_LINE_SPACING,
   MAX_CONTENT_WIDTH,
   MAX_PARAGRAPH_SPACING,
@@ -32,6 +33,7 @@ import {
   normalizeEditorZoom,
   normalizeNotePreviewLines,
   normalizeSyntaxHighlighting,
+  normalizeVimMode,
   stepEditorLineSpacing,
   stepContentWidth,
   stepParagraphSpacing,
@@ -47,7 +49,8 @@ export const APPEARANCE_KEYS = {
   contentWidth: "sodilaud_content_width",
   previewLines: "sodilaud_note_preview_lines",
   lineNumbers: "sodilaud_editor_line_numbers",
-  syntaxHighlighting: "sodilaud_syntax_highlighting"
+  syntaxHighlighting: "sodilaud_syntax_highlighting",
+  vimMode: "sodilaud_editor_vim_mode"
 };
 
 function setToggle(button, enabled) {
@@ -62,7 +65,8 @@ export function createAppearance({
   broadcast = () => {},
   onPreviewLines = () => {},
   onLineNumbers = () => {},
-  onSyntaxHighlighting = () => {}
+  onSyntaxHighlighting = () => {},
+  onVimMode = () => {}
 }) {
   const byId = (id) => document.getElementById(id);
   const root = document.documentElement;
@@ -85,6 +89,7 @@ export function createAppearance({
     previewLinesIncrease: byId("preview-lines-increase-btn"),
     syntaxHighlighting: byId("syntax-highlighting-toggle"),
     lineNumbers: byId("line-numbers-toggle"),
+    vimMode: byId("vim-mode-toggle"),
     viewSettings: byId("view-settings")
   };
   const state = {
@@ -95,7 +100,8 @@ export function createAppearance({
     contentWidth: DEFAULT_CONTENT_WIDTH,
     previewLines: DEFAULT_NOTE_PREVIEW_LINES,
     lineNumbers: DEFAULT_EDITOR_LINE_NUMBERS,
-    syntaxHighlighting: DEFAULT_SYNTAX_HIGHLIGHTING
+    syntaxHighlighting: DEFAULT_SYNTAX_HIGHLIGHTING,
+    vimMode: DEFAULT_VIM_MODE
   };
 
   function persist(name, value) {
@@ -176,6 +182,14 @@ export function createAppearance({
     if (render) onSyntaxHighlighting(state.syntaxHighlighting);
   }
 
+  function applyVimMode(value, { persist: save = true, render = true } = {}) {
+    state.vimMode = normalizeVimMode(value);
+    root.classList.toggle("editor-vim-enabled", state.vimMode);
+    setToggle(controls.vimMode, state.vimMode);
+    if (save) persist("vimMode", state.vimMode);
+    if (render) onVimMode(state.vimMode);
+  }
+
   const stored = (name, fallback) => storage.getItem(APPEARANCE_KEYS[name]) ?? fallback;
 
   // Applies every stored value; `render: false` skips the page's hooks, for
@@ -189,6 +203,7 @@ export function createAppearance({
     applyPreviewLines(stored("previewLines", DEFAULT_NOTE_PREVIEW_LINES), { persist: false, render: false });
     applySyntaxHighlighting(stored("syntaxHighlighting", DEFAULT_SYNTAX_HIGHLIGHTING), { persist: false, render });
     applyLineNumbers(stored("lineNumbers", DEFAULT_EDITOR_LINE_NUMBERS), { persist: false, render });
+    applyVimMode(stored("vimMode", DEFAULT_VIM_MODE), { persist: false, render });
   }
 
   // Re-reads one key another window changed. Returns whether it was ours.
@@ -202,6 +217,7 @@ export function createAppearance({
       case APPEARANCE_KEYS.previewLines: applyPreviewLines(stored("previewLines", DEFAULT_NOTE_PREVIEW_LINES), { persist: false }); return true;
       case APPEARANCE_KEYS.lineNumbers: applyLineNumbers(stored("lineNumbers", DEFAULT_EDITOR_LINE_NUMBERS), { persist: false }); return true;
       case APPEARANCE_KEYS.syntaxHighlighting: applySyntaxHighlighting(stored("syntaxHighlighting", DEFAULT_SYNTAX_HIGHLIGHTING), { persist: false }); return true;
+      case APPEARANCE_KEYS.vimMode: applyVimMode(stored("vimMode", DEFAULT_VIM_MODE), { persist: false }); return true;
       default: return false;
     }
   }
@@ -227,6 +243,7 @@ export function createAppearance({
     on(controls.previewLinesIncrease, () => applyPreviewLines(stepNotePreviewLines(state.previewLines, 1)));
     on(controls.syntaxHighlighting, () => applySyntaxHighlighting(!state.syntaxHighlighting));
     on(controls.lineNumbers, () => applyLineNumbers(!state.lineNumbers));
+    on(controls.vimMode, () => applyVimMode(!state.vimMode));
   }
 
   // Cmd/Ctrl with +, - or 0 zooms, as in the notes editor before the split.
@@ -254,6 +271,7 @@ export function createAppearance({
     applyPreviewLines,
     applyLineNumbers,
     applySyntaxHighlighting,
+    applyVimMode,
     get zoom() { return state.zoom; },
     get lineSpacing() { return state.lineSpacing; },
     get paragraphSpacing() { return state.paragraphSpacing; },
@@ -261,6 +279,7 @@ export function createAppearance({
     get contentWidth() { return state.contentWidth; },
     get previewLines() { return state.previewLines; },
     get lineNumbers() { return state.lineNumbers; },
-    get syntaxHighlighting() { return state.syntaxHighlighting; }
+    get syntaxHighlighting() { return state.syntaxHighlighting; },
+    get vimMode() { return state.vimMode; }
   };
 }

@@ -37,7 +37,7 @@ A chord that is invalid, or already taken by another app or by the clipboard his
 is refused with a message in the menu; the previous hotkey stays active. The requested chord is
 remembered, so Sodilaud tries it again at the next launch.
 
-Themes, editor zoom, line spacing, syntax highlighting, line numbers and the Live, Source or
+Themes, editor zoom, line spacing, syntax highlighting, line numbers, Vim keys and the Live, Source or
 Reading mode are shared by both windows. Change them in the main window's **Sodilaud menu →
 Appearance**; the panel follows at once. `Cmd/Ctrl` with `+`, `-` or `0` zooms in either
 window. The number of preview lines in the note list is set in the panel's own menu.

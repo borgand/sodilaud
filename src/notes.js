@@ -221,6 +221,10 @@ const appearance = createAppearance({
     primaryEditor.setLineNumbers(enabled);
     secondaryEditor.setLineNumbers(enabled);
   },
+  onVimMode: (enabled) => {
+    primaryEditor.setVimMode(enabled);
+    secondaryEditor.setVimMode(enabled);
+  },
   onSyntaxHighlighting: (enabled) => {
     primaryEditor.setSyntaxHighlighting(enabled);
     secondaryEditor.setSyntaxHighlighting(enabled);
@@ -664,6 +668,8 @@ function createAppEditor(host, { ariaLabel, pane, extensions = [] }) {
     mode: editorModeFor(currentLayoutMode),
     syntaxHighlighting: appearance.syntaxHighlighting,
     lineNumbers: appearance.lineNumbers,
+    vimMode: appearance.vimMode,
+    onVimStatus: (mode) => { document.getElementById("vim-mode-indicator").textContent = mode; },
     extensions: [
       markdownEditingCommands(),
       livePreview({ onOpenLink: openExternalHref, mermaid }),

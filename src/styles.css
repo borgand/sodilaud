@@ -2256,6 +2256,21 @@ html.readable-width .markdown-preview {
   white-space: nowrap;
 }
 
+.vim-mode-indicator {
+  display: none;
+  flex-shrink: 0;
+  margin-left: 12px;
+  padding-left: 12px;
+  border-left: 1px solid var(--border-color);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.editor-vim-enabled .vim-mode-indicator:not(:empty) {
+  display: inline;
+}
+
 .selection-count-text {
   margin-right: 12px;
   color: var(--text-secondary);

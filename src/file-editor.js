@@ -122,12 +122,16 @@ export function createFileEditor({
     enabled: () => layoutMode === "reading" && Boolean(model.active()) && model.active().kind !== "plain",
     onShortcut: () => comments.start()
   });
+  const vimIndicator = $("vim-mode-indicator");
+  const showVimMode = (mode) => { if (vimIndicator) vimIndicator.textContent = mode; };
   // Both panes edit with the same extensions; `pane` names the one they serve.
   const editorOptions = (pane) => ({
     placeholder: "Type something here... Supports Markdown formatting.",
     mode: editorModeFor(layoutMode),
     syntaxHighlighting: appearance.syntaxHighlighting,
     lineNumbers: appearance.lineNumbers,
+    vimMode: appearance.vimMode,
+    onVimStatus: showVimMode,
     extensions: [
       markdownEditingCommands(),
       pane === "primary"
@@ -1575,6 +1579,10 @@ export function createFileEditor({
     setLineNumbers: (enabled) => {
       editor.setLineNumbers(enabled);
       split.editor().setLineNumbers(enabled);
+    },
+    setVimMode: (enabled) => {
+      editor.setVimMode(enabled);
+      split.editor().setVimMode(enabled);
     },
     setSyntaxHighlighting: (enabled) => {
       editor.setSyntaxHighlighting(enabled);
