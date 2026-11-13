@@ -62,6 +62,11 @@
         </ul>
       </div>
 
+      <section class="outline-section" id="outline-section" aria-label="Outline" hidden>
+        <button class="sidebar-section-title outline-toggle" id="outline-toggle-btn" type="button" aria-expanded="true" aria-controls="outline-list">Outline</button>
+        <ul class="outline-list" id="outline-list"></ul>
+      </section>
+
     </aside>
 
     <!-- Main Workspace -->
@@ -335,7 +340,6 @@
           <span id="cursor-position" class="cursor-position-text">Ln 1, Col 1</span>
         </div>
         <div class="statusbar-right">
-          <span id="selection-count" class="selection-count-text"></span>
           <button class="comments-count" id="comments-count-btn" type="button" aria-controls="comments-panel" aria-expanded="false" hidden>No comments</button>
           <span id="save-status" role="status" aria-live="polite">Saved</span>
           <button id="trash-btn" class="trash-status-btn" type="button" aria-label="Trash" title="Trash — click to restore, right-click to empty" aria-haspopup="dialog">

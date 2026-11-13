@@ -60,7 +60,10 @@ Open files are listed in the sidebar; click one to switch to it, or its **×** t
 Each file keeps its own undo history while it is open. The files that were open when you quit
 reopen at the next launch.
 
-The status bar shows the save state ("Saved" fades after a moment) and, on hover, the file's path.
+The status bar shows the word and character count, the cursor position (`Ln 3, Col 12`), the
+save state ("Saved" fades after a moment) and, on hover, the file's path. While text is
+selected, the count is the selection's ("2 words • 10 characters selected") instead of the
+file's. Quick Notes' status bar works the same way.
 
 ## Folders
 

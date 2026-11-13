@@ -16,17 +16,17 @@ function declarations(css, selector) {
 }
 
 test("outline rows wrap with a hanging indent", () => {
-  const link = declarations(app, ".outline-link");
+  const link = declarations(styles, ".outline-link");
   assert.match(link, /white-space:\s*normal/);
   assert.match(link, /text-indent:\s*-0\.75em/);
   assert.match(link, /font-size:\s*0\.9rem/);
   assert.doesNotMatch(link, /text-overflow:\s*ellipsis/);
-  assert.match(declarations(app, ".outline-item"), /calc\(var\(--outline-depth,\s*0\)\s*\*\s*16px\)/);
+  assert.match(declarations(styles, ".outline-item"), /calc\(var\(--outline-depth,\s*0\)\s*\*\s*16px\)/);
 });
 
 test("the current outline row is marked by weight and an accent bar", () => {
-  assert.match(declarations(app, ".outline-item.current"), /inset 2px 0 0 var\(--accent-color\)/);
-  assert.match(declarations(app, ".outline-item.current .outline-link"), /font-weight:\s*600/);
+  assert.match(declarations(styles, ".outline-item.current"), /inset 2px 0 0 var\(--accent-color\)/);
+  assert.match(declarations(styles, ".outline-item.current .outline-link"), /font-weight:\s*600/);
 });
 
 test("the active file is a lift with an accent bar, not the selection pill", () => {
@@ -41,14 +41,21 @@ test("the files sidebar is 240px wide", () => {
 });
 
 test("a settled status fades and returns on hover", () => {
-  assert.match(declarations(app, ".file-status-text.settled"), /opacity:\s*0\b/);
-  assert.match(declarations(app, ".file-status:hover .file-status-text.settled"), /opacity:\s*1\b/);
-  assert.match(declarations(app, ".file-status:focus-within .file-status-text.settled"), /opacity:\s*1\b/);
-  assert.match(declarations(app, ".file-status-text"), /transition:\s*opacity 0\.6s/);
-  const reduced = app.match(/@media \(prefers-reduced-motion: reduce\)\s*\{([\s\S]*?\}\s*)\}/);
+  assert.match(declarations(styles, ".file-status-text.settled"), /opacity:\s*0\b/);
+  assert.match(declarations(styles, ".file-status:hover .file-status-text.settled"), /opacity:\s*1\b/);
+  assert.match(declarations(styles, ".file-status:focus-within .file-status-text.settled"), /opacity:\s*1\b/);
+  assert.match(declarations(styles, ".file-status-text"), /transition:\s*opacity 0\.6s/);
+  const reduced = styles.match(/@media \(prefers-reduced-motion: reduce\)\s*\{(\s*\.file-status-text[\s\S]*?\}\s*)\}/);
   assert.ok(reduced, "a reduced-motion block exists");
   assert.match(reduced[1], /\.file-status-text/);
+  assert.match(reduced[1], /#save-status/);
   assert.match(reduced[1], /transition:\s*none/);
+});
+
+test("Quick Notes' Saved fades the same way", () => {
+  assert.match(declarations(styles, "#save-status.settled"), /opacity:\s*0\b/);
+  assert.match(declarations(styles, ".statusbar:hover #save-status.settled"), /opacity:\s*1\b/);
+  assert.match(declarations(styles, "#save-status"), /transition:\s*opacity 0\.6s/);
 });
 
 test("default palettes give the status bar the page tone", () => {
