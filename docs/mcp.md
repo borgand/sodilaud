@@ -404,7 +404,7 @@ The optional `window` argument names a window, so files that belong together sha
 as the chapters of a review book:
 
 - The first call with a name opens a new window with that name, next to the window you used
-  last. Its title bar shows `Sodilaud - <name>`. Later calls with the same name reuse it.
+  last. Its title shows `<file> - <name>`, or `Sodilaud - <name>` before a file opens. Later calls with the same name reuse it.
   Names are compared without case, after trimming.
 - A file already open in another window moves to the named window, with its unsaved edits,
   comments and cursor.

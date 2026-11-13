@@ -16,7 +16,13 @@
         "title": "Sodilaud",
         "width": 960,
         "height": 680,
-        "visible": false
+        "visible": false,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": {
+          "x": 16,
+          "y": 20
+        }
       }
     ],
     "security": {

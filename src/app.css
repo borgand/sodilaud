@@ -225,6 +225,39 @@
   justify-content: flex-end;
 }
 
+/* The native title bar shows the window name outside macOS. */
+.main-topbar-window-name {
+  display: none;
+  margin-left: 0.6em;
+  opacity: 0.75;
+}
+
+/* macOS: an overlay title bar makes this row the top strip. It leaves room for
+   the traffic lights and shows the file name small and centred: beside the
+   toolbar while a file is open, in the middle of the row on the start page. */
+.platform-mac .main-topbar {
+  position: relative;
+  padding-left: 80px;
+}
+
+.platform-mac .main-topbar-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+.platform-mac .main-topbar:has(> .topbar-center[hidden]) .main-topbar-title {
+  position: absolute;
+  left: 50%;
+  max-width: calc(100% - 320px);
+  transform: translateX(-50%);
+}
+
+.platform-mac .main-topbar-window-name:not([hidden]) {
+  display: inline;
+}
+
 .main-body {
   display: flex;
   flex: 1;

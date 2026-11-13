@@ -126,6 +126,11 @@ it shows the file you were reading. Right-clicking a file outside the selection 
 file only. Unsaved edits, comments, the cursor, the scroll position
 and folded sections move with the file. The undo history does not.
 
+A window is titled after the file it shows, which is what Mission Control and the Window menu
+list. On macOS the toolbar is the title bar: the file name sits small in the toolbar row,
+dragging the row's empty space moves the window, and double-clicking it zooms the window.
+Windows and Linux keep their system title bar above the toolbar.
+
 **File → Name Window…** names the current window. The name shows in its title bar and in
 other windows' **Move to Window** menu, and an agent can open files in that window by its name
 (see [MCP](mcp.md#opening-a-file-in-the-main-window)). An agent can also name a new window
