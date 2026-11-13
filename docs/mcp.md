@@ -552,6 +552,11 @@ computer, but processes running as your user can
 still obtain local app data. The menu toggle grants access to local agents as
 a group; there are no separate permissions per client.
 
+The `sodilaud --wait` command (see [Files](files.md#open-from-a-terminal)) uses
+the same channel and token. It does not speak MCP: after authenticating it names
+the files it opened and learns only when they are closed, so it needs agent
+access on but no function permission.
+
 Sodilaud itself does not send notes anywhere. The agent or MCP client you
 connect can send tool results—including note contents—to its model provider.
 Enable access only when needed and under a client's privacy terms you accept.

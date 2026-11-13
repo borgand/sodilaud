@@ -46,6 +46,22 @@ once. Relative paths are taken from the terminal's current folder. A file that d
 yet is created empty, but only in a folder that exists. Only `.md`, `.markdown`, `.txt`, `.csv`
 and `.tsv` files are accepted; anything else is refused with a message and nothing is opened.
 
+With `--wait` (or `-w`), the command returns only when you have closed every file it opened, so
+it can serve as `$EDITOR` for tools that hand it a Markdown or text file (GitHub's `gh` writes
+pull request and issue bodies to `.md` files, for example):
+
+```sh
+export EDITOR="sodilaud --wait"
+```
+
+Close a file with its **×** or `Cmd+W` (`Ctrl+W` on Windows and Linux): it is saved first, then
+the command returns. A file that was already open is waited for too, and moving a file to another
+window keeps it open. Closing a window closes its files; hiding the last window does not. The
+command reaches Sodilaud through the same local connection as agents, so it needs **Agent access**
+**On** (see [MCP agent access](mcp.md)). If Sodilaud quits or Agent access is turned off before
+the files are closed, the command prints why and exits with an error. The extension rule above
+still applies, so Git's `COMMIT_EDITMSG`, which has none, is refused.
+
 To install it, choose **Command Line Tool…** in the **Sodilaud menu** (on macOS also in the
 application menu, under **About Sodilaud**). It writes a small script to
 `~/.local/bin/sodilaud`; no administrator password is needed. If `~/.local/bin` is not on your

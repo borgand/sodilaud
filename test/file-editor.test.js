@@ -227,6 +227,27 @@ test("Cmd+W closes files and the last one brings back the start page", async () 
   assert.deepEqual(app.invocations.findLast((call) => call.command === "file_set_open").args, { paths: [], active: null });
 });
 
+test("closing a file writes it before the open list Rust tells sodilaud --wait about drops it", async () => {
+  const fake = lists({ open: ["/repo/COMMIT_EDITMSG.md", "/docs/other.md"] });
+  const app = await bootMainWindow({
+    instance: 44,
+    platform: "MacIntel",
+    disk: { "/repo/COMMIT_EDITMSG.md": "", "/docs/other.md": "other" },
+    handlers: fake.handlers
+  });
+  [...doc(app).querySelectorAll(".open-file-name")].find((item) => item.textContent === "COMMIT_EDITMSG.md").click();
+  await app.settle();
+  assert.equal(doc(app).getElementById("main-title").textContent, "COMMIT_EDITMSG.md");
+  typeAt(app, 0, "fix: wait for the editor");
+  key(app, { key: "w", code: "KeyW", metaKey: true });
+  await app.settle();
+  assert.deepEqual(app.fileDocs.writes.at(-1), { path: "/repo/COMMIT_EDITMSG.md", text: "fix: wait for the editor" });
+  const closed = app.invocations.findIndex((call) => call.command === "file_doc_close" && call.args.path === "/repo/COMMIT_EDITMSG.md");
+  const dropped = app.invocations.findIndex((call) => call.command === "file_set_open" && !call.args.paths.includes("/repo/COMMIT_EDITMSG.md"));
+  assert.ok(closed >= 0 && dropped > closed, "the open list drops the file only after it was written and closed");
+  assert.deepEqual(app.invocations.findLast((call) => call.command === "file_set_open").args.paths, ["/docs/other.md"]);
+});
+
 test("a new file is saved with Save As, then autosaved; closing an unsaved one asks first", async () => {
   const fake = lists();
   const answers = ["cancel", "discard"];

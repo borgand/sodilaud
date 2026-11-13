@@ -16,6 +16,22 @@ fn main() {
             &context.config().identifier,
         ));
     }
+    // `sodilaud --wait`: the installed script opened the files already; this
+    // process only waits for them to close and never opens a window.
+    if std::env::args_os()
+        .nth(1)
+        .is_some_and(|argument| argument == sodilaud_lib::WAIT_FLAG)
+    {
+        let paths: Vec<String> = std::env::args_os()
+            .skip(2)
+            .map(|argument| argument.to_string_lossy().into_owned())
+            .collect();
+        if paths.is_empty() {
+            eprintln!("Usage: sodilaud {} FILE...", sodilaud_lib::WAIT_FLAG);
+            std::process::exit(2);
+        }
+        std::process::exit(sodilaud_lib::run_wait(&context.config().identifier, paths));
+    }
     if std::env::args_os().any(|argument| argument == "--mcp-stdio") {
         if std::env::args_os().count() != 2 {
             eprintln!("Usage: sodilaud --mcp-stdio");
