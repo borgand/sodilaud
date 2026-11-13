@@ -34,10 +34,10 @@ use crate::store::workspace::{Folder, Note};
 
 pub(crate) const MCP_PORT: u16 = 39_393;
 const MCP_TOKEN_FILE_NAME: &str = "sodilaud-mcp-token";
-const CONNECTION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+pub(crate) const CONNECTION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 const INITIAL_ACCEPT_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(25);
 const MAX_ACCEPT_RETRY_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
-const MAX_REQUEST_BYTES: usize = 256 * 1024;
+pub(crate) const MAX_REQUEST_BYTES: usize = 256 * 1024;
 const DEFAULT_PAGE_SIZE: u32 = 50;
 const MAX_PAGE_SIZE: u32 = 200;
 const PREVIEW_CHARS: usize = 240;
@@ -462,11 +462,18 @@ async fn start(app: &tauri::AppHandle, state: &McpState) -> Result<McpConnection
     }
     let registry = app.state::<SharedRegistry>().inner().clone();
     let cancellation = CancellationToken::new();
+    let files = app.clone();
+    let open_files: crate::wait::OpenFiles = Arc::new(move || {
+        files
+            .try_state::<crate::files::Files>()
+            .map(|files| files.watch_open())
+    });
     let task = tokio::spawn(serve_local_connections(
         listener,
         registry,
         state.permissions.clone(),
         Some(app.clone()),
+        open_files,
         token,
         cancellation.clone(),
     ));
@@ -489,11 +496,14 @@ pub(crate) async fn stop_mcp_server(
 // The app owns the live collection. Each headless invocation relays its stdio
 // stream over this authenticated loopback channel, without reading note files
 // or launching another editor. The token never enters client configuration.
+// The byte after the token picks the session: a newline for MCP, or
+// `wait::MODE` for `sodilaud --wait`.
 async fn serve_local_connections(
     listener: TcpListener,
     registry: SharedRegistry,
     permissions: Permissions,
     app: Option<tauri::AppHandle>,
+    open_files: crate::wait::OpenFiles,
     token: String,
     cancellation: CancellationToken,
 ) {
@@ -530,25 +540,30 @@ async fn serve_local_connections(
                 let registry = registry.clone();
                 let permissions = permissions.clone();
                 let app = app.clone();
+                let open_files = open_files.clone();
                 let token = token.clone();
                 let session_cancellation = cancellation.child_token();
                 sessions.spawn(async move {
                     let authenticate = tokio::time::timeout(CONNECTION_TIMEOUT, async {
                         let mut supplied = [0u8; 65];
                         stream.read_exact(&mut supplied).await?;
-                        if supplied[64] != b'\n'
+                        if !matches!(supplied[64], b'\n' | crate::wait::MODE)
                             || !bool::from(supplied[..64].ct_eq(token.as_bytes()))
                         {
                             return Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied));
                         }
-                        stream.write_all(&[1]).await
+                        stream.write_all(&[1]).await?;
+                        Ok(supplied[64])
                     });
                     let authenticated = tokio::select! {
                         result = authenticate => result,
                         _ = session_cancellation.cancelled() => return,
                     };
-                    if !matches!(authenticated, Ok(Ok(()))) { return; }
-                    serve_mcp_connection(stream, SodilaudServer::new(registry, permissions, app), session_cancellation).await;
+                    match authenticated {
+                        Ok(Ok(crate::wait::MODE)) => crate::wait::serve(stream, open_files, session_cancellation).await,
+                        Ok(Ok(_)) => serve_mcp_connection(stream, SodilaudServer::new(registry, permissions, app), session_cancellation).await,
+                        _ => {}
+                    }
                 });
             }
         }
@@ -732,7 +747,7 @@ pub fn run_mcp_stdio(identifier: &str) -> Result<(), String> {
         .build()
         .map_err(|error| format!("Could not start the MCP runtime: {error}"))?;
     let result = runtime.block_on(async {
-        let stream = connect_to_editor(("127.0.0.1", MCP_PORT), token).await?;
+        let stream = connect_to_editor(("127.0.0.1", MCP_PORT), token, b'\n').await?;
         relay_stdio(stream, tokio::io::stdin(), tokio::io::stdout())
             .await
             .map_err(|_| {
@@ -745,22 +760,24 @@ pub fn run_mcp_stdio(identifier: &str) -> Result<(), String> {
     result
 }
 
-fn mcp_token_path(identifier: &str) -> Result<std::path::PathBuf, String> {
+pub(crate) fn mcp_token_path(identifier: &str) -> Result<std::path::PathBuf, String> {
     Ok(dirs::config_dir()
         .ok_or_else(|| "Could not resolve the app configuration directory".to_string())?
         .join(identifier)
         .join(MCP_TOKEN_FILE_NAME))
 }
 
-async fn connect_to_editor(
+/// Opens an authenticated session; `mode` is the byte after the token.
+pub(crate) async fn connect_to_editor(
     address: impl tokio::net::ToSocketAddrs,
     token: &str,
+    mode: u8,
 ) -> Result<TcpStream, String> {
     tokio::time::timeout(CONNECTION_TIMEOUT, async {
         let mut stream = TcpStream::connect(address).await?;
         stream.set_nodelay(true)?;
         stream.write_all(token.as_bytes()).await?;
-        stream.write_all(b"\n").await?;
+        stream.write_all(&[mode]).await?;
         if stream.read_u8().await? != 1 {
             return Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied));
         }
@@ -813,7 +830,7 @@ fn load_or_create_token(path: &Path) -> Result<String, String> {
     }
 }
 
-fn validate_token(token: &str) -> Result<&str, String> {
+pub(crate) fn validate_token(token: &str) -> Result<&str, String> {
     if token.len() == 64 && token.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         Ok(token)
     } else {
@@ -3115,8 +3132,10 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn local_channel_rejects_invalid_authentication() {
         let (address, _, _, cancellation, task) = start_test_server().await;
-        assert!(connect_to_editor(address, &"b".repeat(64)).await.is_err());
-        let connection = connect_to_editor(address, &"a".repeat(64)).await;
+        assert!(connect_to_editor(address, &"b".repeat(64), b'\n')
+            .await
+            .is_err());
+        let connection = connect_to_editor(address, &"a".repeat(64), b'\n').await;
         assert!(connection.is_ok());
         cancellation.cancel();
         task.await.unwrap();
@@ -3145,7 +3164,9 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn stdio_relay_discovers_tools_reads_live_edits_and_stops_with_editor() {
         let (address, registry, permissions, cancellation, server) = start_test_server().await;
-        let stream = connect_to_editor(address, &"a".repeat(64)).await.unwrap();
+        let stream = connect_to_editor(address, &"a".repeat(64), b'\n')
+            .await
+            .unwrap();
         let (client, child) = tokio::io::duplex(64 * 1024);
         let (input, output) = tokio::io::split(child);
         let bridge = tokio::spawn(relay_stdio(stream, input, output));
@@ -3346,7 +3367,9 @@ pub(crate) mod tests {
         );
 
         // A second client does not steal the first client's session.
-        let second = connect_to_editor(address, &"a".repeat(64)).await.unwrap();
+        let second = connect_to_editor(address, &"a".repeat(64), b'\n')
+            .await
+            .unwrap();
         drop(second);
         cancellation.cancel();
         server.await.unwrap();
@@ -3355,14 +3378,18 @@ pub(crate) mod tests {
             .unwrap()
             .unwrap()
             .unwrap();
-        assert!(connect_to_editor(address, &"a".repeat(64)).await.is_err());
+        assert!(connect_to_editor(address, &"a".repeat(64), b'\n')
+            .await
+            .is_err());
         std::fs::remove_file(registry.with(|w| Ok(w.path.clone())).unwrap()).unwrap();
     }
 
     #[tokio::test]
     async fn stdio_relay_exits_on_client_eof() {
         let (address, _, _, cancellation, server) = start_test_server().await;
-        let stream = connect_to_editor(address, &"a".repeat(64)).await.unwrap();
+        let stream = connect_to_editor(address, &"a".repeat(64), b'\n')
+            .await
+            .unwrap();
         tokio::time::timeout(
             CONNECTION_TIMEOUT,
             relay_stdio(stream, tokio::io::empty(), tokio::io::sink()),
@@ -3377,7 +3404,9 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn modern_notification_listener_is_acknowledged_over_stdio() {
         let (address, _, _, cancellation, server) = start_test_server().await;
-        let stream = connect_to_editor(address, &"a".repeat(64)).await.unwrap();
+        let stream = connect_to_editor(address, &"a".repeat(64), b'\n')
+            .await
+            .unwrap();
         let mut client = BufReader::new(stream);
         send_json(
             &mut client,
@@ -3434,6 +3463,18 @@ pub(crate) mod tests {
         CancellationToken,
         JoinHandle<()>,
     ) {
+        start_test_server_with(Arc::new(|| None)).await
+    }
+
+    pub(crate) async fn start_test_server_with(
+        open_files: crate::wait::OpenFiles,
+    ) -> (
+        std::net::SocketAddr,
+        SharedRegistry,
+        Permissions,
+        CancellationToken,
+        JoinHandle<()>,
+    ) {
         let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
         let address = listener.local_addr().unwrap();
         let (registry, _) = registry();
@@ -3444,6 +3485,7 @@ pub(crate) mod tests {
             registry.clone(),
             permissions.clone(),
             None,
+            open_files,
             "a".repeat(64),
             cancellation.clone(),
         ));
