@@ -4497,7 +4497,7 @@ kbd {
   vertical-align: middle;
 }
 .comments-panel {
-  flex: 0 0 300px;
+  flex: 0 0 var(--sidebar-width, 300px);
   display: flex;
   flex-direction: column;
   gap: 8px;

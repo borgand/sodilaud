@@ -60,6 +60,12 @@ Open files are listed in the sidebar; click one to switch to it, or its **×** t
 Each file keeps its own undo history while it is open. The files that were open when you quit
 reopen at the next launch.
 
+Drag the edge between the sidebar and the editor to make the sidebar wider or narrower; the
+comments panel's edge works the same way. With the edge focused (Tab), the arrow keys move it
+(Shift for bigger steps), Home and End jump to the narrowest and widest, and Enter or a
+double-click puts back the default width. A sidebar can take up to half the window. The widths
+are remembered for the next launch.
+
 The status bar shows the save state ("Saved" fades after a moment) and, on hover, the file's path.
 
 ## Folders
