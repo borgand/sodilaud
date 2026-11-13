@@ -84,6 +84,12 @@ arrow keys, `Home` and `End`. Each window remembers its tab across restarts; a n
 on **Files**. Clicking the "n/m reviewed" count in the status bar switches to **Outline** and
 shows the sidebar if it was hidden; adding a folder switches to **Files**.
 
+Drag the edge between the sidebar and the editor to make the sidebar wider or narrower; the
+comments panel's edge works the same way. With the edge focused (Tab), the arrow keys move it
+(Shift for bigger steps), Home and End jump to the narrowest and widest, and Enter or a
+double-click puts back the default width. A sidebar can take up to half the window. The widths
+are remembered for the next launch.
+
 The status bar shows the word and character count, the cursor position (`Ln 3, Col 12`), the
 save state ("Saved" fades after a moment) and, on hover, the file's path. While text is
 selected, the count is the selection's ("2 words • 10 characters selected") instead of the

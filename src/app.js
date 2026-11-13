@@ -20,6 +20,7 @@ import { isMacLikePlatform, isWindowsPlatform } from "./platform-labels.js";
 import { createAgentAccess } from "./agent-access.js";
 import { createWindowNameDialog } from "./window-name.js";
 import { TITLE_MIN_WIDTH, applyTitleBarLayout, createWindowTitle } from "./title-bar.js";
+import { createSidebarResizer } from "./sidebar-resize.js";
 
 const HOTKEY_MESSAGES = {
   HotkeyInvalid: "That shortcut is not supported. The previous hotkey is still active.",
@@ -117,6 +118,26 @@ const fileEditor = createFileEditor({
   closeMenus: () => toggleActionsDropdown(false),
   openExternal: openExternalHref,
   mermaid
+});
+
+createSidebarResizer({
+  document,
+  panel: $("files-sidebar"),
+  side: "left",
+  storage: localStorage,
+  storageKey: "sodilaud_files_sidebar_width",
+  defaultWidth: 240,
+  label: "Resize the sidebar"
+});
+createSidebarResizer({
+  document,
+  panel: $("comments-panel"),
+  side: "right",
+  storage: localStorage,
+  storageKey: "sodilaud_comments_panel_width",
+  defaultWidth: 300,
+  min: 220,
+  label: "Resize the comments panel"
 });
 
 const agentAccess = createAgentAccess({

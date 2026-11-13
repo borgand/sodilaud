@@ -227,6 +227,7 @@
 
 /* Focus mode, as in Quick Notes: only the document column and a faded top bar. */
 .main-window.focus-mode .files-sidebar,
+.main-window.focus-mode .sidebar-resizer-left,
 .main-window.focus-mode .main-topbar .topbar-center,
 .main-window.focus-mode #toggle-files-sidebar,
 .main-window.focus-mode .file-status {
@@ -282,6 +283,48 @@
   min-height: 0;
 }
 
+/* The draggable edge between a sidebar and the editor (sidebar-resize.js). It
+   overlaps the panel border without taking room of its own. */
+.sidebar-resizer {
+  position: relative;
+  z-index: 5;
+  flex: 0 0 8px;
+  margin-inline: -4px;
+  cursor: col-resize;
+  touch-action: none;
+  outline: none;
+}
+
+.sidebar-resizer[hidden] {
+  display: none;
+}
+
+.sidebar-resizer::after {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  left: 3px;
+  width: 2px;
+  background: transparent;
+  transition: background-color 0.12s ease;
+}
+
+.sidebar-resizer:hover::after,
+.sidebar-resizer:focus-visible::after,
+.sidebar-resizer.dragging::after {
+  background: var(--accent-color);
+}
+
+.main-window .comments-panel {
+  max-width: 50%;
+}
+
+html.sidebar-resizing,
+html.sidebar-resizing * {
+  cursor: col-resize !important;
+  user-select: none;
+}
+
 .main-content {
   display: flex;
   flex-direction: column;
@@ -290,7 +333,8 @@
 }
 
 .files-sidebar {
-  width: 240px;
+  width: var(--sidebar-width, 240px);
+  max-width: 50%;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
