@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // The context menu of a file, or of the selected files, in the open files
-// list: move them to a new or to another main window, or close them.
+// list: move them to a new or to another main window, or close them. One file
+// can also copy its name or path; a file in the folder tree has only those.
 
 const MARGIN = 8;
 
-export function createOpenFileMenu({ document, root, invoke, onMove, onClose }) {
+export function createOpenFileMenu({ document, root, invoke, onMove, onClose, onCopy, relativePath }) {
   const view = document.defaultView;
   let anchor = null;
   // Each open() takes a number, so a slow window list cannot reopen a menu
@@ -78,6 +79,31 @@ export function createOpenFileMenu({ document, root, invoke, onMove, onClose }) 
     root.classList.toggle("submenu-opens-left", left + rect.width * 2 > view.innerWidth);
   }
 
+  function divider() {
+    const element = document.createElement("div");
+    element.className = "context-menu-divider";
+    return element;
+  }
+
+  // `path` is null for a file that was never saved.
+  function copyItems(name, path) {
+    const items = [item("Copy File Name", () => onCopy(name, "File name"))];
+    const unsaved = { disabled: true, title: "Save the file first" };
+    items.push(item("Copy Full Path", () => onCopy(path, "Path"), path === null ? unsaved : {}));
+    const relative = path === null ? null : relativePath(path);
+    if (relative !== null) items.push(item("Copy Relative Path", () => onCopy(relative, "Relative path")));
+    return items;
+  }
+
+  function show(items, label, at, from) {
+    anchor = from ?? null;
+    root.replaceChildren(...items);
+    root.setAttribute("aria-label", label);
+    root.hidden = false;
+    place(at);
+    enabledIn(root)[0]?.focus();
+  }
+
   // `buffers` is one file, or the selection the menu acts on.
   async function open(buffers, at, from) {
     const ticket = (opening += 1);
@@ -89,7 +115,6 @@ export function createOpenFileMenu({ document, root, invoke, onMove, onClose }) 
       console.error("Could not list the other windows", error);
     }
     if (ticket !== opening) return;
-    anchor = from ?? null;
     const ids = buffers.map((buffer) => buffer.id);
     const many = buffers.length > 1;
     const files = many ? ` ${buffers.length} Files` : "";
@@ -97,14 +122,15 @@ export function createOpenFileMenu({ document, root, invoke, onMove, onClose }) 
     const disabled = { disabled: !saved, title: saved ? "" : many ? "Save the files first" : "Save the file first" };
     const items = [item(`Move${files} to New Window`, () => onMove(ids, null), disabled)];
     if (windows.length && saved) items.push(submenu(ids, windows, `Move${files} to Window`));
-    const divider = document.createElement("div");
-    divider.className = "context-menu-divider";
-    items.push(divider, item(many ? `Close${files}` : "Close", () => onClose(ids)));
-    root.replaceChildren(...items);
-    root.setAttribute("aria-label", many ? `${buffers.length} files actions` : `${buffers[0].name} actions`);
-    root.hidden = false;
-    place(at);
-    enabledIn(root)[0]?.focus();
+    if (!many) items.push(divider(), ...copyItems(buffers[0].name, buffers[0].path));
+    items.push(divider(), item(many ? `Close${files}` : "Close", () => onClose(ids)));
+    show(items, many ? `${buffers.length} files actions` : `${buffers[0].name} actions`, at, from);
+  }
+
+  // A file in the folder tree: `file` is { name, path }.
+  function openPath(file, at, from) {
+    opening += 1;
+    show(copyItems(file.name, file.path), `${file.name} actions`, at, from);
   }
 
   function hide({ restoreFocus }) {
@@ -151,5 +177,5 @@ export function createOpenFileMenu({ document, root, invoke, onMove, onClose }) 
   }, true);
   view.addEventListener("blur", () => hide({ restoreFocus: false }));
 
-  return { open, close, isOpen };
+  return { open, openPath, close, isOpen };
 }
