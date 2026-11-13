@@ -36,8 +36,8 @@ test("the active file is a lift with an accent bar, not the selection pill", () 
   assert.doesNotMatch(active, /--bg-note-active/);
 });
 
-test("the files sidebar is 240px wide", () => {
-  assert.match(declarations(app, ".files-sidebar"), /width:\s*240px/);
+test("the files sidebar is 240px wide unless the user resized it", () => {
+  assert.match(declarations(app, ".files-sidebar"), /width:\s*var\(--sidebar-width,\s*240px\)/);
 });
 
 test("a settled status fades and returns on hover", () => {
