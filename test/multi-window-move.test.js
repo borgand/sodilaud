@@ -98,6 +98,10 @@ test("the menu works from the keyboard and Close closes the file", async () => {
   down();
   assert.ok(doc(app).activeElement === menuItem(app, "Move to Window"));
   down();
+  assert.ok(doc(app).activeElement === menuItem(app, "Copy File Name"));
+  down();
+  assert.ok(doc(app).activeElement === menuItem(app, "Copy Full Path"));
+  down();
   assert.ok(doc(app).activeElement === menuItem(app, "Close"));
   doc(app).activeElement.dispatchEvent(new app.dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
   assert.equal(menu(app).hidden, true);

@@ -62,6 +62,12 @@ reopen at the next launch.
 
 The status bar shows the save state ("Saved" fades after a moment) and, on hover, the file's path.
 
+To copy a file's name or path, right-click it in the open files list (or press the Menu key, or
+`Shift+F10`) and choose **Copy File Name** or **Copy Full Path**. When the file is inside a
+folder in the **Folders** section, **Copy Relative Path** copies its path from that folder (the
+innermost one, when folders are nested). A file in the folder tree has the same menu. A new file
+that has not been saved has no path to copy yet.
+
 ## Folders
 
 **File → Open Folder…** (`Cmd+Shift+O`, `Ctrl+Shift+O` on Windows and Linux), the start page's

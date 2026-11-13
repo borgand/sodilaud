@@ -12,6 +12,16 @@ function isUnder(path, base) {
   return endsWithSeparator(base) || path[base.length] === "/" || path[base.length] === "\\";
 }
 
+// `path` relative to the innermost of `bases` that contains it, with the
+// separators it is stored with; null when no base contains it.
+export function relativePath(path, bases) {
+  const base = bases
+    .filter((candidate) => candidate !== path && isUnder(path, candidate))
+    .reduce((longest, candidate) => (longest === null || candidate.length > longest.length ? candidate : longest), null);
+  if (base === null) return null;
+  return path.slice(endsWithSeparator(base) ? base.length : base.length + 1);
+}
+
 export function createFolderTree() {
   let rootList = [];
   const expandedSet = new Set();

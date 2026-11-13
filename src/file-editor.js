@@ -248,7 +248,9 @@ export function createFileEditor({
     root: $("open-file-menu"),
     invoke,
     onMove: (ids, to) => keepFocus(ids, () => moveFiles(ids, to)),
-    onClose: (ids) => keepFocus(ids, () => closeFiles(ids))
+    onClose: (ids) => keepFocus(ids, () => closeFiles(ids)),
+    onCopy: copyText,
+    relativePath: (path) => folders.relativePath(path)
   });
 
   openList.addEventListener("keydown", (event) => {
@@ -257,7 +259,23 @@ export function createFileEditor({
     event.stopPropagation();
   });
 
-  const folders = createFolderSidebar({ document, invoke, openPath, notify, onChange: renderSidebar });
+  const folders = createFolderSidebar({
+    document,
+    invoke,
+    openPath,
+    notify,
+    onChange: renderSidebar,
+    onFileMenu: (row, at, from) => fileMenu.openPath(row, at, from)
+  });
+
+  function copyText(text, label) {
+    document.defaultView.navigator.clipboard.writeText(text).then(() => {
+      notify(`${label} copied`);
+    }).catch((error) => {
+      console.error(`Failed to copy the ${label.toLowerCase()}`, error);
+      notify(`Could not copy the ${label.toLowerCase()}`);
+    });
+  }
 
   // The file's button disappears with the file, which would drop keyboard
   // focus onto the page; it goes to the neighbouring file or the start page.
