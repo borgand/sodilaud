@@ -82,7 +82,7 @@ async function bootPage({ page, script, label, storage = {}, handlers = {}, regi
   globalThis.document = dom.window.document;
   globalThis.localStorage = dom.window.localStorage;
   // CodeMirror reads these as bare globals.
-  for (const name of ["MutationObserver", "requestAnimationFrame", "cancelAnimationFrame", "getComputedStyle", "Window"]) {
+  for (const name of ["MutationObserver", "requestAnimationFrame", "cancelAnimationFrame", "getComputedStyle", "Window", "Text", "HTMLElement"]) {
     globalThis[name] = dom.window[name];
   }
   polyfillLayout(dom.window);

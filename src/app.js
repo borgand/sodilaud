@@ -66,7 +66,8 @@ const appearance = createAppearance({
   storage: localStorage,
   broadcast: (key) => broadcastPreference(window, key),
   onLineNumbers: (enabled) => fileEditor?.setLineNumbers(enabled),
-  onSyntaxHighlighting: (enabled) => fileEditor?.setSyntaxHighlighting(enabled)
+  onSyntaxHighlighting: (enabled) => fileEditor?.setSyntaxHighlighting(enabled),
+  onVimMode: (enabled) => fileEditor?.setVimMode(enabled)
 });
 const mermaid = createMermaidRenderer({ document });
 const fonts = createDocumentFonts({

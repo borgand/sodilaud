@@ -182,6 +182,10 @@
                     <span class="view-setting-label">Line numbers</span>
                     <button class="view-setting-toggle" id="line-numbers-toggle" type="button" aria-label="Toggle editor line numbers" aria-pressed="false">Off</button>
                   </div>
+                  <div class="view-setting-row">
+                    <span class="view-setting-label">Vim keys</span>
+                    <button class="view-setting-toggle" id="vim-mode-toggle" type="button" aria-label="Toggle Vim keys in the editor" aria-pressed="false">Off</button>
+                  </div>
                 </div>
               </div>
               <div class="dropdown-divider"></div>
@@ -348,6 +352,7 @@
         <span class="file-status-text" id="file-status" aria-live="polite"></span>
         <span class="sr-only" id="file-status-path"></span>
         <button class="review-progress" id="review-progress" type="button" title="Review hunks marked reviewed. Click to show the outline." hidden></button>
+        <span class="vim-mode-indicator" id="vim-mode-indicator" title="Vim mode"></span>
         <button class="review-next" id="review-next-btn" type="button" title="Scroll to the next hunk not marked reviewed" hidden>Next unreviewed</button>
         <button class="comments-count" id="comments-count-btn" type="button" aria-controls="comments-panel" aria-expanded="false" hidden>No comments</button>
       </footer>
@@ -718,7 +723,7 @@ function hello() {
 
             <div class="cheatsheet-card full-width">
               <div class="cheatsheet-card-title">Editor Assistance</div>
-              <p class="cheatsheet-note">Right-click in the editor and choose <strong>Insert</strong> for starter tables, task lists, code blocks, and links. Select text and type <span class="code-mono">*</span>, <span class="code-mono">_</span>, a backtick, or <span class="code-mono">~</span> to wrap it. Escape a Markdown trigger with a backslash when you want it to remain literal. Syntax highlighting and line numbers can be toggled under <strong>Sodilaud menu → Appearance</strong>. <strong>Readable width</strong> there limits the text column; the <strong>Full Width</strong> button in the toolbar turns it off so wide tables and code use the whole window, and turns it back on.</p>
+              <p class="cheatsheet-note">Right-click in the editor and choose <strong>Insert</strong> for starter tables, task lists, code blocks, and links. Select text and type <span class="code-mono">*</span>, <span class="code-mono">_</span>, a backtick, or <span class="code-mono">~</span> to wrap it. Escape a Markdown trigger with a backslash when you want it to remain literal. Syntax highlighting, line numbers and <strong>Vim keys</strong> can be toggled under <strong>Sodilaud menu → Appearance</strong>. <strong>Readable width</strong> there limits the text column; the <strong>Full Width</strong> button in the toolbar turns it off so wide tables and code use the whole window, and turns it back on. With Vim keys on, the status bar shows the mode; Markdown helpers such as list continuation and bracket pairing work in insert mode, and the app shortcuts keep working in normal mode.</p>
             </div>
           </div>
         </div>

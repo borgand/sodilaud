@@ -540,11 +540,12 @@ test("Save As onto the file's own path right after typing keeps every change", a
 test("the status bar counts words like Quick Notes: totals, or the selection's", async () => {
   const fake = lists({ open: ["/docs/a.md", "/docs/b.md"] });
   const app = await bootMainWindow({
-    instance: 44,
+    instance: 47,
     disk: { "/docs/a.md": "alpha beta\ngamma", "/docs/b.md": "one" },
     handlers: fake.handlers
   });
   const text = (id) => doc(app).getElementById(id).textContent;
+  await app.until(() => doc(app).querySelector(".open-file-item.active .open-file-name"));
   const active = doc(app).querySelector(".open-file-item.active .open-file-name").textContent;
   if (active !== "a.md") {
     [...doc(app).querySelectorAll(".open-file-name")].find((item) => item.textContent === "a.md").click();
