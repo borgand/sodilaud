@@ -50,6 +50,8 @@ pub struct ListsView {
     folders: Vec<FolderRoot>,
     expanded: Vec<String>,
     drafts: Vec<Draft>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sidebar_tab: Option<String>,
 }
 
 fn lists_view(
@@ -58,10 +60,12 @@ fn lists_view(
     folders: Vec<String>,
     expanded: Vec<String>,
     drafts: Vec<Draft>,
+    sidebar_tab: Option<String>,
 ) -> ListsView {
     ListsView {
         open,
         drafts,
+        sidebar_tab,
         folders: folders.iter().map(|root| FolderRoot::new(root)).collect(),
         expanded,
         recent: recent
@@ -329,13 +333,36 @@ pub fn file_lists(window: Window, files: State<'_, Files>) -> Result<ListsView, 
                     entry.open.clone(),
                     entry.folders.clone(),
                     entry.expanded.clone(),
+                    entry.sidebar_tab.clone(),
                 )
             })
             .unwrap_or_default();
         (entry, lists.recent.clone())
     });
-    let (open, folders, expanded) = entry;
-    Ok(lists_view(open, recent, folders, expanded, files.drafts()))
+    let (open, folders, expanded, sidebar_tab) = entry;
+    Ok(lists_view(
+        open,
+        recent,
+        folders,
+        expanded,
+        files.drafts(),
+        sidebar_tab,
+    ))
+}
+
+/// The tab this window's sidebar shows, "files" or "outline", kept across restarts.
+#[tauri::command]
+pub fn sidebar_set_tab(
+    window: Window,
+    files: State<'_, Files>,
+    tab: String,
+) -> Result<(), FileError> {
+    require_main(window.label())?;
+    if files.update(|lists| lists.windows.set_sidebar_tab(window.label(), &tab)) {
+        Ok(())
+    } else {
+        Err(FileError::other(format!("Unknown sidebar tab: {tab}")))
+    }
 }
 
 /// Adds `root` (canonical) to the window's sidebar, expanded. A root the

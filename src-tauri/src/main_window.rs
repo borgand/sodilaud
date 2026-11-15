@@ -10,6 +10,9 @@ use tauri::{
     WebviewUrl, WebviewWindow, WebviewWindowBuilder, Window,
 };
 
+#[cfg(target_os = "macos")]
+use tauri::TitleBarStyle;
+
 use crate::docs::commands::SharedRegistry;
 use crate::files::commands::{require_main, OPEN_REQUEST_EVENT};
 use crate::files::windows::{is_main_label, WindowSet};
@@ -24,6 +27,11 @@ const DEFAULT_WIDTH: f64 = 960.0;
 const DEFAULT_HEIGHT: f64 = 680.0;
 /// How far right and down a new window opens from the one it came from.
 const CASCADE: f64 = 28.0;
+/// Where the traffic lights sit in the overlay title bar, as in tauri.conf.json.
+#[cfg(target_os = "macos")]
+const TRAFFIC_LIGHT_X: f64 = 16.0;
+#[cfg(target_os = "macos")]
+const TRAFFIC_LIGHT_Y: f64 = 20.0;
 
 /// The main windows that exist right now.
 pub fn labels(app: &AppHandle) -> Vec<String> {
@@ -183,6 +191,22 @@ pub fn main_window_close_done(window: Window, ok: bool) {
     }
 }
 
+/// On macOS the toolbar row is the title bar: the page draws over a hidden
+/// title, with the traffic lights centred in its 44px row. Matches the `main`
+/// window in tauri.conf.json.
+#[cfg(target_os = "macos")]
+fn overlay_title_bar<R: tauri::Runtime, M: Manager<R>>(
+    builder: WebviewWindowBuilder<'_, R, M>,
+) -> WebviewWindowBuilder<'_, R, M> {
+    builder
+        .title_bar_style(TitleBarStyle::Overlay)
+        .hidden_title(true)
+        .traffic_light_position(tauri::LogicalPosition::new(
+            TRAFFIC_LIGHT_X,
+            TRAFFIC_LIGHT_Y,
+        ))
+}
+
 /// Builds a main window. `frame` is in physical pixels: the outer position and
 /// the inner size, which is what `set_size` takes back.
 pub fn create(
@@ -191,10 +215,13 @@ pub fn create(
     frame: Option<Frame>,
     visible: bool,
 ) -> Option<WebviewWindow> {
-    let window = WebviewWindowBuilder::new(app, label, WebviewUrl::App("index.html".into()))
+    let builder = WebviewWindowBuilder::new(app, label, WebviewUrl::App("index.html".into()))
         .title("Sodilaud")
         .inner_size(DEFAULT_WIDTH, DEFAULT_HEIGHT)
-        .visible(false)
+        .visible(false);
+    #[cfg(target_os = "macos")]
+    let builder = overlay_title_bar(builder);
+    let window = builder
         .build()
         .map_err(|error| eprintln!("Could not create a Sodilaud window: {error}"))
         .ok()?;

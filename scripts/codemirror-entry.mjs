@@ -7,3 +7,4 @@ export { HighlightStyle, Language, defineLanguageFacet, ensureSyntaxTree, syntax
 export { defaultKeymap, history, historyKeymap, isolateHistory, undo } from "@codemirror/commands";
 export { GFM, parser as markdownParser } from "@lezer/markdown";
 export { tags } from "@lezer/highlight";
+export { Vim, getCM, vim } from "@replit/codemirror-vim";

@@ -3,9 +3,11 @@
 // The formatting toolbar in both windows: buttons that fit, a More menu for the
 // rest, and the heading menu. The page says how to apply an action.
 
-import { getVisibleItemCount } from "./format-toolbar-fit.js";
+import { getVisibleItemCount, roomBesideTitle } from "./format-toolbar-fit.js";
 
-export function createFormatToolbar({ document, applyFormat, onMenuOpen = () => {}, observe = [] }) {
+// `title` with `titleMinWidth` keeps that much of the title bar's file name
+// visible before the toolbar does.
+export function createFormatToolbar({ document, applyFormat, onMenuOpen = () => {}, observe = [], title = null, titleMinWidth = 0 }) {
   const window = document.defaultView;
   const byId = (id) => document.getElementById(id);
   const formatControls = byId("format-controls");
@@ -131,8 +133,11 @@ export function createFormatToolbar({ document, applyFormat, onMenuOpen = () => 
     const moreWidth = outerWidth(formatMoreBtn) + gap;
     formatMoreBtn.hidden = true;
 
-    const available = formatControls.clientWidth -
-      (parseFloat(style.paddingLeft) || 0) - (parseFloat(style.paddingRight) || 0) + gap;
+    const available = roomBesideTitle(
+      formatControls.clientWidth - (parseFloat(style.paddingLeft) || 0) - (parseFloat(style.paddingRight) || 0) + gap,
+      title?.clientWidth,
+      titleMinWidth
+    );
     const widths = units.map(unit => outerWidth(unit.button) + gap + (unit.separator ? outerWidth(unit.separator) + gap : 0));
     const visible = getVisibleItemCount(available, widths, moreWidth);
 

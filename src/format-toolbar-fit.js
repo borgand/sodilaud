@@ -23,3 +23,20 @@ export function getVisibleItemCount(available, widths, overflowWidth) {
   }
   return count;
 }
+
+/**
+ * The toolbar's room once the title beside it keeps `titleMinWidth`: whatever
+ * the layout squeezed the title below that comes off the toolbar, which then
+ * moves buttons into the overflow menu instead of hiding the file name. A
+ * laid-out toolbar keeps at least 1px, since no room at all means no layout.
+ * @param {number} available
+ * @param {number} titleWidth the title's measured width
+ * @param {number} titleMinWidth
+ * @returns {number}
+ */
+export function roomBesideTitle(available, titleWidth, titleMinWidth) {
+  if (!(available > 0)) return available;
+  const minimum = Number.isFinite(titleMinWidth) && titleMinWidth > 0 ? titleMinWidth : 0;
+  const width = Number.isFinite(titleWidth) && titleWidth > 0 ? titleWidth : 0;
+  return Math.max(1, available - Math.max(0, minimum - width));
+}

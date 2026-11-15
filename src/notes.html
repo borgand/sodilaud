@@ -62,6 +62,11 @@
         </ul>
       </div>
 
+      <section class="outline-section" id="outline-section" aria-label="Outline" hidden>
+        <button class="sidebar-section-title outline-toggle" id="outline-toggle-btn" type="button" aria-expanded="true" aria-controls="outline-list">Outline</button>
+        <ul class="outline-list" id="outline-list"></ul>
+      </section>
+
     </aside>
 
     <!-- Main Workspace -->
@@ -105,6 +110,9 @@
           </div>
           <div class="comment-controls">
             <button class="layout-btn" id="comment-btn" type="button" title="Comment on the selection (Cmd+Alt+M)" aria-label="Comment on the selection"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /><path d="M12 7v6M9 10h6" /></svg></button>
+          </div>
+          <div class="view-controls">
+            <button class="layout-btn" id="full-width-btn" type="button" title="Full Width" aria-label="Full Width" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5v14M21 5v14M7 12h10M10 9l-3 3 3 3M14 9l3 3-3 3" /></svg></button>
           </div>
           <div class="format-menu format-heading-menu" id="format-heading-menu" role="menu" aria-label="Heading level" hidden>
             <button class="dropdown-item format-heading-item" id="format-heading-1" data-format="heading-1" type="button" role="menuitem" tabindex="-1" title="Heading 1 (Cmd+Alt+1)"><span class="format-heading-sample format-heading-sample-1">Heading 1</span></button>
@@ -333,9 +341,9 @@
         <div class="statusbar-left">
           <span id="word-char-count">0 words • 0 characters</span>
           <span id="cursor-position" class="cursor-position-text">Ln 1, Col 1</span>
+          <span class="vim-mode-indicator" id="vim-mode-indicator" title="Vim mode"></span>
         </div>
         <div class="statusbar-right">
-          <span id="selection-count" class="selection-count-text"></span>
           <button class="comments-count" id="comments-count-btn" type="button" aria-controls="comments-panel" aria-expanded="false" hidden>No comments</button>
           <span id="save-status" role="status" aria-live="polite">Saved</span>
           <button id="trash-btn" class="trash-status-btn" type="button" aria-label="Trash" title="Trash — click to restore, right-click to empty" aria-haspopup="dialog">

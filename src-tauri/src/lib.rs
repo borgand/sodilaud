@@ -23,9 +23,11 @@ mod platform;
 mod quicknotes;
 mod quit;
 mod store;
+mod wait;
 mod workspace;
 pub use hook::{run_pretooluse_hook, FLAG as PRETOOLUSE_HOOK_FLAG};
 pub use mcp::run_mcp_stdio;
+pub use wait::{run_wait, FLAG as WAIT_FLAG};
 
 pub(crate) const PREFERENCES_FILE_NAME: &str = "sodilaud-preferences.json";
 
@@ -486,6 +488,7 @@ pub fn run(context: tauri::Context<tauri::Wry>) {
             files::commands::folder_remove,
             files::commands::folder_list,
             files::commands::folder_set_expanded,
+            files::commands::sidebar_set_tab,
             files::commands::folder_open_file,
             files::commands::draft_discard,
             files::commands::draft_save_to_notes,

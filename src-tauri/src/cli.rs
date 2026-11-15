@@ -3,8 +3,10 @@
 //! The `sodilaud` command: a small shell script in `~/.local/bin` that opens
 //! files in the running Sodilaud from a terminal. On macOS it goes through
 //! `open -a`, the same route as Finder "Open With"; on Linux it runs the
-//! executable, whose single-instance handoff reaches the running app. Every
-//! function takes its paths, so tests never touch the real home folder.
+//! executable, whose single-instance handoff reaches the running app. With
+//! `--wait` it then runs the executable to wait until the files are closed
+//! (see `wait.rs`). Every function takes its paths, so tests never touch the
+//! real home folder.
 
 use std::ffi::OsStr;
 use std::fs;
@@ -15,8 +17,12 @@ pub(crate) const MARKER: &str = "# sodilaud-cli: installed by Sodilaud. Update o
 /// What the script launches.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum Target {
-    /// A macOS app bundle, opened through Launch Services.
-    App(PathBuf),
+    /// A macOS app bundle, opened through Launch Services, and the
+    /// executable inside it that waits for files to close.
+    App {
+        bundle: PathBuf,
+        executable: PathBuf,
+    },
     /// An executable that hands its arguments to the running instance.
     Executable(PathBuf),
 }
@@ -39,9 +45,12 @@ fail() {
 }
 
 usage() {
-  echo "Usage: sodilaud FILE..."
+  echo "Usage: sodilaud [-w|--wait] FILE..."
   echo "Opens Markdown and text files (.md, .markdown, .txt, .csv, .tsv) in Sodilaud and returns at once."
   echo "A file that does not exist is created empty."
+  echo ""
+  echo "  -w, --wait  Return only when every file is closed in Sodilaud, for use as \$EDITOR."
+  echo "              Needs Agent access on. Fails if Sodilaud quits first."
 }
 
 if [ "$#" -eq 0 ]; then
@@ -50,12 +59,14 @@ if [ "$#" -eq 0 ]; then
 fi
 
 files_only=
+wait=
 for arg do
   shift
   if [ -z "$files_only" ]; then
     case $arg in
       --) files_only=1; continue ;;
       -h|--help) usage; exit 0 ;;
+      -w|--wait) wait=1; continue ;;
       -*) printf 'sodilaud: unknown option %s\n' "$arg" >&2; usage >&2; exit 2 ;;
     esac
   fi
@@ -88,7 +99,11 @@ for path do
   fi
 done
 
-launch "$@"
+launch "$@" || exit
+if [ -n "$wait" ]; then
+  [ -x "$exe" ] || fail "Sodilaud is no longer at $exe. Open Sodilaud and choose Command Line Tool in its menu to update this command."
+  exec "$exe" --wait-for-close "$@"
+fi
 "#;
 
 /// Quotes a value for `sh`, so any path survives as one word.
@@ -103,15 +118,17 @@ fn utf8(path: &Path) -> Result<&str, String> {
 
 pub(crate) fn script(target: &Target) -> Result<String, String> {
     let launcher = match target {
-        Target::App(bundle) => format!(
+        Target::App { bundle, executable } => format!(
             r#"app={}
+exe={}
 
 launch() {{
   [ -d "$app" ] || fail "Sodilaud is no longer at $app. Open Sodilaud and choose Command Line Tool in its menu to update this command."
-  exec open -a "$app" "$@"
+  open -a "$app" "$@"
 }}
 "#,
-            quote(utf8(bundle)?)
+            quote(utf8(bundle)?),
+            quote(utf8(executable)?)
         ),
         Target::Executable(executable) => format!(
             r#"exe={}
@@ -129,7 +146,7 @@ launch() {{
         ),
     };
     Ok(format!(
-        "#!/bin/sh\n{MARKER}\n# Opens Markdown and text files in Sodilaud: sodilaud FILE...\n\n{launcher}{BODY}"
+        "#!/bin/sh\n{MARKER}\n# Opens Markdown and text files in Sodilaud: sodilaud [--wait] FILE...\n\n{launcher}{BODY}"
     ))
 }
 
@@ -156,7 +173,10 @@ pub(crate) fn target_for(executable: &Path) -> Result<Target, String> {
         if bundle.to_string_lossy().contains("/AppTranslocation/") {
             return Err("Move Sodilaud to the Applications folder and open it from there, then install the sodilaud command. macOS runs it from a temporary location until then.".into());
         }
-        return Ok(Target::App(bundle));
+        return Ok(Target::App {
+            bundle,
+            executable: executable.to_path_buf(),
+        });
     }
     Ok(Target::Executable(executable.to_path_buf()))
 }
@@ -485,13 +505,22 @@ mod tests {
 
     const BUNDLE: &str = "/Applications/Sodilaud.app";
 
+    fn app(bundle: &str) -> Target {
+        Target::App {
+            bundle: bundle.into(),
+            executable: Path::new(bundle).join("Contents/MacOS/sodilaud"),
+        }
+    }
+
     #[test]
     fn the_script_is_marked_and_opens_the_bundle_through_launch_services() {
-        let text = script(&Target::App(BUNDLE.into())).unwrap();
+        let text = script(&app(BUNDLE)).unwrap();
         assert!(text.starts_with("#!/bin/sh\n"));
         assert_eq!(text.lines().nth(1), Some(MARKER));
         assert!(text.contains("app='/Applications/Sodilaud.app'"));
-        assert!(text.contains(r#"exec open -a "$app" "$@""#));
+        assert!(text.contains("exe='/Applications/Sodilaud.app/Contents/MacOS/sodilaud'"));
+        assert!(text.contains(r#"open -a "$app" "$@""#));
+        assert!(text.contains(r#"exec "$exe" --wait-for-close "$@""#));
         assert!(!text.contains('\u{2014}'));
     }
 
@@ -505,7 +534,7 @@ mod tests {
 
     #[test]
     fn baked_paths_are_quoted_for_the_shell() {
-        let text = script(&Target::App("/Users/o'neil/My Apps/Sodilaud.app".into())).unwrap();
+        let text = script(&app("/Users/o'neil/My Apps/Sodilaud.app")).unwrap();
         assert!(text.contains(r"app='/Users/o'\''neil/My Apps/Sodilaud.app'"));
     }
 
@@ -539,7 +568,7 @@ mod tests {
             target_for(Path::new(
                 "/Applications/Sodilaud.app/Contents/MacOS/sodilaud"
             )),
-            Ok(Target::App(BUNDLE.into()))
+            Ok(app(BUNDLE))
         );
     }
 
@@ -556,7 +585,7 @@ mod tests {
     fn installs_once_updates_ours_and_removes_only_ours() {
         let home = scratch("install");
         let path = install_path(&home);
-        let script = script(&Target::App(BUNDLE.into())).unwrap();
+        let script = script(&app(BUNDLE)).unwrap();
         assert_eq!(state(&path, &script), State::Missing);
         install(&path, &script).unwrap();
         assert_eq!(state(&path, &script), State::Current);
@@ -573,7 +602,7 @@ mod tests {
         let leftovers = fs::read_dir(path.parent().unwrap()).unwrap().count();
         assert_eq!(leftovers, 1, "no temporary files are left behind");
 
-        let moved = super::script(&Target::App("/elsewhere/Sodilaud.app".into())).unwrap();
+        let moved = super::script(&app("/elsewhere/Sodilaud.app")).unwrap();
         assert_eq!(state(&path, &moved), State::Outdated);
         install(&path, &moved).unwrap();
         assert_eq!(state(&path, &moved), State::Current);
@@ -590,7 +619,7 @@ mod tests {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         let other = "#!/bin/sh\necho someone else's sodilaud\n";
         fs::write(&path, other).unwrap();
-        let script = script(&Target::App(BUNDLE.into())).unwrap();
+        let script = script(&app(BUNDLE)).unwrap();
         assert_eq!(state(&path, &script), State::Foreign);
         assert!(install(&path, &script)
             .unwrap_err()
@@ -644,7 +673,8 @@ mod tests {
         assert!(other.contains("new terminal"));
     }
 
-    /// Runs the real script with a fake Sodilaud that records its arguments.
+    /// Runs the real script with a fake Sodilaud that records its arguments,
+    /// and those of a wait in `launched.wait`.
     struct Run {
         status: i32,
         stderr: String,
@@ -657,11 +687,12 @@ mod tests {
         fs::create_dir_all(&bin).unwrap();
         let record = directory.join("launched");
         let _ = fs::remove_file(&record);
+        let _ = fs::remove_file(directory.join("launched.wait"));
         let fake = bin.join("fake-sodilaud");
         fs::write(
             &fake,
             format!(
-                "#!/bin/sh\nfor a do printf '%s\\n' \"$a\"; done > '{0}.tmp'\nmv '{0}.tmp' '{0}'\n",
+                "#!/bin/sh\nif [ \"$1\" = --wait-for-close ]; then\n  for a do printf '%s\\n' \"$a\"; done > '{0}.wait'\n  exit 0\nfi\nfor a do printf '%s\\n' \"$a\"; done > '{0}.tmp'\nmv '{0}.tmp' '{0}'\n",
                 record.display()
             ),
         )
@@ -793,20 +824,55 @@ mod tests {
         assert_eq!(folder.status, 1);
         assert!(folder.stderr.contains("is a folder"), "{}", folder.stderr);
 
-        let option = run(&directory, &["--wait", "a.md"]);
+        let option = run(&directory, &["--later", "a.md"]);
         assert_eq!(option.status, 2);
         assert!(
-            option.stderr.contains("unknown option --wait"),
+            option.stderr.contains("unknown option --later"),
             "{}",
             option.stderr
         );
 
         let empty = run(&directory, &[]);
         assert_eq!(empty.status, 2);
-        assert!(empty.stderr.contains("Usage: sodilaud FILE..."));
+        assert!(empty.stderr.contains("Usage: sodilaud [-w|--wait] FILE..."));
+
+        let only_wait = run(&directory, &["--wait"]);
+        assert_eq!(only_wait.status, 2, "--wait needs files");
 
         let help = run(&directory, &["--help"]);
         assert_eq!(help.status, 0);
-        assert!(help.stdout.contains("Usage: sodilaud FILE..."));
+        assert!(help.stdout.contains("Usage: sodilaud [-w|--wait] FILE..."));
+        assert!(help.stdout.contains("-w, --wait"));
+        assert!(help.stdout.contains("$EDITOR"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn with_wait_the_script_opens_the_files_then_waits_for_them() {
+        let directory = scratch("wait");
+        let work = directory.join("work");
+        let waited = directory.join("launched.wait");
+        for flag in ["--wait", "-w"] {
+            let result = run(&directory, &[flag, "COMMIT_EDITMSG.md", "b.md"]);
+            assert_eq!(result.status, 0, "{}", result.stderr);
+            let expected = [
+                format!("{}/COMMIT_EDITMSG.md", work.display()),
+                format!("{}/b.md", work.display()),
+            ];
+            assert_eq!(result.launched.expect("opened first"), expected);
+            let mut wait = vec!["--wait-for-close".to_string()];
+            wait.extend(expected);
+            assert_eq!(
+                fs::read_to_string(&waited)
+                    .unwrap()
+                    .lines()
+                    .collect::<Vec<_>>(),
+                wait
+            );
+        }
+
+        let plain = run(&directory, &["c.md"]);
+        assert_eq!(plain.status, 0);
+        assert!(!waited.exists(), "without --wait nothing waits");
     }
 }

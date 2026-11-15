@@ -5,7 +5,7 @@
 
 import { trapModalFocus } from "./modal-focus.js";
 
-export function createWindowNameDialog({ document, invoke }) {
+export function createWindowNameDialog({ document, invoke, onNamed = () => {} }) {
   const $ = (id) => document.getElementById(id);
   const backdrop = $("window-name-modal-backdrop");
   const modal = $("window-name-modal");
@@ -47,7 +47,7 @@ export function createWindowNameDialog({ document, invoke }) {
     if (saving) return;
     saving = true;
     try {
-      await invoke("main_window_set_name", { name: input.value });
+      onNamed(await invoke("main_window_set_name", { name: input.value }));
       close();
     } catch (failure) {
       error.textContent = failure?.message ?? String(failure);

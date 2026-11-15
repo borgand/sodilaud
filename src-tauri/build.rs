@@ -80,6 +80,7 @@ fn main() {
             "folder_remove",
             "folder_list",
             "folder_set_expanded",
+            "sidebar_set_tab",
             "folder_open_file",
             "draft_discard",
             "draft_save_to_notes",

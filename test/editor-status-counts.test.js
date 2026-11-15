@@ -25,6 +25,11 @@ test("the cursor position follows every change while word counts trail typing", 
 
   view.dispatch({ selection: { anchor: 10, head: 0 } });
   assert.equal(text("cursor-position"), "Ln 1, Col 1", "a backward selection reports its head");
-  await app.until(() => text("selection-count") === "2 words • 10 characters selected");
-  assert.equal(text("selection-count"), "2 words • 10 characters selected");
+  await app.until(() => text("word-char-count") === "2 words • 10 characters selected");
+  assert.equal(text("word-char-count"), "2 words • 10 characters selected", "a selection replaces the totals");
+  assert.equal(document.getElementById("selection-count"), null, "there is no separate selection count");
+
+  view.dispatch({ selection: { anchor: 3 } });
+  await app.until(() => text("word-char-count") === "3 words • 16 characters");
+  assert.equal(text("word-char-count"), "3 words • 16 characters", "the totals return with the selection gone");
 });

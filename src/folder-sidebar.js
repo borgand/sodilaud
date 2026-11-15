@@ -4,13 +4,16 @@
 // as an ARIA tree, listed one level at a time through Rust. Every path here
 // came from Rust; the tree can only open what Rust lists.
 
-import { createFolderTree } from "./folder-tree.js";
+import { createFolderTree, relativePath } from "./folder-tree.js";
 
 const MISSING_TEXT = "Folder not found";
 const MOVE_KEYS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End"]);
 const expandable = (row) => row.kind === "root" || row.kind === "folder";
+const isMenuKey = (event) => event.key === "ContextMenu" || (event.shiftKey && event.key === "F10");
 
-export function createFolderSidebar({ document, invoke, openPath, notify = () => {}, onChange = () => {} }) {
+// `onAdd` is told when the user adds a root, so the section can be brought into view.
+// `onFileMenu(row, at, from)` opens the context menu of a file row.
+export function createFolderSidebar({ document, invoke, openPath, notify = () => {}, onChange = () => {}, onAdd = () => {}, onFileMenu = () => {} }) {
   const section = document.getElementById("folders-section");
   const treeElement = document.getElementById("folder-tree");
   const tree = createFolderTree();
@@ -18,6 +21,8 @@ export function createFolderSidebar({ document, invoke, openPath, notify = () =>
   // The row in the tab order, and the one keyboard focus returns to.
   let focusPath = null;
   let rowIds = 0;
+  // The ContextMenu key opens the menu on keydown and then fires contextmenu too.
+  let keyMenuAt = 0;
   // One folder_list per path at a time.
   const inFlight = new Map();
 
@@ -39,6 +44,11 @@ export function createFolderSidebar({ document, invoke, openPath, notify = () =>
     item.tabIndex = tabbable ? 0 : -1;
     if (expandable(row)) item.setAttribute("aria-expanded", String(row.expanded));
     if (row.kind === "file") {
+      item.addEventListener("contextmenu", (event) => {
+        event.preventDefault();
+        if (Date.now() - keyMenuAt < 500) return;
+        onFileMenu(row, { x: event.clientX, y: event.clientY }, item);
+      });
       const active = row.path === activePath;
       item.classList.toggle("active", active);
       item.setAttribute("aria-selected", String(active));
@@ -183,6 +193,7 @@ export function createFolderSidebar({ document, invoke, openPath, notify = () =>
   async function addRoot(root) {
     if (!root) return;
     tree.addRoot(root);
+    onAdd();
     render();
     await fill();
     await report();
@@ -194,6 +205,14 @@ export function createFolderSidebar({ document, invoke, openPath, notify = () =>
     if (!item || event.target.closest(".folder-remove")) return;
     const row = tree.rows().find((candidate) => candidate.path === item.dataset.path);
     if (!row) return;
+    if (isMenuKey(event)) {
+      if (row.kind !== "file") return;
+      event.preventDefault();
+      keyMenuAt = Date.now();
+      const rect = item.getBoundingClientRect();
+      onFileMenu(row, { x: rect.left, y: rect.bottom }, item);
+      return;
+    }
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       focusPath = row.path;
@@ -256,6 +275,7 @@ export function createFolderSidebar({ document, invoke, openPath, notify = () =>
         item.setAttribute("aria-selected", String(active));
       }
     },
-    hasRoots: () => tree.roots().length > 0
+    hasRoots: () => tree.roots().length > 0,
+    relativePath: (path) => relativePath(path, tree.roots().map((root) => root.path))
   };
 }

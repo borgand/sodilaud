@@ -6,6 +6,7 @@ import { getChangedRange } from "./editor-edit.js";
 import { getIndentEdit } from "./editor-indent.js";
 import { getMarkdownAutocompleteEdit } from "./editor-autocomplete.js";
 import { getFormatEdit } from "./markdown-format.js";
+import { vimCommandMode } from "./editor-vim.js";
 import {
   getHomePosition,
   getListMoveEdit,
@@ -72,7 +73,8 @@ function plainKeydown(event, view) {
 }
 
 function keydown(event, view) {
-  if (isGuarded(event, view)) return false;
+  // Outside insert mode a typed key is a Vim command, not text to complete.
+  if (isGuarded(event, view) || vimCommandMode(view)) return false;
   if (view.state.facet(plainTextFacet)) return plainKeydown(event, view);
   const edit = getKeydownEdit(event, view);
   if (!edit) return false;

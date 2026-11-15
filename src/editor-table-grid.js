@@ -139,6 +139,24 @@ function findGridTable(state) {
 
 export const focusedCell = gridded => gridded.grid.rows[gridded.cell.row].cells[gridded.cell.col];
 
+/**
+ * The scroll effect for a focus change that swaps a table between its widget
+ * and its grid rows (from the view's state to `next`), or none. The swap
+ * replaces measured heights with estimates, and CodeMirror's scroll anchor
+ * would then shift the document by their error, pushing the table out of
+ * view. Leaving keeps the table's top where it is on screen; coming back
+ * scrolls the caret's cell into view.
+ */
+export function gridSwapScroll(view, next) {
+  const before = gridTable(view.state);
+  const after = gridTable(next);
+  if (before?.from === after?.from) return [];
+  if (after) return [EditorView.scrollIntoView(next.selection.main.head, { y: "nearest" })];
+  const scrollerTop = view.scrollDOM.getBoundingClientRect().top;
+  const offset = view.documentTop + view.lineBlockAt(before.from).top - scrollerTop;
+  return [EditorView.scrollIntoView(before.from, { y: "start", yMargin: offset })];
+}
+
 const hidden = Decoration.replace({});
 const rowLine = Decoration.line({ class: "cm-lp-trow" });
 const headLine = Decoration.line({ class: "cm-lp-trow cm-lp-trow-head" });

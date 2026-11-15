@@ -29,6 +29,9 @@ pub struct SavedWindow {
     pub expanded: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// The sidebar tab when it is not the default Files tab: "outline".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sidebar_tab: Option<String>,
 }
 
 /// `open` is the union of the windows' open files. Releases before multiple
@@ -106,6 +109,26 @@ mod tests {
             std::env::temp_dir().join(format!("sodilaud-filelists-{name}-{}", std::process::id()));
         fs::create_dir_all(&directory).unwrap();
         directory.join(FILE_NAME)
+    }
+
+    #[test]
+    fn the_sidebar_tab_is_written_only_when_not_the_default() {
+        let path = scratch("tab");
+        let lists = FileLists {
+            windows: vec![
+                SavedWindow::default(),
+                SavedWindow {
+                    sidebar_tab: Some("outline".into()),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+        save(&path, &lists).unwrap();
+        let raw: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert!(raw["windows"][0].get("sidebarTab").is_none());
+        assert_eq!(raw["windows"][1]["sidebarTab"], "outline");
+        assert_eq!(load(&path), lists);
     }
 
     #[test]

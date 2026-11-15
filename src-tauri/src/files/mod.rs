@@ -217,6 +217,8 @@ pub struct Files {
     pending: Mutex<HashMap<String, Vec<PendingOpen>>>,
     /// Where agents' drafts are kept; none when app data has no folder.
     drafts_dir: Option<PathBuf>,
+    /// Every window's open files, for `sodilaud --wait`.
+    open: tokio::sync::watch::Sender<Vec<String>>,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -261,6 +263,7 @@ impl Files {
         }
         let mut folder_watcher = FolderWatcher::default();
         folder_watcher.set(watched_folders(&lists.windows));
+        let open = tokio::sync::watch::Sender::new(lists.windows.all_open());
         Self {
             lists_path,
             grants: Mutex::new(grants),
@@ -269,6 +272,7 @@ impl Files {
             folder_watcher: Mutex::new(folder_watcher),
             pending: Mutex::new(HashMap::new()),
             drafts_dir,
+            open,
         }
     }
 
@@ -334,9 +338,21 @@ impl Files {
                 eprintln!("{error}");
             }
         }
+        self.open.send_if_modified(|current| {
+            let changed = *current != open;
+            if changed {
+                current.clone_from(&open);
+            }
+            changed
+        });
         self.watch(open.into_iter().map(PathBuf::from).collect());
         lock(&self.folder_watcher).set(folders);
         result
+    }
+
+    /// Every window's open files, now and after each change.
+    pub fn watch_open(&self) -> tokio::sync::watch::Receiver<Vec<String>> {
+        self.open.subscribe()
     }
 
     #[cfg(test)]
@@ -840,6 +856,24 @@ mod tests {
         assert_eq!(files.take_pending("main-2")[0].path, "/b.md");
         assert!(files.take_pending("main-2").is_empty());
         assert_eq!(files.take_pending("main").len(), 1);
+    }
+
+    #[test]
+    fn the_open_files_are_published_on_every_change_and_survive_a_move() {
+        let files = Files::for_test();
+        let mut open = files.watch_open();
+        assert!(open.borrow_and_update().is_empty());
+        let second = files.update(|lists| {
+            lists.windows.claim("main", "/w/a.md");
+            lists.windows.add()
+        });
+        assert!(open.has_changed().unwrap());
+        assert_eq!(*open.borrow_and_update(), ["/w/a.md"]);
+        files.update(|lists| lists.windows.move_to("/w/a.md", &second).unwrap());
+        assert!(!open.has_changed().unwrap(), "a moved file stays open");
+        files.update(|lists| lists.windows.set_open(&second, vec![], None));
+        assert!(open.has_changed().unwrap());
+        assert!(open.borrow_and_update().is_empty());
     }
 
     #[test]

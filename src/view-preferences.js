@@ -108,6 +108,12 @@ export function normalizeEditorLineNumbers(value) {
   return DEFAULT_EDITOR_LINE_NUMBERS;
 }
 
+export const DEFAULT_VIM_MODE = false;
+
+export function normalizeVimMode(value) {
+  return value === true || value === "true" || value === "1";
+}
+
 export function normalizeReadableWidth(value) {
   if (value === true || value === "true" || value === "1") return true;
   if (value === false || value === "false" || value === "0") return false;
